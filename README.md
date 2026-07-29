@@ -24,7 +24,9 @@ OpenAI and stored in `message_chunks` (pgvector), powering semantic search via
    ```
 
    The Google API key needs the Cloud Speech-to-Text API enabled. Voice notes
-   are sent as OGG/Opus; `STT_LANGUAGE_CODE` defaults to `uk-UA`.
+   are sent as OGG/Opus. `STT_LANGUAGE_CODE` is the primary language (default
+   `uk-UA`); `STT_ALTERNATE_LANGUAGES` lists up to 3 extra languages Google
+   auto-detects (default `en-US`), so Ukrainian and English are both recognized.
 
 5. Apply database migrations:
 

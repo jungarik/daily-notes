@@ -45,7 +45,13 @@ CHUNK_OVERLAP = 50     # characters shared between consecutive chunks
 
 # Google Speech-to-Text (REST API with an API key)
 GOOGLE_STT_API_KEY = os.environ.get("GOOGLE_STT_API_KEY")
-STT_LANGUAGE_CODE = os.environ.get("STT_LANGUAGE_CODE", "uk-UA")
+STT_LANGUAGE_CODE = os.environ.get("STT_LANGUAGE_CODE", "uk-UA")  # primary language
+# Up to 3 extra languages Google may auto-detect (comma-separated BCP-47 codes).
+STT_ALTERNATE_LANGUAGES = [
+    code.strip()
+    for code in os.environ.get("STT_ALTERNATE_LANGUAGES", "en-US").split(",")
+    if code.strip()
+]
 STT_SAMPLE_RATE = 48000  # Telegram voice notes are OGG/Opus at 48 kHz
 STT_URL = "https://speech.googleapis.com/v1/speech:recognize"
 
@@ -56,13 +62,16 @@ def transcribe(audio_bytes: bytes) -> str:
     """Transcribe OGG/Opus audio (Telegram voice) via Google Speech-to-Text."""
     if not GOOGLE_STT_API_KEY:
         raise RuntimeError("GOOGLE_STT_API_KEY is not set")
+    config = {
+        "encoding": "OGG_OPUS",
+        "sampleRateHertz": STT_SAMPLE_RATE,
+        "languageCode": STT_LANGUAGE_CODE,
+        "enableAutomaticPunctuation": True,
+    }
+    if STT_ALTERNATE_LANGUAGES:
+        config["alternativeLanguageCodes"] = STT_ALTERNATE_LANGUAGES
     payload = {
-        "config": {
-            "encoding": "OGG_OPUS",
-            "sampleRateHertz": STT_SAMPLE_RATE,
-            "languageCode": STT_LANGUAGE_CODE,
-            "enableAutomaticPunctuation": True,
-        },
+        "config": config,
         "audio": {"content": base64.b64encode(audio_bytes).decode("ascii")},
     }
     resp = httpx.post(
