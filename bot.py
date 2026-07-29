@@ -1,14 +1,18 @@
 """
 Simple Telegram bot POC.
 
-Captures incoming text messages and stores them in PostgreSQL with a timestamp.
-Each message is split into chunks; every chunk is embedded with OpenAI and stored
-in message_chunks (pgvector), which powers semantic search via /search.
+Captures incoming text and voice messages and stores them in PostgreSQL with a
+timestamp. Voice notes are transcribed with Google Speech-to-Text (and the raw
+audio is kept). Each message's text is split into chunks; every chunk is embedded
+with OpenAI and stored in message_chunks (pgvector), which powers semantic search
+via /search.
 """
 
 import os
+import base64
 import logging
 
+import httpx
 import psycopg
 from psycopg.types.json import Json
 from openai import OpenAI
@@ -39,7 +43,34 @@ EMBED_MODEL = "text-embedding-3-small"  # 1536 dimensions
 CHUNK_SIZE = 500       # characters per chunk
 CHUNK_OVERLAP = 50     # characters shared between consecutive chunks
 
+# Google Speech-to-Text (REST API with an API key)
+GOOGLE_STT_API_KEY = os.environ.get("GOOGLE_STT_API_KEY")
+STT_LANGUAGE_CODE = os.environ.get("STT_LANGUAGE_CODE", "uk-UA")
+STT_URL = "https://speech.googleapis.com/v1/speech:recognize"
+
 openai_client = OpenAI()  # reads OPENAI_API_KEY from the environment
+
+
+def transcribe(audio_bytes: bytes) -> str:
+    """Transcribe OGG/Opus audio (Telegram voice) via Google Speech-to-Text."""
+    if not GOOGLE_STT_API_KEY:
+        raise RuntimeError("GOOGLE_STT_API_KEY is not set")
+    payload = {
+        "config": {
+            "encoding": "OGG_OPUS",
+            "languageCode": STT_LANGUAGE_CODE,
+            "enableAutomaticPunctuation": True,
+        },
+        "audio": {"content": base64.b64encode(audio_bytes).decode("ascii")},
+    }
+    resp = httpx.post(
+        STT_URL, params={"key": GOOGLE_STT_API_KEY}, json=payload, timeout=60
+    )
+    resp.raise_for_status()
+    results = resp.json().get("results", [])
+    return " ".join(
+        r["alternatives"][0]["transcript"] for r in results if r.get("alternatives")
+    ).strip()
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
@@ -60,18 +91,29 @@ def embed(text: str) -> str:
     return str(resp.data[0].embedding)
 
 
-def save_message(chat_id: int, username: str, text: str):
-    """Store the message, then its embedded chunks linked by message_id."""
+def save_message(
+    chat_id: int,
+    username: str,
+    text: str,
+    source_type: str = "text",
+    audio: bytes | None = None,
+    audio_mime: str | None = None,
+):
+    """Store the message, then its embedded chunks linked by message_id.
+
+    For voice notes, pass source_type='voice' plus the raw audio bytes and MIME
+    type; the transcript is what gets chunked and embedded.
+    """
     chunks = chunk_text(text)
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO messages (chat_id, username, text)
-                VALUES (%s, %s, %s)
+                INSERT INTO messages (chat_id, username, text, source_type, audio, audio_mime)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (chat_id, username, text),
+                (chat_id, username, text, source_type, audio, audio_mime),
             )
             message_id = cur.fetchone()[0]
             for i, chunk in enumerate(chunks):
@@ -114,6 +156,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("Saved ✅")
 
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Transcribe a voice note, store the transcript + raw audio, and chunk it."""
+    msg = update.message
+    voice = msg.voice
+    tg_file = await voice.get_file()
+    audio_bytes = bytes(await tg_file.download_as_bytearray())
+
+    text = transcribe(audio_bytes)
+    if not text:
+        await msg.reply_text("Couldn't transcribe that voice note 🤔")
+        return
+
+    n = save_message(
+        msg.chat_id,
+        msg.from_user.username,
+        text,
+        source_type="voice",
+        audio=audio_bytes,
+        audio_mime=voice.mime_type or "audio/ogg",
+    )
+    logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, n)
+    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}")
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/search <query> — return semantically similar stored notes."""
     query = " ".join(context.args).strip()
@@ -137,6 +203,7 @@ def main():
     run_migrations()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("search", search_command))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot running. Press Ctrl+C to stop.")
     app.run_polling()

@@ -1,8 +1,10 @@
 # Telegram → PostgreSQL notes bot (POC)
 
-Saves every text message sent to the bot into PostgreSQL with a timestamp. Each
-message is split into chunks that are embedded with OpenAI and stored in
-`message_chunks` (pgvector), powering semantic search via `/search`.
+Saves every text **and voice** message sent to the bot into PostgreSQL with a
+timestamp. Voice notes are transcribed with Google Speech-to-Text and the raw
+audio is kept. Each message's text is split into chunks that are embedded with
+OpenAI and stored in `message_chunks` (pgvector), powering semantic search via
+`/search`.
 
 ## Setup
 
@@ -14,12 +16,15 @@ message is split into chunks that are embedded with OpenAI and stored in
    pip install -r requirements.txt
    ```
 
-4. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `DATABASE_URL`, and
-   `OPENAI_API_KEY`:
+4. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `DATABASE_URL`,
+   `OPENAI_API_KEY`, and (for voice) `GOOGLE_STT_API_KEY` / `STT_LANGUAGE_CODE`:
 
    ```bash
    cp .env.example .env
    ```
+
+   The Google API key needs the Cloud Speech-to-Text API enabled. Voice notes
+   are sent as OGG/Opus; `STT_LANGUAGE_CODE` defaults to `uk-UA`.
 
 5. Apply database migrations:
 
@@ -33,9 +38,10 @@ message is split into chunks that are embedded with OpenAI and stored in
    python bot.py
    ```
 
-Send any text message and the bot replies "Saved ✅". Use `/search <query>` to
-find the most semantically similar notes (matched at the chunk level, deduped to
-one row per note).
+Send any text message and the bot replies "Saved ✅". Send a voice note and it
+replies with the transcript once saved. Use `/search <query>` to find the most
+semantically similar notes (matched at the chunk level, deduped to one row per
+note).
 
 ## Database migrations
 
@@ -59,8 +65,11 @@ pre-deploy command.
 | id         | serial       | primary key                |
 | chat_id    | bigint       | Telegram chat id           |
 | username   | text         | sender username (nullable) |
-| text       | text         | message body               |
-| created_at | timestamptz  | defaults to `now()`        |
+| text        | text        | message body (transcript for voice) |
+| source_type | text        | `'text'` or `'voice'`               |
+| audio       | bytea       | raw audio bytes (voice only)        |
+| audio_mime  | text        | audio MIME type (voice only)        |
+| created_at  | timestamptz | defaults to `now()`                 |
 
 `message_chunks` — normalized chunks of a message (1:N), embedded and searched
 at chunk granularity:
