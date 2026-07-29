@@ -1,38 +1,77 @@
 # Telegram → PostgreSQL notes bot (POC)
 
-Saves every text message sent to the bot into a PostgreSQL table with a timestamp.
+Saves every text message sent to the bot into PostgreSQL with a timestamp. Each
+message is split into chunks that are embedded with OpenAI and stored in
+`message_chunks` (pgvector), powering semantic search via `/search`.
 
 ## Setup
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token.
-2. Have a PostgreSQL database ready.
+2. Have a PostgreSQL database with the `pgvector` extension available.
 3. Install dependencies:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Copy `.env.example` to `.env` and fill in your values:
+4. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `DATABASE_URL`, and
+   `OPENAI_API_KEY`:
 
    ```bash
    cp .env.example .env
    ```
 
-5. Run it:
+5. Apply database migrations:
+
+   ```bash
+   python migrate.py
+   ```
+
+6. Run it:
 
    ```bash
    python bot.py
    ```
 
-The `messages` table is created automatically on first run. Send any text
-message to the bot and it replies "Saved ✅" and stores the row.
+Send any text message and the bot replies "Saved ✅". Use `/search <query>` to
+find the most semantically similar notes (matched at the chunk level, deduped to
+one row per note).
 
-## Table
+## Database migrations
 
-| column     | type        | notes                     |
-|------------|-------------|---------------------------|
-| id         | serial      | primary key               |
-| chat_id    | bigint      | Telegram chat id          |
-| username   | text        | sender username (nullable)|
-| text       | text        | message body              |
-| created_at | timestamptz | defaults to `now()`       |
+The schema is managed by plain SQL files in `migrations/`, applied in filename
+order by `migrate.py`. Applied versions are tracked in the `schema_migrations`
+table, so running it repeatedly is safe and only new files are applied.
+
+- Add a change: create the next numbered file, e.g. `migrations/0003_xxx.sql`.
+- Apply pending changes: `python migrate.py`.
+
+`bot.py` also calls `run_migrations()` on startup, so a fresh deploy sets itself
+up automatically. On Railway you can alternatively set `python migrate.py` as a
+pre-deploy command.
+
+## Tables
+
+`messages` — one row per received message:
+
+| column     | type         | notes                      |
+|------------|--------------|----------------------------|
+| id         | serial       | primary key                |
+| chat_id    | bigint       | Telegram chat id           |
+| username   | text         | sender username (nullable) |
+| text       | text         | message body               |
+| created_at | timestamptz  | defaults to `now()`        |
+
+`message_chunks` — normalized chunks of a message (1:N), embedded and searched
+at chunk granularity:
+
+| column      | type         | notes                                   |
+|-------------|--------------|-----------------------------------------|
+| id          | serial       | primary key                             |
+| message_id  | integer      | FK → `messages(id)`, `ON DELETE CASCADE`|
+| chunk_index | integer      | order of the chunk within its message   |
+| content     | text         | normalized chunk text                   |
+| token_count | integer      | optional token count                    |
+| metadata    | jsonb        | arbitrary chunk metadata                |
+| embedding   | vector(1536) | embedding of the chunk                  |
+| created_at  | timestamptz  | defaults to `now()`                     |
