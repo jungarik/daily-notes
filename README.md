@@ -45,6 +45,23 @@ replies with the transcript once saved. Use `/search <query>` to find the most
 semantically similar notes (matched at the chunk level, deduped to one row per
 note).
 
+## Reminder detection (extraction only)
+
+`reminders.py` detects whether a message asks to be reminded and extracts the
+time. It first checks cheaply whether the message looks time-bearing; if so it
+resolves the phrase locally, using the multilingual [`dateparser`] library for
+the date/relative anchor (tomorrow/today, weekdays, "in N minutes"/"через N
+годин") while the time-of-day is set by us so part-of-day words get sensible
+defaults: morning/вранці → 09:00, afternoon/вдень → 15:00, evening/ввечері →
+19:00, night/вночі → 21:00; a bare date defaults to 09:00. Only when it looks
+time-bearing but the rules can't pin a time does it fall back to the LLM.
+
+[`dateparser`]: https://dateparser.readthedocs.io/
+
+Times resolve against `REMINDER_TZ` (default `Europe/Kyiv`). For now this is
+detection only — the bot replies with a "📅 Looks like a reminder for …"
+preview; nothing is stored or scheduled yet.
+
 ## Database migrations
 
 The schema is managed by plain SQL files in `migrations/`, applied in filename
