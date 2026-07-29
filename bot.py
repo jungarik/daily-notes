@@ -19,6 +19,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 from migrate import run_migrations
+from reminders import extract_reminder
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -162,12 +163,20 @@ def search_messages(chat_id: int, query_embedding: str, limit: int = 5):
             return cur.fetchall()
 
 
+def reminder_preview(text: str) -> str:
+    """Detection-only preview line (nothing is scheduled yet)."""
+    rem = extract_reminder(text)
+    if rem.is_reminder and rem.remind_at:
+        return f"\n\n📅 Looks like a reminder for {rem.remind_at:%Y-%m-%d %H:%M}"
+    return ""
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Store every incoming text message and its chunks."""
     msg = update.message
     n = save_message(msg.chat_id, msg.from_user.username, msg.text)
     logger.info("Saved message from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text("Saved ✅")
+    await msg.reply_text("Saved ✅" + reminder_preview(msg.text))
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -197,7 +206,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_mime=voice.mime_type or "audio/ogg",
     )
     logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}")
+    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}" + reminder_preview(text))
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
