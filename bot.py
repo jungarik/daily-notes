@@ -46,6 +46,7 @@ CHUNK_OVERLAP = 50     # characters shared between consecutive chunks
 # Google Speech-to-Text (REST API with an API key)
 GOOGLE_STT_API_KEY = os.environ.get("GOOGLE_STT_API_KEY")
 STT_LANGUAGE_CODE = os.environ.get("STT_LANGUAGE_CODE", "uk-UA")
+STT_SAMPLE_RATE = 48000  # Telegram voice notes are OGG/Opus at 48 kHz
 STT_URL = "https://speech.googleapis.com/v1/speech:recognize"
 
 openai_client = OpenAI()  # reads OPENAI_API_KEY from the environment
@@ -58,6 +59,7 @@ def transcribe(audio_bytes: bytes) -> str:
     payload = {
         "config": {
             "encoding": "OGG_OPUS",
+            "sampleRateHertz": STT_SAMPLE_RATE,
             "languageCode": STT_LANGUAGE_CODE,
             "enableAutomaticPunctuation": True,
         },
@@ -66,7 +68,10 @@ def transcribe(audio_bytes: bytes) -> str:
     resp = httpx.post(
         STT_URL, params={"key": GOOGLE_STT_API_KEY}, json=payload, timeout=60
     )
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        # Surface Google's error detail instead of a bare status code.
+        logger.error("Google STT %s: %s", resp.status_code, resp.text)
+        resp.raise_for_status()
     results = resp.json().get("results", [])
     return " ".join(
         r["alternatives"][0]["transcript"] for r in results if r.get("alternatives")
@@ -163,7 +168,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_file = await voice.get_file()
     audio_bytes = bytes(await tg_file.download_as_bytearray())
 
-    text = transcribe(audio_bytes)
+    try:
+        text = transcribe(audio_bytes)
+    except Exception:
+        logger.exception("Transcription failed")
+        await msg.reply_text("Transcription failed — please try again later.")
+        return
+
     if not text:
         await msg.reply_text("Couldn't transcribe that voice note 🤔")
         return
