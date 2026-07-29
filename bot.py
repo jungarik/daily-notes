@@ -6,7 +6,7 @@ Captures incoming text messages and stores them in PostgreSQL with a timestamp.
 import os
 import logging
 
-import psycopg2
+import psycopg
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -25,7 +25,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 
 def init_db():
     """Create the messages table if it doesn't exist."""
-    with psycopg2.connect(DATABASE_URL) as conn:
+    with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -43,7 +43,7 @@ def init_db():
 
 def save_message(chat_id: int, username: str, text: str):
     """Insert one text message into the database."""
-    with psycopg2.connect(DATABASE_URL) as conn:
+    with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO messages (chat_id, username, text) VALUES (%s, %s, %s);",
