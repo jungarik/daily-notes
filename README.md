@@ -46,7 +46,7 @@ replies with the transcript once saved. Use `/search <query>` to find the most
 semantically similar notes (matched at the chunk level, deduped to one row per
 note).
 
-## Reminder detection (extraction only)
+## Reminders
 
 `reminders.py` detects whether a message asks to be reminded and extracts the
 time. It first checks cheaply whether the message looks time-bearing; if so it
@@ -58,6 +58,31 @@ defaults: morning/вранці → 09:00, afternoon/вдень → 15:00, evenin
 time-bearing but the rules can't pin a time does it fall back to the LLM.
 
 [`dateparser`]: https://dateparser.readthedocs.io/
+
+When a message parses as a reminder, a row is written to the `reminders` table
+(`reminder_store.py`) and the bot confirms with "⏰ Reminder set for …" plus a
+**Cancel** button, so a misparse can be undone before it fires. A background loop
+inside the bot process polls every `REMINDER_POLL_SECONDS` (default 30) for due
+reminders and delivers them with **Snooze** (10m / 1h / Tomorrow) and **Done**
+buttons.
+
+Best-practice behaviours baked in:
+
+- **Per-user timezone.** `"tomorrow at 9"` resolves against the chat's own
+  timezone. Set it with `/timezone Europe/Kyiv` (stored in `user_settings`);
+  until then `REMINDER_TZ` is used.
+- **Idempotent claiming.** The dispatcher claims due rows with
+  `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` into a transient
+  `sending` status, so two dispatchers never deliver the same reminder twice.
+- **Crash recovery.** A row stuck in `sending` past
+  `REMINDER_SENDING_STALE_SECONDS` (default 120) is reclaimed and retried.
+- **Retry on failure.** A reminder is only marked `done` after it sends; a failed
+  send reverts to `scheduled` for the next tick.
+- **Catch-up after downtime.** State lives in Postgres, so anything due during a
+  restart fires on the next poll — with a "(was due X ago)" note if it's late.
+
+Reminder statuses: `scheduled` (waiting), `postponed` (snoozed to a new time),
+`sending` (claimed, being delivered), `done` (delivered), `canceled`.
 
 Times resolve against `REMINDER_TZ` (default `Europe/Kyiv`). For now this is
 detection only — the bot replies with a "📅 Looks like a reminder for …"
@@ -104,3 +129,25 @@ at chunk granularity:
 | metadata    | jsonb        | arbitrary chunk metadata                |
 | embedding   | vector(1536) | embedding of the chunk                  |
 | created_at  | timestamptz  | defaults to `now()`                     |
+
+`reminders` — reminders parsed from messages:
+
+| column     | type        | notes                                            |
+|------------|-------------|--------------------------------------------------|
+| id         | serial      | primary key                                      |
+| message_id | integer     | FK → `messages(id)`, `ON DELETE CASCADE`         |
+| chat_id    | bigint      | chat to deliver the reminder to                  |
+| remind_at  | timestamptz | when it should fire                              |
+| text       | text        | reminder body                                    |
+| status     | text        | scheduled / postponed / sending / done / canceled |
+| created_at | timestamptz | defaults to `now()`                              |
+| updated_at | timestamptz | bumped on status change                          |
+
+`user_settings` — per-chat preferences:
+
+| column     | type        | notes                          |
+|------------|-------------|--------------------------------|
+| chat_id    | bigint      | primary key                    |
+| timezone   | text        | IANA name (set via /timezone)  |
+| created_at | timestamptz | defaults to `now()`            |
+| updated_at | timestamptz | bumped on change               |

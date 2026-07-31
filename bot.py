@@ -10,20 +10,31 @@ message_chunks (pgvector), which powers semantic search via /search.
 
 import io
 import os
+import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.types.json import Json
 from openai import OpenAI
 from dotenv import load_dotenv
 
+import user_store
 from migrate import run_migrations
-from reminders import extract_reminder
-from telegram import Update
+from reminders import extract_reminder, DEFAULT_TZ
+from reminder_store import (
+    create_reminder,
+    claim_due_reminders,
+    set_status,
+    postpone,
+)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     MessageHandler,
     CommandHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
@@ -42,6 +53,11 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 EMBED_MODEL = "text-embedding-3-small"  # 1536 dimensions
 CHUNK_SIZE = 500       # characters per chunk
 CHUNK_OVERLAP = 50     # characters shared between consecutive chunks
+REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
+# A claimed reminder stuck in 'sending' this long is considered abandoned and reclaimed.
+SENDING_STALE_SECONDS = int(os.environ.get("REMINDER_SENDING_STALE_SECONDS", "120"))
+# Show a "(was due X ago)" note when a reminder fires later than this.
+LATE_NOTE_SECONDS = 60
 
 # OpenAI speech-to-text
 OPENAI_STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "whisper-1")
@@ -130,7 +146,7 @@ def save_message(
                     (message_id, i, chunk, len(chunk.split()),
                      Json({"char_len": len(chunk)}), embed(chunk)),
                 )
-    return len(chunks)
+    return message_id, len(chunks)
 
 
 def search_messages(chat_id: int, query_embedding: str, limit: int = 5):
@@ -152,20 +168,42 @@ def search_messages(chat_id: int, query_embedding: str, limit: int = 5):
             return cur.fetchall()
 
 
-def reminder_preview(text: str) -> str:
-    """Detection-only preview line (nothing is scheduled yet)."""
-    rem = extract_reminder(text)
-    if rem.is_reminder and rem.remind_at:
-        return f"\n\n📅 Looks like a reminder for {rem.remind_at:%Y-%m-%d %H:%M}"
-    return ""
+def user_tz(chat_id: int) -> ZoneInfo:
+    """The chat's timezone, or the default if unset/invalid."""
+    name = user_store.get_timezone(chat_id)
+    if name:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            logger.warning("Invalid stored timezone %r for chat %s", name, chat_id)
+    return DEFAULT_TZ
+
+
+async def offer_reminder(msg, message_id: int, text: str):
+    """If the text parses as a reminder, store it and send a confirmation with a
+    Cancel button so the user can undo a misparse before it fires."""
+    tz = user_tz(msg.chat_id)
+    rem = extract_reminder(text, now=datetime.now(tz))
+    if not (rem.is_reminder and rem.remind_at):
+        return
+    reminder_id = create_reminder(message_id, msg.chat_id, rem.remind_at, rem.text)
+    when = rem.remind_at.astimezone(tz)
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Cancel", callback_data=f"r:cancel:{reminder_id}")]]
+    )
+    await msg.reply_text(
+        f"⏰ Reminder set for {when:%Y-%m-%d %H:%M} ({when.tzname()})",
+        reply_markup=keyboard,
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Store every incoming text message and its chunks."""
     msg = update.message
-    n = save_message(msg.chat_id, msg.from_user.username, msg.text)
+    message_id, n = save_message(msg.chat_id, msg.from_user.username, msg.text)
     logger.info("Saved message from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text("Saved ✅" + reminder_preview(msg.text))
+    await msg.reply_text("Saved ✅")
+    await offer_reminder(msg, message_id, msg.text)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,7 +224,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Couldn't transcribe that voice note 🤔")
         return
 
-    n = save_message(
+    message_id, n = save_message(
         msg.chat_id,
         msg.from_user.username,
         text,
@@ -195,7 +233,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_mime=voice.mime_type or "audio/ogg",
     )
     logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}" + reminder_preview(text))
+    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}")
+    await offer_reminder(msg, message_id, text)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,10 +256,119 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Closest notes:\n" + "\n".join(lines))
 
 
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/timezone [IANA name] — show or set the chat's timezone."""
+    chat_id = update.message.chat_id
+    if not context.args:
+        current = user_store.get_timezone(chat_id) or f"{DEFAULT_TZ} (default)"
+        await update.message.reply_text(
+            f"Your timezone: {current}\nSet it with e.g. /timezone Europe/Kyiv"
+        )
+        return
+    name = context.args[0]
+    try:
+        ZoneInfo(name)
+    except Exception:
+        await update.message.reply_text(
+            "Unknown timezone. Use an IANA name like Europe/Kyiv or America/New_York."
+        )
+        return
+    user_store.set_timezone(chat_id, name)
+    await update.message.reply_text(f"Timezone set to {name} ✅")
+
+
+def _snooze_keyboard(reminder_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("😴 10m", callback_data=f"r:snz:10:{reminder_id}"),
+                InlineKeyboardButton("1h", callback_data=f"r:snz:60:{reminder_id}"),
+                InlineKeyboardButton("Tomorrow", callback_data=f"r:snz:tomorrow:{reminder_id}"),
+            ],
+            [InlineKeyboardButton("✅ Done", callback_data=f"r:done:{reminder_id}")],
+        ]
+    )
+
+
+async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle Cancel / Snooze / Done inline buttons."""
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")  # r:<action>:...:<id>
+    action, reminder_id = parts[1], int(parts[-1])
+    base = query.message.text or "Reminder"
+
+    if action == "cancel":
+        set_status(reminder_id, "canceled")
+        await query.edit_message_text(base + "\n\n❌ Canceled")
+    elif action == "done":
+        set_status(reminder_id, "done")
+        await query.edit_message_text(base + "\n\n✅ Done")
+    elif action == "snz":
+        tz = user_tz(query.message.chat_id)
+        now = datetime.now(tz)
+        if parts[2] == "tomorrow":
+            new_time = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        else:
+            new_time = now + timedelta(minutes=int(parts[2]))
+        postpone(reminder_id, new_time)
+        await query.edit_message_text(base + f"\n\n😴 Snoozed to {new_time:%Y-%m-%d %H:%M}")
+
+
+def _late_note(delay: timedelta) -> str:
+    """Human 'was due X ago' suffix for late reminders, else ''."""
+    seconds = int(delay.total_seconds())
+    if seconds < LATE_NOTE_SECONDS:
+        return ""
+    if seconds < 3600:
+        ago = f"{seconds // 60}m"
+    elif seconds < 86400:
+        ago = f"{seconds // 3600}h"
+    else:
+        ago = f"{seconds // 86400}d"
+    return f" (was due {ago} ago)"
+
+
+async def _dispatch_due_reminders(app):
+    """Claim and send due reminders, marking each 'done' only after it sends."""
+    now = datetime.now(timezone.utc)
+    stale_before = now - timedelta(seconds=SENDING_STALE_SECONDS)
+    for reminder_id, chat_id, text, remind_at in claim_due_reminders(now, stale_before):
+        note = _late_note(now - remind_at)
+        try:
+            await app.bot.send_message(
+                chat_id=chat_id,
+                text=f"⏰ Reminder{note}: {text}",
+                reply_markup=_snooze_keyboard(reminder_id),
+            )
+            set_status(reminder_id, "done")
+        except Exception:
+            # Revert so the next tick retries it (it's currently 'sending').
+            logger.exception("Failed to send reminder %s", reminder_id)
+            set_status(reminder_id, "scheduled")
+
+
+async def _reminder_loop(app):
+    """Poll the DB for due reminders every REMINDER_POLL_SECONDS."""
+    while True:
+        try:
+            await _dispatch_due_reminders(app)
+        except Exception:
+            logger.exception("Reminder loop error")
+        await asyncio.sleep(REMINDER_POLL_SECONDS)
+
+
+async def _post_init(app):
+    app.create_task(_reminder_loop(app))
+    logger.info("Reminder dispatcher started (every %ss).", REMINDER_POLL_SECONDS)
+
+
 def main():
     run_migrations()
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("search", search_command))
+    app.add_handler(CommandHandler("timezone", timezone_command))
+    app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot running. Press Ctrl+C to stop.")
