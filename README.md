@@ -1,10 +1,10 @@
 # Telegram → PostgreSQL notes bot (POC)
 
 Saves every text **and voice** message sent to the bot into PostgreSQL with a
-timestamp. Voice notes are transcribed with Google Speech-to-Text and the raw
-audio is kept. Each message's text is split into chunks that are embedded with
-OpenAI and stored in `message_chunks` (pgvector), powering semantic search via
-`/search`.
+timestamp. Voice notes are transcribed with OpenAI (`whisper-1`, using a
+transcription-context prompt) and the raw audio is kept. Each message's text is
+split into chunks that are embedded with OpenAI and stored in `message_chunks`
+(pgvector), powering semantic search via `/search`.
 
 ## Setup
 
@@ -16,17 +16,18 @@ OpenAI and stored in `message_chunks` (pgvector), powering semantic search via
    pip install -r requirements.txt
    ```
 
-4. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `DATABASE_URL`,
-   `OPENAI_API_KEY`, and (for voice) `GOOGLE_STT_API_KEY` / `STT_LANGUAGE_CODE`:
+4. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `DATABASE_URL`, and
+   `OPENAI_API_KEY`:
 
    ```bash
    cp .env.example .env
    ```
 
-   The Google API key needs the Cloud Speech-to-Text API enabled. Voice notes
-   are sent as OGG/Opus. `STT_LANGUAGE_CODE` is the primary language (default
-   `uk-UA`); `STT_ALTERNATE_LANGUAGES` lists up to 3 extra languages Google
-   auto-detects (default `en-US`), so Ukrainian and English are both recognized.
+   The same `OPENAI_API_KEY` powers both embeddings and voice transcription.
+   Voice uses `whisper-1`, which accepts Telegram's OGG audio directly and
+   auto-detects Ukrainian/English (set `OPENAI_STT_LANGUAGE` to force one).
+   `OPENAI_STT_PROMPT` supplies optional transcription context to bias the
+   spelling of names/terms.
 
 5. Apply database migrations:
 

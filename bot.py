@@ -2,17 +2,16 @@
 Simple Telegram bot POC.
 
 Captures incoming text and voice messages and stores them in PostgreSQL with a
-timestamp. Voice notes are transcribed with Google Speech-to-Text (and the raw
-audio is kept). Each message's text is split into chunks; every chunk is embedded
-with OpenAI and stored in message_chunks (pgvector), which powers semantic search
-via /search.
+timestamp. Voice notes are transcribed with OpenAI (whisper-1, with a
+transcription-context prompt) and the raw audio is kept. Each message's text is
+split into chunks; every chunk is embedded with OpenAI and stored in
+message_chunks (pgvector), which powers semantic search via /search.
 """
 
+import io
 import os
-import base64
 import logging
 
-import httpx
 import psycopg
 from psycopg.types.json import Json
 from openai import OpenAI
@@ -44,48 +43,38 @@ EMBED_MODEL = "text-embedding-3-small"  # 1536 dimensions
 CHUNK_SIZE = 500       # characters per chunk
 CHUNK_OVERLAP = 50     # characters shared between consecutive chunks
 
-# Google Speech-to-Text (REST API with an API key)
-GOOGLE_STT_API_KEY = os.environ.get("GOOGLE_STT_API_KEY")
-STT_LANGUAGE_CODE = os.environ.get("STT_LANGUAGE_CODE", "uk-UA")  # primary language
-# Up to 3 extra languages Google may auto-detect (comma-separated BCP-47 codes).
-STT_ALTERNATE_LANGUAGES = [
-    code.strip()
-    for code in os.environ.get("STT_ALTERNATE_LANGUAGES", "en-US").split(",")
-    if code.strip()
-]
-STT_SAMPLE_RATE = 48000  # Telegram voice notes are OGG/Opus at 48 kHz
-STT_URL = "https://speech.googleapis.com/v1/speech:recognize"
+# OpenAI speech-to-text
+OPENAI_STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "whisper-1")
+# Optional forced language (ISO-639-1, e.g. "uk"). Empty = auto-detect uk/en.
+OPENAI_STT_LANGUAGE = os.environ.get("OPENAI_STT_LANGUAGE") or None
+# Transcription context: biases spelling of names/terms the model may mishear.
+OPENAI_STT_PROMPT = os.environ.get(
+    "OPENAI_STT_PROMPT",
+    "Голосові нотатки українською та англійською: нагадування, завдання, "
+    "зустрічі, плани. Voice notes in Ukrainian and English: reminders, tasks, "
+    "meetings, plans.",
+)
 
 openai_client = OpenAI()  # reads OPENAI_API_KEY from the environment
 
 
 def transcribe(audio_bytes: bytes) -> str:
-    """Transcribe OGG/Opus audio (Telegram voice) via Google Speech-to-Text."""
-    if not GOOGLE_STT_API_KEY:
-        raise RuntimeError("GOOGLE_STT_API_KEY is not set")
-    config = {
-        "encoding": "OGG_OPUS",
-        "sampleRateHertz": STT_SAMPLE_RATE,
-        "languageCode": STT_LANGUAGE_CODE,
-        "enableAutomaticPunctuation": True,
+    """Transcribe Telegram OGG/Opus audio via OpenAI, with transcription context."""
+    audio = io.BytesIO(audio_bytes)
+    audio.name = "voice.ogg"  # the extension tells the API the input format
+    kwargs = {
+        "model": OPENAI_STT_MODEL,
+        "file": audio,
+        "response_format": "text",
     }
-    if STT_ALTERNATE_LANGUAGES:
-        config["alternativeLanguageCodes"] = STT_ALTERNATE_LANGUAGES
-    payload = {
-        "config": config,
-        "audio": {"content": base64.b64encode(audio_bytes).decode("ascii")},
-    }
-    resp = httpx.post(
-        STT_URL, params={"key": GOOGLE_STT_API_KEY}, json=payload, timeout=60
-    )
-    if resp.status_code != 200:
-        # Surface Google's error detail instead of a bare status code.
-        logger.error("Google STT %s: %s", resp.status_code, resp.text)
-        resp.raise_for_status()
-    results = resp.json().get("results", [])
-    return " ".join(
-        r["alternatives"][0]["transcript"] for r in results if r.get("alternatives")
-    ).strip()
+    if OPENAI_STT_PROMPT:
+        kwargs["prompt"] = OPENAI_STT_PROMPT
+    if OPENAI_STT_LANGUAGE:
+        kwargs["language"] = OPENAI_STT_LANGUAGE
+    result = openai_client.audio.transcriptions.create(**kwargs)
+    # response_format="text" returns a plain string; be tolerant either way.
+    text = result if isinstance(result, str) else getattr(result, "text", "")
+    return text.strip()
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
