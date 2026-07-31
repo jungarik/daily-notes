@@ -20,7 +20,9 @@ from psycopg.types.json import Json
 from openai import OpenAI
 from dotenv import load_dotenv
 
+import i18n
 import user_store
+from i18n import t
 from migrate import run_migrations
 from reminders import extract_reminder, DEFAULT_TZ
 from reminder_store import (
@@ -179,6 +181,11 @@ def user_tz(chat_id: int) -> ZoneInfo:
     return DEFAULT_TZ
 
 
+def user_locale(chat_id: int) -> str:
+    """The chat's language code ('en'/'uk'), or the default."""
+    return i18n.normalize(user_store.get_language(chat_id)) or i18n.DEFAULT_LOCALE
+
+
 async def offer_reminder(msg, message_id: int, text: str):
     """If the text parses as a reminder, store it and send a confirmation with a
     Cancel button so the user can undo a misparse before it fires."""
@@ -186,13 +193,14 @@ async def offer_reminder(msg, message_id: int, text: str):
     rem = extract_reminder(text, now=datetime.now(tz))
     if not (rem.is_reminder and rem.remind_at):
         return
+    locale = user_locale(msg.chat_id)
     reminder_id = create_reminder(message_id, msg.chat_id, rem.remind_at, rem.text)
     when = rem.remind_at.astimezone(tz)
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ Cancel", callback_data=f"r:cancel:{reminder_id}")]]
+        [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
     )
     await msg.reply_text(
-        f"⏰ Reminder set for {when:%Y-%m-%d %H:%M} ({when.tzname()})",
+        t(locale, "reminder_set", when=f"{when:%Y-%m-%d %H:%M}", tz=when.tzname()),
         reply_markup=keyboard,
     )
 
@@ -202,7 +210,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     message_id, n = save_message(msg.chat_id, msg.from_user.username, msg.text)
     logger.info("Saved message from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text("Saved ✅")
+    await msg.reply_text(t(user_locale(msg.chat_id), "saved"))
     await offer_reminder(msg, message_id, msg.text)
 
 
@@ -213,15 +221,16 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_file = await voice.get_file()
     audio_bytes = bytes(await tg_file.download_as_bytearray())
 
+    locale = user_locale(msg.chat_id)
     try:
         text = transcribe(audio_bytes)
     except Exception:
         logger.exception("Transcription failed")
-        await msg.reply_text("Transcription failed — please try again later.")
+        await msg.reply_text(t(locale, "transcribe_failed"))
         return
 
     if not text:
-        await msg.reply_text("Couldn't transcribe that voice note 🤔")
+        await msg.reply_text(t(locale, "transcribe_empty"))
         return
 
     message_id, n = save_message(
@@ -233,59 +242,72 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_mime=voice.mime_type or "audio/ogg",
     )
     logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, n)
-    await msg.reply_text(f"Transcribed & saved ✅\n\n{text}")
+    await msg.reply_text(t(locale, "transcribed_saved", text=text))
     await offer_reminder(msg, message_id, text)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/search <query> — return semantically similar stored notes."""
+    locale = user_locale(update.message.chat_id)
     query = " ".join(context.args).strip()
     if not query:
-        await update.message.reply_text("Usage: /search your query here")
+        await update.message.reply_text(t(locale, "search_usage"))
         return
 
     results = search_messages(update.message.chat_id, embed(query))
     if not results:
-        await update.message.reply_text("No matching notes yet.")
+        await update.message.reply_text(t(locale, "search_none"))
         return
 
     lines = [
         f"• {text}  ({created.strftime('%Y-%m-%d %H:%M')})"
         for text, created, _distance in results
     ]
-    await update.message.reply_text("Closest notes:\n" + "\n".join(lines))
+    await update.message.reply_text(t(locale, "search_header") + "\n" + "\n".join(lines))
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/timezone [IANA name] — show or set the chat's timezone."""
     chat_id = update.message.chat_id
+    locale = user_locale(chat_id)
     if not context.args:
         current = user_store.get_timezone(chat_id) or f"{DEFAULT_TZ} (default)"
-        await update.message.reply_text(
-            f"Your timezone: {current}\nSet it with e.g. /timezone Europe/Kyiv"
-        )
+        await update.message.reply_text(t(locale, "tz_current", tz=current))
         return
     name = context.args[0]
     try:
         ZoneInfo(name)
     except Exception:
-        await update.message.reply_text(
-            "Unknown timezone. Use an IANA name like Europe/Kyiv or America/New_York."
-        )
+        await update.message.reply_text(t(locale, "tz_unknown"))
         return
     user_store.set_timezone(chat_id, name)
-    await update.message.reply_text(f"Timezone set to {name} ✅")
+    await update.message.reply_text(t(locale, "tz_set", tz=name))
 
 
-def _snooze_keyboard(reminder_id: int) -> InlineKeyboardMarkup:
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/language [uk|en] — show or set the chat's language."""
+    chat_id = update.message.chat_id
+    if not context.args:
+        current = user_locale(chat_id)
+        await update.message.reply_text(t(current, "lang_current", lang=current))
+        return
+    lang = i18n.normalize(context.args[0])
+    if lang not in i18n.SUPPORTED:
+        await update.message.reply_text(t(user_locale(chat_id), "lang_unknown"))
+        return
+    user_store.set_language(chat_id, lang)
+    await update.message.reply_text(t(lang, "lang_set", lang=lang))
+
+
+def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("😴 10m", callback_data=f"r:snz:10:{reminder_id}"),
-                InlineKeyboardButton("1h", callback_data=f"r:snz:60:{reminder_id}"),
-                InlineKeyboardButton("Tomorrow", callback_data=f"r:snz:tomorrow:{reminder_id}"),
+                InlineKeyboardButton(t(locale, "btn_snooze_10m"), callback_data=f"r:snz:10:{reminder_id}"),
+                InlineKeyboardButton(t(locale, "btn_snooze_1h"), callback_data=f"r:snz:60:{reminder_id}"),
+                InlineKeyboardButton(t(locale, "btn_snooze_tomorrow"), callback_data=f"r:snz:tomorrow:{reminder_id}"),
             ],
-            [InlineKeyboardButton("✅ Done", callback_data=f"r:done:{reminder_id}")],
+            [InlineKeyboardButton(t(locale, "btn_done"), callback_data=f"r:done:{reminder_id}")],
         ]
     )
 
@@ -296,14 +318,15 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     parts = query.data.split(":")  # r:<action>:...:<id>
     action, reminder_id = parts[1], int(parts[-1])
+    locale = user_locale(query.message.chat_id)
     base = query.message.text or "Reminder"
 
     if action == "cancel":
         set_status(reminder_id, "canceled")
-        await query.edit_message_text(base + "\n\n❌ Canceled")
+        await query.edit_message_text(base + "\n\n" + t(locale, "canceled"))
     elif action == "done":
         set_status(reminder_id, "done")
-        await query.edit_message_text(base + "\n\n✅ Done")
+        await query.edit_message_text(base + "\n\n" + t(locale, "done"))
     elif action == "snz":
         tz = user_tz(query.message.chat_id)
         now = datetime.now(tz)
@@ -312,21 +335,21 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             new_time = now + timedelta(minutes=int(parts[2]))
         postpone(reminder_id, new_time)
-        await query.edit_message_text(base + f"\n\n😴 Snoozed to {new_time:%Y-%m-%d %H:%M}")
+        await query.edit_message_text(
+            base + "\n\n" + t(locale, "snoozed", when=f"{new_time:%Y-%m-%d %H:%M}")
+        )
 
 
-def _late_note(delay: timedelta) -> str:
-    """Human 'was due X ago' suffix for late reminders, else ''."""
+def _humanize_ago(delay: timedelta) -> str:
+    """Compact 'X ago' magnitude (m/h/d), or '' if not past the late threshold."""
     seconds = int(delay.total_seconds())
     if seconds < LATE_NOTE_SECONDS:
         return ""
     if seconds < 3600:
-        ago = f"{seconds // 60}m"
-    elif seconds < 86400:
-        ago = f"{seconds // 3600}h"
-    else:
-        ago = f"{seconds // 86400}d"
-    return f" (was due {ago} ago)"
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 async def _dispatch_due_reminders(app):
@@ -334,12 +357,14 @@ async def _dispatch_due_reminders(app):
     now = datetime.now(timezone.utc)
     stale_before = now - timedelta(seconds=SENDING_STALE_SECONDS)
     for reminder_id, chat_id, text, remind_at in claim_due_reminders(now, stale_before):
-        note = _late_note(now - remind_at)
+        locale = user_locale(chat_id)
+        ago = _humanize_ago(now - remind_at)
+        note = t(locale, "reminder_late", ago=ago) if ago else ""
         try:
             await app.bot.send_message(
                 chat_id=chat_id,
-                text=f"⏰ Reminder{note}: {text}",
-                reply_markup=_snooze_keyboard(reminder_id),
+                text=t(locale, "reminder_fire", note=note, text=text),
+                reply_markup=_snooze_keyboard(reminder_id, locale),
             )
             set_status(reminder_id, "done")
         except Exception:
@@ -368,6 +393,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("timezone", timezone_command))
+    app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

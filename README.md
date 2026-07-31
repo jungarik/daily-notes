@@ -71,6 +71,10 @@ Best-practice behaviours baked in:
 - **Per-user timezone.** `"tomorrow at 9"` resolves against the chat's own
   timezone. Set it with `/timezone Europe/Kyiv` (stored in `user_settings`);
   until then `REMINDER_TZ` is used.
+- **Per-user language.** All bot messages and button labels are localized in
+  English and Ukrainian. Set with `/language uk` or `/language en` (stored in
+  `user_settings`); until then `BOT_DEFAULT_LOCALE` is used. Translations live in
+  `locales.json`; add a language by adding a key there.
 - **Idempotent claiming.** The dispatcher claims due rows with
   `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` into a transient
   `sending` status, so two dispatchers never deliver the same reminder twice.
@@ -147,7 +151,8 @@ at chunk granularity:
 
 | column     | type        | notes                          |
 |------------|-------------|--------------------------------|
-| chat_id    | bigint      | primary key                    |
-| timezone   | text        | IANA name (set via /timezone)  |
-| created_at | timestamptz | defaults to `now()`            |
-| updated_at | timestamptz | bumped on change               |
+| chat_id    | bigint      | primary key                        |
+| timezone   | text        | IANA name (set via /timezone)      |
+| language   | text        | `en` / `uk` (set via /language)    |
+| created_at | timestamptz | defaults to `now()`                |
+| updated_at | timestamptz | bumped on change                   |
