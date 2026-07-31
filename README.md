@@ -6,6 +6,30 @@ transcription-context prompt) and the raw audio is kept. Each message's text is
 split into chunks that are embedded with OpenAI and stored in `message_chunks`
 (pgvector), powering semantic search via `/search`.
 
+## Project layout
+
+Each module has a single responsibility; `bot.py` is only the Telegram layer.
+
+| module            | responsibility                                             |
+|-------------------|------------------------------------------------------------|
+| `bot.py`          | Telegram handlers, command menu, reminder dispatcher loop  |
+| `config.py`       | all environment variables / constants, read once           |
+| `db.py`           | shared `cursor()` connection helper                         |
+| `openai_client.py`| one lazily-created OpenAI client                            |
+| `semantic.py`     | chunking + embeddings + semantic search                    |
+| `message_store.py`| `messages` / `message_chunks` persistence                  |
+| `transcription.py`| voice audio → text (OpenAI whisper)                        |
+| `reminders.py`    | reminder time/intent extraction (dateparser + LLM)         |
+| `reminder_store.py`| `reminders` persistence + atomic claim                    |
+| `user_store.py`   | `user_settings` (timezone, language)                       |
+| `i18n.py`, `locales.json` | localization                                       |
+| `migrate.py`, `migrations/` | schema migrations                                |
+
+Dependencies flow one way: `bot` → services (`semantic`, `transcription`,
+`reminders`) → stores (`message_store`, `reminder_store`, `user_store`) →
+`db`/`config`. Stores never import services, so the semantic layer and the
+Telegram layer stay decoupled.
+
 ## Setup
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token.

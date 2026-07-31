@@ -14,18 +14,18 @@ Flow for a message:
 Only extraction is implemented here — no storage or delivery.
 """
 
-import os
 import re
 import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
+
+import config
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TZ = ZoneInfo(os.environ.get("REMINDER_TZ", "Europe/Kyiv"))
-REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
+DEFAULT_TZ = config.DEFAULT_TZ
+REMINDER_LLM_MODEL = config.REMINDER_LLM_MODEL
 
 # Default clock time when a day is known but no exact time is given.
 DEFAULT_TIME = (9, 0)
@@ -180,9 +180,9 @@ def rule_based_parse(text: str, now: datetime) -> datetime | None:
 def _llm_parse(text: str, now: datetime) -> datetime | None:
     """Fallback extraction via OpenAI. Returns a tz-aware datetime or None."""
     try:
-        from openai import OpenAI
+        from openai_client import get_client
 
-        client = OpenAI()
+        client = get_client()
         system = (
             "Extract a reminder from the user's message. "
             "Return strict JSON: {\"is_reminder\": bool, \"remind_at\": string|null}. "

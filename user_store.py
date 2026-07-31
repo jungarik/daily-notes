@@ -1,15 +1,11 @@
-"""Per-chat settings (currently just timezone)."""
+"""Per-chat settings (timezone, language)."""
 
-import os
-
-import psycopg
-
-DATABASE_URL = os.environ["DATABASE_URL"]
+from db import cursor
 
 
 def get_timezone(chat_id: int) -> str | None:
     """Return the chat's IANA timezone name, or None if unset."""
-    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             "SELECT timezone FROM user_settings WHERE chat_id = %s;", (chat_id,)
         )
@@ -19,7 +15,7 @@ def get_timezone(chat_id: int) -> str | None:
 
 def set_timezone(chat_id: int, timezone: str) -> None:
     """Upsert the chat's timezone (leaves language untouched)."""
-    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             """
             INSERT INTO user_settings (chat_id, timezone)
@@ -33,7 +29,7 @@ def set_timezone(chat_id: int, timezone: str) -> None:
 
 def get_language(chat_id: int) -> str | None:
     """Return the chat's language code, or None if unset."""
-    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             "SELECT language FROM user_settings WHERE chat_id = %s;", (chat_id,)
         )
@@ -43,7 +39,7 @@ def get_language(chat_id: int) -> str | None:
 
 def set_language(chat_id: int, language: str) -> None:
     """Upsert the chat's language (leaves timezone untouched)."""
-    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             """
             INSERT INTO user_settings (chat_id, language)
