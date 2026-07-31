@@ -46,6 +46,20 @@ replies with the transcript once saved. Use `/search <query>` to find the most
 semantically similar notes (matched at the chunk level, deduped to one row per
 note).
 
+## Commands
+
+A localized command menu is registered on startup (the Telegram Menu button).
+
+| command      | what it does                                  |
+|--------------|-----------------------------------------------|
+| `/start`     | welcome message                               |
+| `/help`      | overview of everything the bot can do         |
+| `/search`    | semantic search of your notes                 |
+| `/reminders` | list upcoming reminders                       |
+| `/timezone`  | show/set your timezone                        |
+| `/language`  | show/set your language (en/uk)                |
+| `/user`      | your current settings (language, tz, reminders)|
+
 ## Reminders
 
 `reminders.py` detects whether a message asks to be reminded and extracts the

@@ -57,6 +57,35 @@ def claim_due_reminders(now, stale_before, limit: int = 50):
         return cur.fetchall()
 
 
+def upcoming_reminders(chat_id: int, limit: int = 10):
+    """Return [(id, remind_at, text, status)] of a chat's active reminders."""
+    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, remind_at, text, status
+            FROM reminders
+            WHERE chat_id = %s AND status IN ('scheduled', 'postponed')
+            ORDER BY remind_at
+            LIMIT %s;
+            """,
+            (chat_id, limit),
+        )
+        return cur.fetchall()
+
+
+def count_active(chat_id: int) -> int:
+    """Count a chat's active (scheduled/postponed) reminders."""
+    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FROM reminders
+            WHERE chat_id = %s AND status IN ('scheduled', 'postponed');
+            """,
+            (chat_id,),
+        )
+        return cur.fetchone()[0]
+
+
 def set_status(reminder_id: int, status: str) -> None:
     """Move a reminder to a new status (e.g. 'done', 'canceled')."""
     with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:

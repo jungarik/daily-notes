@@ -25,13 +25,19 @@ import user_store
 from i18n import t
 from migrate import run_migrations
 from reminders import extract_reminder, DEFAULT_TZ
+import reminder_store
 from reminder_store import (
     create_reminder,
     claim_due_reminders,
     set_status,
     postpone,
 )
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     MessageHandler,
@@ -299,6 +305,43 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t(lang, "lang_set", lang=lang))
 
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/start — welcome message."""
+    await update.message.reply_text(t(user_locale(update.message.chat_id), "start"))
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/help — overview of functionality."""
+    await update.message.reply_text(t(user_locale(update.message.chat_id), "help"))
+
+
+async def user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/user — show the chat's current settings."""
+    chat_id = update.message.chat_id
+    locale = user_locale(chat_id)
+    tz = user_store.get_timezone(chat_id) or f"{DEFAULT_TZ} (default)"
+    count = reminder_store.count_active(chat_id)
+    await update.message.reply_text(
+        t(locale, "user_settings", lang=locale, tz=tz, count=count)
+    )
+
+
+async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reminders — list the chat's upcoming reminders."""
+    chat_id = update.message.chat_id
+    locale = user_locale(chat_id)
+    tz = user_tz(chat_id)
+    rows = reminder_store.upcoming_reminders(chat_id)
+    if not rows:
+        await update.message.reply_text(t(locale, "reminders_none"))
+        return
+    lines = [
+        f"{i}. {remind_at.astimezone(tz):%Y-%m-%d %H:%M} — {text}"
+        for i, (_id, remind_at, text, _status) in enumerate(rows, 1)
+    ]
+    await update.message.reply_text(t(locale, "reminders_header") + "\n" + "\n".join(lines))
+
+
 def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -383,14 +426,30 @@ async def _reminder_loop(app):
         await asyncio.sleep(REMINDER_POLL_SECONDS)
 
 
+# Commands shown in the Telegram menu (order matters), by key.
+MENU_COMMANDS = ["start", "help", "search", "reminders", "timezone", "language", "user"]
+
+
+def _menu(locale: str) -> list[BotCommand]:
+    return [BotCommand(name, t(locale, f"cmd_{name}")) for name in MENU_COMMANDS]
+
+
 async def _post_init(app):
     app.create_task(_reminder_loop(app))
     logger.info("Reminder dispatcher started (every %ss).", REMINDER_POLL_SECONDS)
+    # Default menu (English) + a Ukrainian menu for uk Telegram clients.
+    await app.bot.set_my_commands(_menu("en"))
+    await app.bot.set_my_commands(_menu("uk"), language_code="uk")
+    logger.info("Bot command menu set.")
 
 
 def main():
     run_migrations()
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("user", user_command))
+    app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("language", language_command))

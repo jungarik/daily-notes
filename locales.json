@@ -23,7 +23,19 @@
     "btn_snooze_tomorrow": "Tomorrow",
     "canceled": "❌ Canceled",
     "done": "✅ Done",
-    "snoozed": "😴 Snoozed to {when}"
+    "snoozed": "😴 Snoozed to {when}",
+    "start": "👋 Hi! I save your text and voice notes and can remind you.\nType /help to see everything I can do.",
+    "help": "🤖 What I can do:\n\n• Send a text or voice note — I save it (voice is transcribed).\n• If it sounds like a reminder, I schedule it and ping you.\n\nCommands:\n/search <query> — semantic search of your notes\n/reminders — upcoming reminders\n/timezone — set your timezone\n/language — set your language\n/user — your settings\n/help — this message",
+    "user_settings": "⚙️ Your settings\nLanguage: {lang}\nTimezone: {tz}\nActive reminders: {count}",
+    "reminders_header": "⏰ Upcoming reminders:",
+    "reminders_none": "You have no upcoming reminders.",
+    "cmd_start": "Start / welcome",
+    "cmd_help": "What I can do",
+    "cmd_search": "Search your notes",
+    "cmd_reminders": "Upcoming reminders",
+    "cmd_timezone": "Set your timezone",
+    "cmd_language": "Set your language",
+    "cmd_user": "Your settings"
   },
   "uk": {
     "saved": "Збережено ✅",
@@ -49,6 +61,18 @@
     "btn_snooze_tomorrow": "Завтра",
     "canceled": "❌ Скасовано",
     "done": "✅ Готово",
-    "snoozed": "😴 Відкладено до {when}"
+    "snoozed": "😴 Відкладено до {when}",
+    "start": "👋 Привіт! Я зберігаю ваші текстові та голосові нотатки і можу нагадувати.\nНапишіть /help, щоб побачити всі можливості.",
+    "help": "🤖 Що я вмію:\n\n• Надішліть текст або голосове — я збережу (голосове розпізнаю).\n• Якщо це схоже на нагадування, я запланую його та нагадаю.\n\nКоманди:\n/search <запит> — семантичний пошук у нотатках\n/reminders — найближчі нагадування\n/timezone — встановити часовий пояс\n/language — встановити мову\n/user — ваші налаштування\n/help — це повідомлення",
+    "user_settings": "⚙️ Ваші налаштування\nМова: {lang}\nЧасовий пояс: {tz}\nАктивні нагадування: {count}",
+    "reminders_header": "⏰ Найближчі нагадування:",
+    "reminders_none": "У вас немає найближчих нагадувань.",
+    "cmd_start": "Старт / привітання",
+    "cmd_help": "Що я вмію",
+    "cmd_search": "Пошук у нотатках",
+    "cmd_reminders": "Найближчі нагадування",
+    "cmd_timezone": "Встановити часовий пояс",
+    "cmd_language": "Встановити мову",
+    "cmd_user": "Ваші налаштування"
   }
 }
