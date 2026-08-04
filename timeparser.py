@@ -9,7 +9,7 @@ anchor) and the LLM fallback. `reminders.py` orchestrates these.
 import re
 import json
 import logging
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import config
 
@@ -251,3 +251,109 @@ def llm_parse(text: str, now: datetime) -> datetime | None:
     except Exception:
         logger.exception("LLM reminder extraction failed")
         return None
+
+
+# --- Agenda ranges ("what do I have to do today?") --------------------------
+
+# Phrases that signal an agenda / to-do question (Ukrainian + English).
+AGENDA_HINT = re.compile(
+    r"what\s+(do\s+i\s+have\s+to\s+do|to\s+do|should\s+i\s+do|'?s\s+on)|"
+    r"\bmy\s+(tasks|to-?dos|agenda|plans)\b|"
+    r"\bto-?do\b|"
+    r"що\s+(мені\s+)?(треба\s+|потрібно\s+|маю\s+)?(з)?робити|"
+    r"мо[її]\s+(завдання|справи|плани)|"
+    r"план[иі]\s+на|"
+    r"що\s+(в\s+мене\s+)?на\s+(сьогодні|завтра|тиждень)",
+    re.IGNORECASE,
+)
+
+# A temporal phrase the rule-based range doesn't recognize → hand to the LLM.
+_OTHER_TIMEWORD = re.compile(
+    r"weekend|month|\bnext\b|\d+\s*(day|week|month)|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"вихідн|місяц|наступн|через\s+\d|"
+    r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ",
+    re.IGNORECASE,
+)
+
+
+def looks_like_agenda(text: str) -> bool:
+    """True if the message reads like a 'what do I have to do' question."""
+    return bool(AGENDA_HINT.search(text))
+
+
+def _day_start(now: datetime) -> datetime:
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def rule_based_range(text: str, now: datetime):
+    """Resolve today/tomorrow/this-week from keywords.
+
+    Returns (start, end, key) with tz-aware bounds (end exclusive), or None when
+    some other temporal phrase is present so the LLM can handle it.
+    """
+    t = text.lower()
+    start = _day_start(now)
+    if re.search(r"\btomorrow\b|завтра", t):
+        start += timedelta(days=1)
+        return start, start + timedelta(days=1), "tomorrow"
+    if re.search(r"\bweek\b|тижд|тижн", t):
+        return start, start + timedelta(days=7), "week"
+    if re.search(r"\btoday\b|\btonight\b|сьогодні", t):
+        return start, start + timedelta(days=1), "today"
+    if _OTHER_TIMEWORD.search(t):
+        return None  # e.g. "weekend", "next 3 days", "friday" → LLM
+    return start, start + timedelta(days=1), "today"  # plain query → today
+
+
+def _llm_range(text: str, now: datetime):
+    """LLM fallback: (start, end, 'range') for arbitrary phrasings, or None."""
+    try:
+        from openai_client import get_client
+
+        client = get_client()
+        system = (
+            "The user asks what they need to do over some period. "
+            "Return strict JSON {\"start\": \"YYYY-MM-DD\", \"end\": \"YYYY-MM-DD\"} "
+            "for the inclusive date range they mean. "
+            f"Today is {now.strftime('%Y-%m-%d')} ({now.tzname()}). "
+            "If unclear, use today for both dates."
+        )
+        resp = client.chat.completions.create(
+            model=REMINDER_LLM_MODEL,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+        )
+        data = json.loads(resp.choices[0].message.content)
+        start_d = date.fromisoformat(data["start"])
+        end_d = date.fromisoformat(data["end"])
+        tz = now.tzinfo
+        start = datetime(start_d.year, start_d.month, start_d.day, tzinfo=tz)
+        end = datetime(end_d.year, end_d.month, end_d.day, tzinfo=tz) + timedelta(days=1)
+        return start, end, "range"
+    except Exception:
+        logger.exception("LLM agenda range failed")
+        return None
+
+
+def parse_agenda(text: str, now: datetime):
+    """Hybrid agenda parser: text → (start, end, key) range, or None.
+
+    None means the text isn't an agenda question. Otherwise the range is resolved
+    by rules first, then the LLM, defaulting to today. `key` is one of
+    today / tomorrow / week / range (used to pick the reply header).
+    """
+    if not looks_like_agenda(text):
+        return None
+    rng = rule_based_range(text, now)
+    if rng is not None:
+        return rng
+    rng = _llm_range(text, now)
+    if rng is not None:
+        return rng
+    start = _day_start(now)
+    return start, start + timedelta(days=1), "today"

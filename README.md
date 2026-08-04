@@ -20,7 +20,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `message_store.py`| `messages` row persistence                                 |
 | `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
-| `reminders.py`    | reminder time/intent extraction (dateparser + LLM)         |
+| `reminders.py`    | reminder extraction entry point (`extract_reminder`)       |
+| `timeparser.py`   | pure time parsing: reminder datetimes + agenda date ranges |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
 | `user_store.py`   | `user_settings` (timezone, language)                       |
 | `i18n.py`, `locales.json` | localization                                       |
@@ -147,6 +148,18 @@ Best-practice behaviours baked in:
 
 Reminder statuses: `scheduled` (waiting), `postponed` (snoozed to a new time),
 `sending` (claimed, being delivered), `done` (delivered), `canceled`.
+
+### Agenda-scoped search
+
+`timeparser.parse_agenda(text, now)` is a hybrid, pure function returning a
+`(start, end, key)` date range or `None` (rules cover today / tomorrow / this
+week; anything else — weekend, "next 3 days", weekdays — falls back to the LLM).
+
+The bot's `/search` handler runs it on the query and, when a range comes back
+(e.g. "what do I have to do today?"), passes `remind_start`/`remind_end` into
+`semantic.search` → `chunk_store.search_chunks`, which restricts results to
+chunks whose note has an active reminder due in that window. `semantic.search`
+itself stays pure — it only takes the two dates; ordinary queries pass `None`.
 
 Times resolve against `REMINDER_TZ` (default `Europe/Kyiv`). For now this is
 detection only — the bot replies with a "📅 Looks like a reminder for …"

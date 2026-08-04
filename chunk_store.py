@@ -32,8 +32,18 @@ def save_chunks(message_id: int, chunks: list[dict]) -> None:
             )
 
 
-def search_chunks(chat_id: int, query_embedding: str, limit: int = 5) -> list[dict]:
+def search_chunks(
+    chat_id: int,
+    query_embedding: str,
+    limit: int = 5,
+    remind_start=None,
+    remind_end=None,
+) -> list[dict]:
     """Top-k matching chunks with analytics for downstream (LLM) use.
+
+    If `remind_start`/`remind_end` are given, results are restricted to chunks
+    whose message has an active reminder due in [remind_start, remind_end) — used
+    to answer "what do I have to do today?" style queries.
 
     Each hit is a dict:
         rank         1-based position in the result set
@@ -50,9 +60,22 @@ def search_chunks(chat_id: int, query_embedding: str, limit: int = 5) -> list[di
         token_count  approximate tokens in the chunk
         metadata     the chunk's JSONB metadata
     """
+    params: list = [query_embedding, chat_id]
+    reminder_filter = ""
+    if remind_start is not None and remind_end is not None:
+        reminder_filter = """
+                  AND EXISTS (
+                      SELECT 1 FROM reminders r
+                      WHERE r.message_id = mc.message_id
+                        AND r.status IN ('scheduled', 'postponed')
+                        AND r.remind_at >= %s AND r.remind_at < %s
+                  )"""
+        params += [remind_start, remind_end]
+    params.append(limit)
+
     with cursor() as cur:
         cur.execute(
-            """
+            f"""
             WITH scored AS (
                 SELECT mc.id            AS chunk_id,
                        mc.message_id    AS message_id,
@@ -65,7 +88,7 @@ def search_chunks(chat_id: int, query_embedding: str, limit: int = 5) -> list[di
                        (mc.embedding <=> %s::vector) AS distance
                 FROM message_chunks mc
                 JOIN messages m ON m.id = mc.message_id
-                WHERE m.chat_id = %s
+                WHERE m.chat_id = %s{reminder_filter}
                 ORDER BY distance
                 LIMIT %s
             )
@@ -77,7 +100,7 @@ def search_chunks(chat_id: int, query_embedding: str, limit: int = 5) -> list[di
             FROM scored s
             ORDER BY s.distance;
             """,
-            (query_embedding, chat_id, limit),
+            tuple(params),
         )
         rows = cur.fetchall()
 

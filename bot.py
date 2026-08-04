@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 import semantic
+import timeparser
 import message_store
 import chunk_store
 import transcription
@@ -145,7 +146,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t(locale, "search_usage"))
         return
 
-    results = semantic.search(update.message.chat_id, query)
+    chat_id = update.message.chat_id
+    agenda_range = timeparser.parse_agenda(query, datetime.now(user_tz(chat_id)))
+    remind_start, remind_end = agenda_range[:2] if agenda_range else (None, None)
+    results = semantic.search(chat_id, query, remind_start=remind_start, remind_end=remind_end)
     if not results:
         await update.message.reply_text(t(locale, "search_none"))
         return

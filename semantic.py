@@ -2,7 +2,7 @@
 Semantic layer: chunking, embeddings, and semantic search.
 
 Isolated from Telegram and from raw persistence — it computes chunks/embeddings
-and delegates storage/queries to message_store.
+and delegates storage/queries to chunk_store.
 """
 
 import config
@@ -42,6 +42,14 @@ def build_chunks(text: str) -> list[dict]:
     ]
 
 
-def search(chat_id: int, query: str, limit: int = 5):
-    """Embed the query and return the most similar notes for this chat."""
-    return chunk_store.search_chunks(chat_id, embed(query), limit)
+def search(chat_id: int, query: str, remind_start=None, remind_end=None, limit: int = 5):
+    """Semantic search over the chat's chunks.
+
+    If `remind_start`/`remind_end` are given, results are restricted to chunks
+    whose note has an active reminder due in [remind_start, remind_end). The
+    caller derives that range (e.g. via timeparser.parse_agenda).
+    """
+    return chunk_store.search_chunks(
+        chat_id, embed(query), limit,
+        remind_start=remind_start, remind_end=remind_end,
+    )
