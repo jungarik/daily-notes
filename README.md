@@ -85,6 +85,20 @@ A localized command menu is registered on startup (the Telegram Menu button).
 | `/language`  | show/set your language (en/uk)                |
 | `/user`      | your current settings (language, tz, reminders)|
 
+## Semantic search results
+
+`semantic.search()` (via `chunk_store.search_chunks`) returns the top-k matching
+**chunks**, each as a dict with analytics meant to be handed to an LLM:
+
+`rank`, `similarity` (0–1 cosine), `distance` (raw cosine), `rel_to_top`
+(similarity gap behind the #1 hit), `content` (the matched chunk text),
+`message_id`, `chunk_id`, `chunk_index`, `chunk_count`, `source_type`,
+`created_at`, `token_count`, and `metadata`.
+
+Cosine (`<=>`) is used because the HNSW index is `vector_cosine_ops`; similarity
+is `1 - distance`. Ranking uses a `ROW_NUMBER()` window over the distance-ordered
+top-k.
+
 ## Reminders
 
 `reminders.py` detects whether a message asks to be reminded and extracts the

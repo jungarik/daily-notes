@@ -150,10 +150,13 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t(locale, "search_none"))
         return
 
-    lines = [
-        f"• {text}  ({created.strftime('%Y-%m-%d %H:%M')})"
-        for text, created, _distance in results
-    ]
+    lines = []
+    for h in results:
+        snippet = h["content"] if len(h["content"]) <= 200 else h["content"][:200] + "…"
+        lines.append(
+            f"{h['rank']}. {snippet}\n"
+            f"   {h['similarity']:.0%} · {h['created_at']:%Y-%m-%d %H:%M}"
+        )
     await update.message.reply_text(t(locale, "search_header") + "\n" + "\n".join(lines))
 
 
