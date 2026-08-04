@@ -2,6 +2,7 @@
 -- A reminder belongs to the message it was parsed from (message_id FK) and moves
 -- through a small set of statuses. The partial index keeps the dispatcher's
 -- "what's due now" query cheap by only indexing rows that can still fire.
+-- (The text column is later dropped in 0007 in favour of a join on messages.)
 
 CREATE TABLE IF NOT EXISTS reminders (
     id          SERIAL PRIMARY KEY,

@@ -82,7 +82,7 @@ async def offer_reminder(msg, message_id: int, text: str):
     if not (rem.is_reminder and rem.remind_at):
         return
     locale = user_locale(msg.chat_id)
-    reminder_id = create_reminder(message_id, msg.chat_id, rem.remind_at, rem.text)
+    reminder_id = create_reminder(message_id, msg.chat_id, rem.remind_at)
     when = rem.remind_at.astimezone(tz)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
@@ -148,8 +148,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.message.chat_id
     agenda_range = timeparser.parse_agenda(query, datetime.now(user_tz(chat_id)))
-    remind_start, remind_end = agenda_range[:2] if agenda_range else (None, None)
-    results = semantic.search(chat_id, query, remind_start=remind_start, remind_end=remind_end)
+    agenda_start, agenda_end = agenda_range[:2] if agenda_range else (None, None)
+    results = semantic.search(chat_id, query, remind_start=agenda_start, remind_end=agenda_end)
     if not results:
         await update.message.reply_text(t(locale, "search_none"))
         return

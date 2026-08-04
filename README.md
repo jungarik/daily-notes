@@ -212,10 +212,9 @@ at chunk granularity:
 | column     | type        | notes                                            |
 |------------|-------------|--------------------------------------------------|
 | id         | serial      | primary key                                      |
-| message_id | integer     | FK → `messages(id)`, `ON DELETE CASCADE`         |
+| message_id | integer     | FK → `messages(id)`, `ON DELETE CASCADE` (text comes from here) |
 | chat_id    | bigint      | chat to deliver the reminder to                  |
 | remind_at  | timestamptz | when it should fire                              |
-| text       | text        | reminder body                                    |
 | status     | text        | scheduled / postponed / sending / done / canceled |
 | created_at | timestamptz | defaults to `now()`                              |
 | updated_at | timestamptz | bumped on status change                          |
