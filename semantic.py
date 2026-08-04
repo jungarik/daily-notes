@@ -6,7 +6,7 @@ and delegates storage/queries to message_store.
 """
 
 import config
-import message_store
+import chunk_store
 from openai_client import get_client
 
 
@@ -44,4 +44,4 @@ def build_chunks(text: str) -> list[dict]:
 
 def search(chat_id: int, query: str, limit: int = 5):
     """Embed the query and return the most similar notes for this chat."""
-    return message_store.search_chunks(chat_id, embed(query), limit)
+    return chunk_store.search_chunks(chat_id, embed(query), limit)

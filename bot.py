@@ -16,6 +16,7 @@ import config
 import i18n
 import semantic
 import message_store
+import chunk_store
 import transcription
 import user_store
 import reminder_store
@@ -95,7 +96,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Store every incoming text message and its chunks."""
     msg = update.message
     chunks = semantic.build_chunks(msg.text)
-    message_id = message_store.save_message(msg.chat_id, msg.from_user.username, msg.text, chunks)
+    message_id = message_store.save_message(msg.chat_id, msg.from_user.username, msg.text)
+    chunk_store.save_chunks(message_id, chunks)
     logger.info("Saved message from %s (%d chunk(s))", msg.from_user.username, len(chunks))
     await msg.reply_text(t(user_locale(msg.chat_id), "saved"))
     await offer_reminder(msg, message_id, msg.text)
@@ -125,11 +127,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg.chat_id,
         msg.from_user.username,
         text,
-        chunks,
         source_type="voice",
         audio=audio_bytes,
         audio_mime=voice.mime_type or "audio/ogg",
     )
+    chunk_store.save_chunks(message_id, chunks)
     logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, len(chunks))
     await msg.reply_text(t(locale, "transcribed_saved", text=text))
     await offer_reminder(msg, message_id, text)

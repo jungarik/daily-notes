@@ -17,7 +17,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
 | `semantic.py`     | chunking + embeddings + semantic search                    |
-| `message_store.py`| `messages` / `message_chunks` persistence                  |
+| `message_store.py`| `messages` row persistence                                 |
+| `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `reminders.py`    | reminder time/intent extraction (dateparser + LLM)         |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
