@@ -95,6 +95,13 @@ defaults: morning/вранці → 09:00, afternoon/вдень → 15:00, evenin
 19:00, night/вночі → 21:00; a bare date defaults to 09:00. Only when it looks
 time-bearing but the rules can't pin a time does it fall back to the LLM.
 
+Relative offsets are handled deterministically (no dateparser needed), including
+indefinite quantities: `через 5 хвилин`, `через кілька хвилин`, `через кілька
+годин/днів`, `in a few minutes`, `через пару годин`. An indefinite quantity
+("кілька"/"a few") equals `REMINDER_FEW_COUNT` (default 5; "пару"/"couple" = 2),
+and a vague `пізніше`/`later` resolves to `REMINDER_LATER` (default `10m`; set
+`1d` for a day, etc.).
+
 [`dateparser`]: https://dateparser.readthedocs.io/
 
 When a message parses as a reminder, a row is written to the `reminders` table

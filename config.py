@@ -30,6 +30,11 @@ OPENAI_STT_PROMPT = os.environ.get(
 REMINDER_TZ = os.environ.get("REMINDER_TZ", "Europe/Kyiv")
 DEFAULT_TZ = ZoneInfo(REMINDER_TZ)
 REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
+# How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
+# кілька хвилин" → in REMINDER_FEW_COUNT minutes.
+REMINDER_FEW_COUNT = int(os.environ.get("REMINDER_FEW_COUNT", "5"))
+# What a vague "later"/"пізніше" resolves to. Duration like 10m / 2h / 1d.
+REMINDER_LATER = os.environ.get("REMINDER_LATER", "10m")
 REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
 # A reminder stuck mid-send (crash) is reclaimed after this many seconds.
 SENDING_STALE_SECONDS = int(os.environ.get("REMINDER_SENDING_STALE_SECONDS", "120"))

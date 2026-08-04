@@ -55,10 +55,21 @@ TIME_HINT = re.compile(
     r"вранці|зранку|ранок|вдень|ввечері|увечері|вечір|вночі|ніч|опівдні|"
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
     r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ|"
-    r"\bin\s+\d|\bчерез\s+\d|\bat\s+\d|\d{1,2}:\d{2}|"
+    r"пізніше|later|кілька|декілька|пару|couple|few|через|"
+    r"\bin\s+\d|\bat\s+\d|\d{1,2}:\d{2}|"
     r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)",
     re.IGNORECASE,
 )
+
+# Relative-time units (Ukrainian stems + English).
+_REL_UNITS = [
+    (r"хвилин|хвил|minute|min\b", "minutes"),
+    (r"годин|hour|hr\b", "hours"),
+    (r"дн(і|ів|я)|день|day", "days"),
+    (r"тижн|тиждень|week", "weeks"),
+]
+# Indefinite quantities → a count. None means "use config.REMINDER_FEW_COUNT".
+_FEW_WORDS = {"пару": 2, "couple": 2, "кілька": None, "декілька": None, "few": None}
 
 # An explicit calendar-date word is present (used to decide "roll to tomorrow").
 DATE_HINT = re.compile(
@@ -144,15 +155,61 @@ def _search_anchor(text: str, now: datetime) -> datetime | None:
     return dt.astimezone(now.tzinfo)
 
 
+def _duration(spec: str) -> timedelta:
+    """Parse a compact duration like '10m', '2h', '1d' into a timedelta."""
+    m = re.fullmatch(r"\s*(\d+)\s*([mhd])\s*", spec.lower())
+    if not m:
+        return timedelta(minutes=10)
+    amount, unit = int(m.group(1)), m.group(2)
+    return {"m": timedelta(minutes=amount),
+            "h": timedelta(hours=amount),
+            "d": timedelta(days=amount)}[unit]
+
+
+def _parse_relative(text: str, now: datetime) -> datetime | None:
+    """Handle relative offsets, incl. indefinite quantities and vague 'later'.
+
+    Examples: 'через 5 хвилин', 'через кілька годин', 'in a few days',
+    'пізніше'/'later' (→ config.REMINDER_LATER).
+    """
+    t = text.lower()
+
+    if re.search(r"\bпізніше\b|\blater\b", t):
+        return now + _duration(config.REMINDER_LATER)
+
+    m = re.search(
+        r"(?:\bчерез|\bin)\s+(\d+|кілька|декілька|пару|a few|few|couple)\s+([^\s,.!?]+)",
+        t,
+    )
+    if not m:
+        return None
+    qty_word, unit_word = m.group(1).strip(), m.group(2)
+    if qty_word.isdigit():
+        count = int(qty_word)
+    else:
+        key = "few" if qty_word == "a few" else qty_word
+        few = _FEW_WORDS.get(key)
+        count = few if few is not None else config.REMINDER_FEW_COUNT
+    for pattern, unit in _REL_UNITS:
+        if re.search(pattern, unit_word):
+            return now + timedelta(**{unit: count})
+    return None
+
+
 def rule_based_parse(text: str, now: datetime) -> datetime | None:
     """Resolve common UA/EN phrases to a concrete datetime, or None.
 
-    dateparser supplies the date anchor; we set the time from an explicit clock,
-    a part-of-day default, or the 09:00 fallback.
+    Relative offsets are handled deterministically first; otherwise dateparser
+    supplies the date anchor and we set the time from an explicit clock, a
+    part-of-day default, or the 09:00 fallback.
     """
+    relative = _parse_relative(text, now)
+    if relative is not None:
+        return relative
+
     anchor = _search_anchor(text, now)
 
-    # Pure relative offset ("in 30 minutes"): keep dateparser's exact datetime.
+    # Pure relative offset that dateparser caught: keep its exact datetime.
     if RELATIVE_HINT.search(text) and anchor is not None:
         return anchor
 
