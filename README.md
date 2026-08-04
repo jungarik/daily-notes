@@ -94,7 +94,8 @@ A localized command menu is registered on startup (the Telegram Menu button).
 `rank`, `similarity` (0–1 cosine), `distance` (raw cosine), `rel_to_top`
 (similarity gap behind the #1 hit), `content` (the matched chunk text),
 `message_id`, `chunk_id`, `chunk_index`, `chunk_count`, `source_type`,
-`created_at`, `token_count`, and `metadata`.
+`created_at`, `remind_at` (the note's next active reminder — the in-range one
+when filtering, else `None`), `token_count`, and `metadata`.
 
 Cosine (`<=>`) is used because the HNSW index is `vector_cosine_ops`; similarity
 is `1 - distance`. Ranking uses a `ROW_NUMBER()` window over the distance-ordered
@@ -152,14 +153,17 @@ Reminder statuses: `scheduled` (waiting), `postponed` (snoozed to a new time),
 ### Agenda-scoped search
 
 `timeparser.parse_agenda(text, now)` is a hybrid, pure function returning a
-`(start, end, key)` date range or `None` (rules cover today / tomorrow / this
-week; anything else — weekend, "next 3 days", weekdays — falls back to the LLM).
+`(start, end, key)` date range or `None`. It triggers on an agenda question
+("what do I have to do today?") **or** a bare range keyword ("today", "tomorrow",
+"this week", "сьогодні", "завтра"). Rules cover today / tomorrow / this week;
+anything else (weekend, "next 3 days", weekdays) falls back to the LLM.
 
-The bot's `/search` handler runs it on the query and, when a range comes back
-(e.g. "what do I have to do today?"), passes `remind_start`/`remind_end` into
-`semantic.search` → `chunk_store.search_chunks`, which restricts results to
-chunks whose note has an active reminder due in that window. `semantic.search`
-itself stays pure — it only takes the two dates; ordinary queries pass `None`.
+The bot's `/search` handler runs it on the query and, when a range comes back,
+passes `remind_start`/`remind_end` into `semantic.search` →
+`chunk_store.search_chunks`, which restricts results to chunks whose note has an
+active reminder due in that window (via a `LEFT JOIN LATERAL` on `reminders` plus
+`WHERE rem.remind_at IS NOT NULL`) and surfaces that `remind_at`. `semantic.search`
+stays pure — it only takes the two dates; ordinary queries pass `None`.
 
 Times resolve against `REMINDER_TZ` (default `Europe/Kyiv`). For now this is
 detection only — the bot replies with a "📅 Looks like a reminder for …"

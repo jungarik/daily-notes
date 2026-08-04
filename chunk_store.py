@@ -57,21 +57,19 @@ def search_chunks(
         chunk_count  total chunks in that message
         source_type  'text' or 'voice'
         created_at   when the note was saved (recency)
+        remind_at    the note's next active reminder (in range when filtering), or None
         token_count  approximate tokens in the chunk
         metadata     the chunk's JSONB metadata
     """
-    params: list = [query_embedding, chat_id]
-    reminder_filter = ""
-    if remind_start is not None and remind_end is not None:
-        reminder_filter = """
-                  AND EXISTS (
-                      SELECT 1 FROM reminders r
-                      WHERE r.message_id = mc.message_id
-                        AND r.status IN ('scheduled', 'postponed')
-                        AND r.remind_at >= %s AND r.remind_at < %s
-                  )"""
+    filtering = remind_start is not None and remind_end is not None
+    lateral_range = "AND r.remind_at >= %s AND r.remind_at < %s" if filtering else ""
+    # When filtering, require the note to actually have a reminder in the range.
+    where_filter = "AND rem.remind_at IS NOT NULL" if filtering else ""
+
+    params: list = [query_embedding]
+    if filtering:
         params += [remind_start, remind_end]
-    params.append(limit)
+    params += [chat_id, limit]
 
     with cursor() as cur:
         cur.execute(
@@ -85,15 +83,25 @@ def search_chunks(
                        mc.metadata      AS metadata,
                        m.source_type    AS source_type,
                        m.created_at     AS created_at,
+                       rem.remind_at    AS remind_at,
                        (mc.embedding <=> %s::vector) AS distance
                 FROM message_chunks mc
                 JOIN messages m ON m.id = mc.message_id
-                WHERE m.chat_id = %s{reminder_filter}
+                LEFT JOIN LATERAL (
+                    SELECT r.remind_at FROM reminders r
+                    WHERE r.message_id = mc.message_id
+                      AND r.status IN ('scheduled', 'postponed')
+                      {lateral_range}
+                    ORDER BY r.remind_at
+                    LIMIT 1
+                ) rem ON TRUE
+                WHERE m.chat_id = %s {where_filter}
                 ORDER BY distance
                 LIMIT %s
             )
             SELECT s.chunk_id, s.message_id, s.content, s.chunk_index,
-                   s.token_count, s.metadata, s.source_type, s.created_at, s.distance,
+                   s.token_count, s.metadata, s.source_type, s.created_at,
+                   s.remind_at, s.distance,
                    ROW_NUMBER() OVER (ORDER BY s.distance) AS rank,
                    (SELECT count(*) FROM message_chunks c2
                     WHERE c2.message_id = s.message_id) AS chunk_count
@@ -107,13 +115,13 @@ def search_chunks(
     hits: list[dict] = []
     top_similarity = None
     for r in rows:
-        distance = float(r[8])
+        distance = float(r[9])
         similarity = 1.0 - distance
         if top_similarity is None:
             top_similarity = similarity
         hits.append(
             {
-                "rank": r[9],
+                "rank": r[10],
                 "similarity": round(similarity, 4),
                 "distance": round(distance, 4),
                 "rel_to_top": round(top_similarity - similarity, 4),
@@ -121,9 +129,10 @@ def search_chunks(
                 "message_id": r[1],
                 "chunk_id": r[0],
                 "chunk_index": r[3],
-                "chunk_count": r[10],
+                "chunk_count": r[11],
                 "source_type": r[6],
                 "created_at": r[7],
+                "remind_at": r[8],
                 "token_count": r[4],
                 "metadata": r[5],
             }

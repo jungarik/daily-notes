@@ -277,9 +277,19 @@ _OTHER_TIMEWORD = re.compile(
 )
 
 
+# An explicit range keyword is enough to scope a search by reminder date, even
+# without the full agenda-question phrasing (e.g. searching just "today").
+_RANGE_KEYWORD = re.compile(
+    r"\btoday\b|\btomorrow\b|\bthis\s+week\b|"
+    r"\bсьогодні\b|\bзавтра\b|цього\s+тижня|на\s+тиждень",
+    re.IGNORECASE,
+)
+
+
 def looks_like_agenda(text: str) -> bool:
-    """True if the message reads like a 'what do I have to do' question."""
-    return bool(AGENDA_HINT.search(text))
+    """True if the message reads like a 'what do I have to do' question, or just
+    carries an explicit date-range keyword (today / tomorrow / this week)."""
+    return bool(AGENDA_HINT.search(text) or _RANGE_KEYWORD.search(text))
 
 
 def _day_start(now: datetime) -> datetime:
