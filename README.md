@@ -86,6 +86,16 @@ A localized command menu is registered on startup (the Telegram Menu button).
 | `/language`  | show/set your language (en/uk)                |
 | `/user`      | your current settings (language, tz, reminders)|
 
+## Answers (RAG)
+
+`semantic.answer(chat_id, query, ...)` runs the search, then sends the query plus
+the retrieved chunks — with their analysis (similarity, reminder time, recency,
+source) — to an LLM (`ANSWER_LLM_MODEL`) with a system prompt telling it to pick
+the single most relevant note, ground the answer only in the notes, mention any
+reminder time, and reply naturally in the user's language. `/search` returns this
+generated answer. Returns `None` when nothing is retrieved; on an LLM error it
+falls back to the top chunk's text.
+
 ## Semantic search results
 
 `semantic.search()` (via `chunk_store.search_chunks`) returns the top-k matching

@@ -150,21 +150,12 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tz = user_tz(chat_id)
     agenda_range = timeparser.parse_agenda(query, datetime.now(tz))
     agenda_start, agenda_end = agenda_range[:2] if agenda_range else (None, None)
-    results = semantic.search(chat_id, query, remind_start=agenda_start, remind_end=agenda_end)
-    if not results:
-        await update.message.reply_text(t(locale, "search_none"))
-        return
-
-    lines = []
-    for h in results:
-        snippet = h["content"] if len(h["content"]) <= 200 else h["content"][:200] + "…"
-        meta = f"{h['similarity']:.0%}"
-        if h.get("remind_at"):
-            meta += f" · ⏰ {h['remind_at'].astimezone(tz):%Y-%m-%d %H:%M}"
-        else:
-            meta += f" · {h['created_at']:%Y-%m-%d %H:%M}"
-        lines.append(f"{h['rank']}. {snippet}\n   {meta}")
-    await update.message.reply_text(t(locale, "search_header") + "\n" + "\n".join(lines))
+    reply = semantic.answer(
+        chat_id, query,
+        remind_start=agenda_start, remind_end=agenda_end,
+        language=locale, tz=tz,
+    )
+    await update.message.reply_text(reply or t(locale, "search_none"))
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

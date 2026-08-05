@@ -1,13 +1,17 @@
 """
-Semantic layer: chunking, embeddings, and semantic search.
+Semantic layer: chunking, embeddings, semantic search, and RAG answers.
 
 Isolated from Telegram and from raw persistence — it computes chunks/embeddings
 and delegates storage/queries to chunk_store.
 """
 
+import logging
+
 import config
 import chunk_store
 from openai_client import get_client
+
+logger = logging.getLogger(__name__)
 
 
 def chunk_text(text: str, size: int = config.CHUNK_SIZE, overlap: int = config.CHUNK_OVERLAP):
@@ -53,3 +57,64 @@ def search(chat_id: int, query: str, remind_start=None, remind_end=None, limit: 
         chat_id, embed(query), limit,
         remind_start=remind_start, remind_end=remind_end,
     )
+
+
+def _format_hits(hits: list[dict], tz=None) -> str:
+    """Render retrieved chunks + their analysis as context for the LLM."""
+    blocks = []
+    for h in hits:
+        meta = [f"similarity {h['similarity']:.2f}"]
+        created = h["created_at"]
+        remind_at = h.get("remind_at")
+        if tz is not None:
+            created = created.astimezone(tz)
+            remind_at = remind_at.astimezone(tz) if remind_at else None
+        meta.append(f"saved {created:%Y-%m-%d %H:%M}")
+        if remind_at:
+            meta.append(f"reminder {remind_at:%Y-%m-%d %H:%M}")
+        meta.append(h["source_type"])
+        blocks.append(f"[note {h['rank']}] ({', '.join(meta)})\n{h['content']}")
+    return "\n\n".join(blocks)
+
+
+def answer(
+    chat_id: int,
+    query: str,
+    remind_start=None,
+    remind_end=None,
+    language: str = "en",
+    tz=None,
+    limit: int = 5,
+) -> str | None:
+    """Retrieve relevant chunks and let an LLM compose a natural answer.
+
+    Returns None when nothing was retrieved. On an LLM error, falls back to the
+    top chunk's text so the user still gets the underlying note.
+    """
+    hits = search(chat_id, query, remind_start, remind_end, limit)
+    if not hits:
+        return None
+
+    system = (
+        "You are the user's personal notes assistant. Answer the user's question "
+        "using ONLY the notes provided below — do not invent facts. Choose the "
+        "single most relevant note and base your answer on it; ignore the others. "
+        "If a note has a reminder time, mention it naturally. If none of the notes "
+        "actually answer the question, say you couldn't find anything about it. "
+        f"Reply in this language: {language}. Keep it short, warm, and conversational."
+    )
+    user = f"Question: {query}\n\nNotes:\n{_format_hits(hits, tz)}"
+
+    try:
+        resp = get_client().chat.completions.create(
+            model=config.ANSWER_LLM_MODEL,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception:
+        logger.exception("Answer generation failed; falling back to top chunk")
+        return hits[0]["content"]
