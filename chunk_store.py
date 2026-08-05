@@ -62,7 +62,7 @@ def search_chunks(
         metadata     the chunk's JSONB metadata
     """
     filtering = remind_start is not None and remind_end is not None
-    lateral_range = "AND r.remind_at >= %s AND r.remind_at < %s" if filtering else ""
+    remind_range = "AND r.remind_at >= %s AND r.remind_at < %s" if filtering else ""
     # When filtering, require the note to actually have a reminder in the range.
     where_filter = "AND rem.remind_at IS NOT NULL" if filtering else ""
 
@@ -87,14 +87,13 @@ def search_chunks(
                        (mc.embedding <=> %s::vector) AS distance
                 FROM message_chunks mc
                 JOIN messages m ON m.id = mc.message_id
-                LEFT JOIN LATERAL (
-                    SELECT r.remind_at FROM reminders r
-                    WHERE r.message_id = mc.message_id
-                      AND r.status IN ('scheduled', 'postponed')
-                      {lateral_range}
-                    ORDER BY r.remind_at
-                    LIMIT 1
-                ) rem ON TRUE
+                LEFT JOIN (
+                    SELECT r.message_id, MIN(r.remind_at) AS remind_at
+                    FROM reminders r
+                    WHERE r.status IN ('scheduled', 'postponed')
+                      {remind_range}
+                    GROUP BY r.message_id
+                ) rem ON rem.message_id = mc.message_id
                 WHERE m.chat_id = %s {where_filter}
                 ORDER BY distance
                 LIMIT %s
