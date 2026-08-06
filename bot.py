@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 import semantic
+import storage
 import timeparser
 import message_store
 import chunk_store
@@ -123,14 +124,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(t(locale, "transcribe_empty"))
         return
 
+    mime = voice.mime_type or "audio/ogg"
+    audio_key = storage.upload_audio(audio_bytes, content_type=mime)
+    audio_url = storage.public_url(audio_key)
     chunks = semantic.build_chunks(text)
     message_id = message_store.save_message(
         msg.chat_id,
         msg.from_user.username,
         text,
         source_type="voice",
-        audio=audio_bytes,
-        audio_mime=voice.mime_type or "audio/ogg",
+        audio_key=audio_key,
+        audio_url=audio_url,
+        audio_mime=mime,
     )
     chunk_store.save_chunks(message_id, chunks)
     logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, len(chunks))

@@ -2,9 +2,10 @@
 
 Saves every text **and voice** message sent to the bot into PostgreSQL with a
 timestamp. Voice notes are transcribed with OpenAI (`whisper-1`, using a
-transcription-context prompt) and the raw audio is kept. Each message's text is
-split into chunks that are embedded with OpenAI and stored in `message_chunks`
-(pgvector), powering semantic search via `/search`.
+transcription-context prompt); the raw audio is uploaded to S3-compatible object
+storage (Railway bucket / R2 / S3) and the message keeps only the object key.
+Each message's text is split into chunks that are embedded with OpenAI and stored
+in `message_chunks` (pgvector), powering semantic search via `/search`.
 
 ## Project layout
 
@@ -20,6 +21,7 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `message_store.py`| `messages` row persistence                                 |
 | `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
+| `storage.py`      | upload voice audio to S3-compatible object storage         |
 | `reminders.py`    | reminder extraction entry point (`extract_reminder`)       |
 | `timeparser.py`   | LLM reminder-time parsing (+ keyword gate) + agenda ranges  |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
@@ -194,7 +196,8 @@ pre-deploy command.
 | username   | text         | sender username (nullable) |
 | text        | text        | message body (transcript for voice) |
 | source_type | text        | `'text'` or `'voice'`               |
-| audio       | bytea       | raw audio bytes (voice only)        |
+| audio_key   | text        | S3 object key of the audio (voice only) |
+| audio_url   | text        | public URL of the audio (voice only) |
 | audio_mime  | text        | audio MIME type (voice only)        |
 | created_at  | timestamptz | defaults to `now()`                 |
 

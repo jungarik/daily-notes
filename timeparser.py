@@ -73,12 +73,15 @@ def llm_parse(text: str, now: datetime) -> datetime | None:
                 {"role": "user", "content": text},
             ],
         )
-        data = json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content
+        logger.info("Reminder LLM | input=%r | response=%s", text, content)
+        data = json.loads(content)
         if not data.get("is_reminder") or not data.get("remind_at"):
             return None
         dt = datetime.fromisoformat(data["remind_at"])
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=now.tzinfo)
+        logger.info("Reminder LLM | resolved remind_at=%s", dt.isoformat())
         return dt
     except Exception:
         logger.exception("LLM reminder extraction failed")
