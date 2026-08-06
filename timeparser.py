@@ -100,18 +100,13 @@ AGENDA_HINT = re.compile(
 )
 
 # An explicit range keyword scopes a search by reminder date even without the
-# full agenda-question phrasing (e.g. searching just "today").
+# full agenda-question phrasing (e.g. searching just "today", "this weekend",
+# "next 3 days"). Also gates the (LLM) range parse.
 _RANGE_KEYWORD = re.compile(
-    r"\btoday\b|\btomorrow\b|\bthis\s+week\b|"
-    r"\bсьогодні\b|\bзавтра\b|цього\s+тижня|на\s+тиждень",
-    re.IGNORECASE,
-)
-
-# A temporal phrase the rule-based range doesn't recognize → hand to the LLM.
-_OTHER_TIMEWORD = re.compile(
-    r"weekend|month|\bnext\b|\d+\s*(day|week|month)|"
+    r"\btoday\b|\btomorrow\b|\btonight\b|\bweek\b|weekend|month|\bnext\b|"
+    r"\d+\s*(day|week|month)|"
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-    r"вихідн|місяц|наступн|через\s+\d|"
+    r"сьогодні|завтра|тижд|тижн|вихідн|місяц|наступн|"
     r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ",
     re.IGNORECASE,
 )
@@ -119,32 +114,12 @@ _OTHER_TIMEWORD = re.compile(
 
 def looks_like_agenda(text: str) -> bool:
     """True if the message reads like a 'what do I have to do' question, or just
-    carries an explicit date-range keyword (today / tomorrow / this week)."""
+    carries an explicit date-range keyword (today / this week / weekend / ...)."""
     return bool(AGENDA_HINT.search(text) or _RANGE_KEYWORD.search(text))
 
 
 def _day_start(now: datetime) -> datetime:
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-
-def rule_based_range(text: str, now: datetime):
-    """Resolve today/tomorrow/this-week from keywords.
-
-    Returns (start, end, key) with tz-aware bounds (end exclusive), or None when
-    some other temporal phrase is present so the LLM can handle it.
-    """
-    t = text.lower()
-    start = _day_start(now)
-    if re.search(r"\btomorrow\b|завтра", t):
-        start += timedelta(days=1)
-        return start, start + timedelta(days=1), "tomorrow"
-    if re.search(r"\bweek\b|тижд|тижн", t):
-        return start, start + timedelta(days=7), "week"
-    if re.search(r"\btoday\b|\btonight\b|сьогодні", t):
-        return start, start + timedelta(days=1), "today"
-    if _OTHER_TIMEWORD.search(t):
-        return None  # e.g. "weekend", "next 3 days", "friday" → LLM
-    return start, start + timedelta(days=1), "today"  # plain query → today
 
 
 def _llm_range(text: str, now: datetime):
@@ -182,17 +157,14 @@ def _llm_range(text: str, now: datetime):
 
 
 def parse_agenda(text: str, now: datetime):
-    """Hybrid agenda parser: text → (start, end, key) range, or None.
+    """Agenda range parser: text → (start, end, key) range, or None.
 
-    None means the text isn't an agenda question. Otherwise the range is resolved
-    by rules first, then the LLM, defaulting to today. `key` is one of
-    today / tomorrow / week / range (used to pick the reply header).
+    A cheap keyword gate first avoids an LLM call on non-agenda queries; anything
+    that passes is parsed by the LLM, defaulting to today if it can't decide.
+    `key` is 'range' (LLM) or 'today' (fallback); only the bounds are used.
     """
     if not looks_like_agenda(text):
         return None
-    rng = rule_based_range(text, now)
-    if rng is not None:
-        return rng
     rng = _llm_range(text, now)
     if rng is not None:
         return rng

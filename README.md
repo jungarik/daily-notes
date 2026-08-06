@@ -153,11 +153,11 @@ Reminder statuses: `scheduled` (waiting), `postponed` (snoozed to a new time),
 
 ### Agenda-scoped search
 
-`timeparser.parse_agenda(text, now)` is a hybrid, pure function returning a
-`(start, end, key)` date range or `None`. It triggers on an agenda question
-("what do I have to do today?") **or** a bare range keyword ("today", "tomorrow",
-"this week", "сьогодні", "завтра"). Rules cover today / tomorrow / this week;
-anything else (weekend, "next 3 days", weekdays) falls back to the LLM.
+`timeparser.parse_agenda(text, now)` returns a `(start, end, key)` date range or
+`None`. A cheap keyword gate triggers on an agenda question ("what do I have to do
+today?") **or** an explicit range word ("today", "this week", "weekend", "next 3
+days", a weekday, + Ukrainian); anything that passes is parsed by the LLM
+(defaulting to today if it can't decide). No rule-based date parsing.
 
 The bot's `/search` handler runs it on the query and, when a range comes back,
 passes `remind_start`/`remind_end` into `semantic.search` →
