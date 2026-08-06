@@ -70,17 +70,6 @@ def _s3():
     return _client
 
 
-def public_url(key: str | None) -> str | None:
-    """Build a public URL for an object key, or None."""
-    if not key:
-        return None
-    if config.S3_PUBLIC_BASE_URL:
-        return f"{config.S3_PUBLIC_BASE_URL.rstrip('/')}/{key}"
-    if config.S3_ENDPOINT_URL:
-        return f"{config.S3_ENDPOINT_URL.rstrip('/')}/{config.S3_BUCKET}/{key}"
-    return f"https://{config.S3_BUCKET}.s3.{config.S3_REGION}.amazonaws.com/{key}"
-
-
 def upload_audio(data: bytes, content_type: str = "audio/ogg", ext: str = "oga") -> str | None:
     """Upload audio bytes and return the object key, or None if storage is off/failed."""
     if not _configured():

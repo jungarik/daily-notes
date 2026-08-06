@@ -126,7 +126,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mime = voice.mime_type or "audio/ogg"
     audio_key = storage.upload_audio(audio_bytes, content_type=mime)
-    audio_url = storage.public_url(audio_key)
     chunks = semantic.build_chunks(text)
     message_id = message_store.save_message(
         msg.chat_id,
@@ -134,7 +133,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text,
         source_type="voice",
         audio_key=audio_key,
-        audio_url=audio_url,
         audio_mime=mime,
     )
     chunk_store.save_chunks(message_id, chunks)

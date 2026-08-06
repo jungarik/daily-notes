@@ -9,23 +9,22 @@ def save_message(
     text: str,
     source_type: str = "text",
     audio_key: str | None = None,
-    audio_url: str | None = None,
     audio_mime: str | None = None,
 ) -> int:
     """Insert a message row and return its id.
 
-    For voice notes, pass source_type='voice' plus the object-storage key and
-    public URL of the uploaded audio and its MIME type. Chunks are saved
-    separately via chunk_store.save_chunks(message_id, ...).
+    For voice notes, pass source_type='voice' plus the object-storage key of the
+    uploaded audio and its MIME type. Chunks are saved separately via
+    chunk_store.save_chunks(message_id, ...).
     """
     with cursor() as cur:
         cur.execute(
             """
             INSERT INTO messages
-                (chat_id, username, text, source_type, audio_key, audio_url, audio_mime)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (chat_id, username, text, source_type, audio_key, audio_mime)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (chat_id, username, text, source_type, audio_key, audio_url, audio_mime),
+            (chat_id, username, text, source_type, audio_key, audio_mime),
         )
         return cur.fetchone()[0]

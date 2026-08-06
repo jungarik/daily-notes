@@ -35,9 +35,6 @@ S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID")
 S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY")
 # Real AWS region (e.g. us-east-1) for AWS S3; "auto" for Cloudflare R2.
 S3_REGION = os.environ.get("S3_REGION") or None
-# Public base URL for stored objects (e.g. a bucket's public domain). If blank,
-# the URL is derived from the endpoint/bucket (or AWS-style when no endpoint).
-S3_PUBLIC_BASE_URL = os.environ.get("S3_PUBLIC_BASE_URL")
 # Addressing for custom endpoints: "path" (default), "virtual", or "auto".
 S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", "path")
 

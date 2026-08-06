@@ -197,7 +197,6 @@ pre-deploy command.
 | text        | text        | message body (transcript for voice) |
 | source_type | text        | `'text'` or `'voice'`               |
 | audio_key   | text        | S3 object key of the audio (voice only) |
-| audio_url   | text        | public URL of the audio (voice only) |
 | audio_mime  | text        | audio MIME type (voice only)        |
 | created_at  | timestamptz | defaults to `now()`                 |
 
