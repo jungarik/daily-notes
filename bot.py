@@ -336,6 +336,13 @@ async def _post_init(app):
 
 def main():
     run_migrations()
+    if storage.is_configured():
+        logger.info("Audio storage: enabled (bucket %s).", config.S3_BUCKET)
+    else:
+        logger.warning(
+            "Audio storage: DISABLED — voice audio won't be stored. Missing: %s",
+            ", ".join(storage.missing_config()),
+        )
     app = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))

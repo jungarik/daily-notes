@@ -16,10 +16,28 @@ logger = logging.getLogger(__name__)
 _client = None
 
 
-def _configured() -> bool:
+def is_configured() -> bool:
+    """True when all S3 credentials/bucket are present."""
     return bool(
         config.S3_BUCKET and config.S3_ACCESS_KEY_ID and config.S3_SECRET_ACCESS_KEY
     )
+
+
+def missing_config() -> list[str]:
+    """Names of the S3 settings that are still unset."""
+    return [
+        name
+        for name, value in (
+            ("S3_BUCKET", config.S3_BUCKET),
+            ("S3_ACCESS_KEY_ID", config.S3_ACCESS_KEY_ID),
+            ("S3_SECRET_ACCESS_KEY", config.S3_SECRET_ACCESS_KEY),
+        )
+        if not value
+    ]
+
+
+# Backwards-compatible alias.
+_configured = is_configured
 
 
 def _s3():
