@@ -21,7 +21,7 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `reminders.py`    | reminder extraction entry point (`extract_reminder`)       |
-| `timeparser.py`   | pure time parsing: reminder datetimes + agenda date ranges |
+| `timeparser.py`   | LLM reminder-time parsing (+ keyword gate) + agenda ranges  |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
 | `user_store.py`   | `user_settings` (timezone, language)                       |
 | `i18n.py`, `locales.json` | localization                                       |
@@ -114,22 +114,13 @@ top-k.
 ## Reminders
 
 `reminders.py` detects whether a message asks to be reminded and extracts the
-time. It first checks cheaply whether the message looks time-bearing; if so it
-resolves the phrase locally, using the multilingual [`dateparser`] library for
-the date/relative anchor (tomorrow/today, weekdays, "in N minutes"/"через N
-годин") while the time-of-day is set by us so part-of-day words get sensible
-defaults: morning/вранці → 09:00, afternoon/вдень → 15:00, evening/ввечері →
-19:00, night/вночі → 21:00; a bare date defaults to 09:00. Only when it looks
-time-bearing but the rules can't pin a time does it fall back to the LLM.
-
-Relative offsets are handled deterministically (no dateparser needed), including
-indefinite quantities: `через 5 хвилин`, `через кілька хвилин`, `через кілька
-годин/днів`, `in a few minutes`, `через пару годин`. An indefinite quantity
-("кілька"/"a few") equals `REMINDER_FEW_COUNT` (default 5; "пару"/"couple" = 2),
-and a vague `пізніше`/`later` resolves to `REMINDER_LATER` (default `10m`; set
-`1d` for a day, etc.).
-
-[`dateparser`]: https://dateparser.readthedocs.io/
+time. A cheap keyword gate (`looks_time_bearing`) first avoids spending an LLM
+call on messages with no time signal; anything that passes is parsed entirely by
+the LLM (`timeparser.llm_parse`) — Ukrainian and English alike. The prompt tells
+the model the current local time and how to resolve part-of-day words
+(morning/вранці → 09:00, etc.), a bare date → 09:00, an indefinite quantity
+("кілька"/"a few") → about `REMINDER_FEW_COUNT`, and a vague `пізніше`/`later` →
+about `REMINDER_LATER`. No `dateparser` / rule-based date parsing is used.
 
 When a message parses as a reminder, a row is written to the `reminders` table
 (`reminder_store.py`) and the bot confirms with "⏰ Reminder set for …" plus a
