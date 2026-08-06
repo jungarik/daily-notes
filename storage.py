@@ -45,13 +45,23 @@ def _s3():
     global _client
     if _client is None:
         import boto3
+        from botocore.config import Config
 
+        # Non-AWS S3 (Railway bucket, R2, MinIO) needs path-style addressing and
+        # rejects the CRC checksums boto3 >= 1.36 sends by default.
+        client_config = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        )
         _client = boto3.client(
             "s3",
             endpoint_url=config.S3_ENDPOINT_URL or None,
             aws_access_key_id=config.S3_ACCESS_KEY_ID,
             aws_secret_access_key=config.S3_SECRET_ACCESS_KEY,
             region_name=config.S3_REGION,
+            config=client_config,
         )
     return _client
 
@@ -79,6 +89,6 @@ def upload_audio(data: bytes, content_type: str = "audio/ogg", ext: str = "oga")
         )
         logger.info("Uploaded voice audio to s3://%s/%s", config.S3_BUCKET, key)
         return key
-    except Exception:
-        logger.exception("Audio upload failed")
+    except Exception as exc:
+        logger.exception("Audio upload failed: %s", exc)
         return None
