@@ -46,15 +46,15 @@ def build_chunks(text: str) -> list[dict]:
     ]
 
 
-def search(chat_id: int, query: str, remind_start=None, remind_end=None, limit: int = 5):
-    """Semantic search over the chat's chunks.
+def search(user_id: int, query: str, remind_start=None, remind_end=None, limit: int = 5):
+    """Semantic search over the user's chunks.
 
     If `remind_start`/`remind_end` are given, results are restricted to chunks
     whose note has an active reminder due in [remind_start, remind_end). The
     caller derives that range (e.g. via timeparser.parse_agenda).
     """
     return chunk_store.search_chunks(
-        chat_id, embed(query), limit,
+        user_id, embed(query), limit,
         remind_start=remind_start, remind_end=remind_end,
     )
 
@@ -78,7 +78,7 @@ def _format_hits(hits: list[dict], tz=None) -> str:
 
 
 def answer(
-    chat_id: int,
+    user_id: int,
     query: str,
     remind_start=None,
     remind_end=None,
@@ -91,7 +91,7 @@ def answer(
     Returns None when nothing was retrieved. On an LLM error, falls back to the
     top chunk's text so the user still gets the underlying note.
     """
-    hits = search(chat_id, query, remind_start, remind_end, limit)
+    hits = search(user_id, query, remind_start, remind_end, limit)
     if not hits:
         return None
 

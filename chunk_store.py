@@ -32,7 +32,7 @@ def save_chunks(message_id: int, chunks: list[dict]) -> None:
             )
 
 
-def similar_notes(chat_id: int, query_embedding: str, exclude_message_id: int,
+def similar_notes(user_id: int, query_embedding: str, exclude_message_id: int,
                   limit: int = 5) -> list[dict]:
     """Already-enriched notes most similar to the query embedding (for few-shot).
 
@@ -46,12 +46,12 @@ def similar_notes(chat_id: int, query_embedding: str, exclude_message_id: int,
                    MIN(mc.embedding <=> %s::vector) AS distance
             FROM message_chunks mc
             JOIN messages m ON m.id = mc.message_id
-            WHERE m.chat_id = %s AND m.id <> %s AND m.title IS NOT NULL
+            WHERE m.user_id = %s AND m.id <> %s AND m.title IS NOT NULL
             GROUP BY m.id, m.note_type, m.title, m.path, m.tags
             ORDER BY distance
             LIMIT %s;
             """,
-            (query_embedding, chat_id, exclude_message_id, limit),
+            (query_embedding, user_id, exclude_message_id, limit),
         )
         return [
             {"note_type": r[0], "title": r[1], "path": r[2], "tags": r[3]}
@@ -60,7 +60,7 @@ def similar_notes(chat_id: int, query_embedding: str, exclude_message_id: int,
 
 
 def search_chunks(
-    chat_id: int,
+    user_id: int,
     query_embedding: str,
     limit: int = 5,
     remind_start=None,
@@ -96,7 +96,7 @@ def search_chunks(
     params: list = [query_embedding]
     if filtering:
         params += [remind_start, remind_end]
-    params += [chat_id, limit]
+    params += [user_id, limit]
 
     with cursor() as cur:
         cur.execute(
@@ -121,7 +121,7 @@ def search_chunks(
                       {remind_range}
                     GROUP BY r.message_id
                 ) rem ON rem.message_id = mc.message_id
-                WHERE m.chat_id = %s {where_filter}
+                WHERE m.user_id = %s {where_filter}
                 ORDER BY distance
                 LIMIT %s
             )

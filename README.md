@@ -31,7 +31,7 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `reminders.py`    | fast-path reminder-time extraction (keyword gate + LLM)    |
 | `timeparser.py`   | agenda date-range parsing for search                       |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
-| `user_store.py`   | `user_settings` (timezone, language)                       |
+| `user_store.py`   | `users` (surrogate id, optional chat_id, timezone, language) |
 | `i18n.py`, `locales.json` | localization                                       |
 | `migrate.py`, `migrations/` | schema migrations                                |
 
@@ -96,7 +96,7 @@ A localized command menu is registered on startup (the Telegram Menu button).
 
 ## Answers (RAG)
 
-`semantic.answer(chat_id, query, ...)` runs the search, then sends the query plus
+`semantic.answer(user_id, query, ...)` runs the search, then sends the query plus
 the retrieved chunks — with their analysis (similarity, reminder time, recency,
 source) — to an LLM (`ANSWER_LLM_MODEL`) with a system prompt telling it to pick
 the single most relevant note, ground the answer only in the notes, mention any
@@ -212,12 +212,27 @@ pre-deploy command.
 
 ## Tables
 
-`messages` — one row per received message:
+The data model is decoupled from Telegram: notes belong to a **user**, and a
+user *optionally* has a Telegram `chat_id`. The bot resolves `chat_id → user_id`
+at the edge (`user_store.get_or_create_user`) and everything internal keys on
+`user_id`; the dispatcher resolves `user_id → chat_id` only to deliver.
+
+`users` — one row per user (any UI):
+
+| column   | type        | notes                              |
+|----------|-------------|------------------------------------|
+| id       | bigserial   | primary key (internal user id)     |
+| chat_id  | bigint      | Telegram chat, unique, **optional**|
+| timezone | text        | IANA name (set via /timezone)      |
+| language | text        | `en` / `uk` (set via /language)    |
+| created_at / updated_at | timestamptz |                        |
+
+`messages` — one row per received note:
 
 | column     | type         | notes                      |
 |------------|--------------|----------------------------|
 | id         | serial       | primary key                |
-| chat_id    | bigint       | Telegram chat id           |
+| user_id    | bigint       | FK → `users(id)`           |
 | username   | text         | sender username (nullable) |
 | text        | text        | message body (transcript for voice) |
 | source_type | text        | `'text'` or `'voice'`               |
@@ -250,18 +265,8 @@ at chunk granularity:
 |------------|-------------|--------------------------------------------------|
 | id         | serial      | primary key                                      |
 | message_id | integer     | FK → `messages(id)`, `ON DELETE CASCADE` (text comes from here) |
-| chat_id    | bigint      | chat to deliver the reminder to                  |
+| user_id    | bigint      | FK → `users(id)` (owner; chat resolved for delivery) |
 | remind_at  | timestamptz | when it should fire                              |
 | status     | text        | scheduled / postponed / sending / done / canceled |
 | created_at | timestamptz | defaults to `now()`                              |
 | updated_at | timestamptz | bumped on status change                          |
-
-`user_settings` — per-chat preferences:
-
-| column     | type        | notes                          |
-|------------|-------------|--------------------------------|
-| chat_id    | bigint      | primary key                        |
-| timezone   | text        | IANA name (set via /timezone)      |
-| language   | text        | `en` / `uk` (set via /language)    |
-| created_at | timestamptz | defaults to `now()`                |
-| updated_at | timestamptz | bumped on change                   |

@@ -1,51 +1,55 @@
-"""Per-chat settings (timezone, language)."""
+"""Users: surrogate id + optional Telegram chat_id, plus per-user settings."""
 
 from db import cursor
 
 
-def get_timezone(chat_id: int) -> str | None:
-    """Return the chat's IANA timezone name, or None if unset."""
+def get_or_create_user(chat_id: int) -> int:
+    """Return the internal user id for a Telegram chat, creating it if needed."""
     with cursor() as cur:
         cur.execute(
-            "SELECT timezone FROM user_settings WHERE chat_id = %s;", (chat_id,)
+            """
+            INSERT INTO users (chat_id) VALUES (%s)
+            ON CONFLICT (chat_id) DO UPDATE SET updated_at = now()
+            RETURNING id;
+            """,
+            (chat_id,),
         )
+        return cur.fetchone()[0]
+
+
+def get_chat_id(user_id: int) -> int | None:
+    """Return the Telegram chat_id for a user, or None (e.g. non-Telegram user)."""
+    with cursor() as cur:
+        cur.execute("SELECT chat_id FROM users WHERE id = %s;", (user_id,))
         row = cur.fetchone()
         return row[0] if row else None
 
 
-def set_timezone(chat_id: int, timezone: str) -> None:
-    """Upsert the chat's timezone (leaves language untouched)."""
+def get_timezone(user_id: int) -> str | None:
     with cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO user_settings (chat_id, timezone)
-            VALUES (%s, %s)
-            ON CONFLICT (chat_id)
-            DO UPDATE SET timezone = EXCLUDED.timezone, updated_at = now();
-            """,
-            (chat_id, timezone),
-        )
-
-
-def get_language(chat_id: int) -> str | None:
-    """Return the chat's language code, or None if unset."""
-    with cursor() as cur:
-        cur.execute(
-            "SELECT language FROM user_settings WHERE chat_id = %s;", (chat_id,)
-        )
+        cur.execute("SELECT timezone FROM users WHERE id = %s;", (user_id,))
         row = cur.fetchone()
         return row[0] if row else None
 
 
-def set_language(chat_id: int, language: str) -> None:
-    """Upsert the chat's language (leaves timezone untouched)."""
+def set_timezone(user_id: int, timezone: str) -> None:
     with cursor() as cur:
         cur.execute(
-            """
-            INSERT INTO user_settings (chat_id, language)
-            VALUES (%s, %s)
-            ON CONFLICT (chat_id)
-            DO UPDATE SET language = EXCLUDED.language, updated_at = now();
-            """,
-            (chat_id, language),
+            "UPDATE users SET timezone = %s, updated_at = now() WHERE id = %s;",
+            (timezone, user_id),
+        )
+
+
+def get_language(user_id: int) -> str | None:
+    with cursor() as cur:
+        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def set_language(user_id: int, language: str) -> None:
+    with cursor() as cur:
+        cur.execute(
+            "UPDATE users SET language = %s, updated_at = now() WHERE id = %s;",
+            (language, user_id),
         )

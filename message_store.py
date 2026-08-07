@@ -6,7 +6,7 @@ from db import cursor
 
 
 def save_message(
-    chat_id: int,
+    user_id: int,
     username: str,
     text: str,
     source_type: str = "text",
@@ -22,11 +22,11 @@ def save_message(
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO messages (chat_id, username, text, source_type, audio_key, audio_mime)
+            INSERT INTO messages (user_id, username, text, source_type, audio_key, audio_mime)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (chat_id, username, text, source_type, audio_key, audio_mime),
+            (user_id, username, text, source_type, audio_key, audio_mime),
         )
         return cur.fetchone()[0]
 
@@ -59,33 +59,33 @@ def set_metadata(
         )
 
 
-def list_paths(chat_id: int, limit: int = 30) -> list[str]:
-    """The chat's existing vault paths, most-used first (controlled vocabulary)."""
+def list_paths(user_id: int, limit: int = 30) -> list[str]:
+    """The user's existing vault paths, most-used first (controlled vocabulary)."""
     with cursor() as cur:
         cur.execute(
             """
             SELECT path, count(*) AS c
             FROM messages
-            WHERE chat_id = %s AND path IS NOT NULL AND path <> ''
+            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
             GROUP BY path ORDER BY c DESC, path
             LIMIT %s;
             """,
-            (chat_id, limit),
+            (user_id, limit),
         )
         return [row[0] for row in cur.fetchall()]
 
 
-def list_tags(chat_id: int, limit: int = 30) -> list[str]:
-    """The chat's existing tags, most-used first (controlled vocabulary)."""
+def list_tags(user_id: int, limit: int = 30) -> list[str]:
+    """The user's existing tags, most-used first (controlled vocabulary)."""
     with cursor() as cur:
         cur.execute(
             """
             SELECT g, count(*) AS c
             FROM messages, jsonb_array_elements_text(tags) AS g
-            WHERE chat_id = %s
+            WHERE user_id = %s
             GROUP BY g ORDER BY c DESC, g
             LIMIT %s;
             """,
-            (chat_id, limit),
+            (user_id, limit),
         )
         return [row[0] for row in cur.fetchall()]
