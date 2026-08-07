@@ -1,14 +1,13 @@
 """
-Time parsing for reminders and agenda ranges.
+Agenda range parsing for search: "what do I have to do today?" → a date range.
 
-Reminder datetimes are parsed by the LLM only (a cheap keyword gate avoids
-calling it on messages with no time signal). Agenda ranges use simple rules for
-today/tomorrow/this week with an LLM fallback for anything else.
+A cheap keyword gate avoids an LLM call on non-agenda queries; anything that
+passes is resolved by the LLM. (Reminder-time parsing now lives in enrichment.)
 """
 
-import re
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 
 import config
@@ -16,76 +15,6 @@ import config
 logger = logging.getLogger(__name__)
 
 REMINDER_LLM_MODEL = config.REMINDER_LLM_MODEL
-
-# Relative-time unit stems (Ukrainian + English); part of the gate below.
-_REL_UNITS = (
-    r"хвилин|хвил|секунд|годин|тижн|тиждень|дн(і|ів|я)|день|"
-    r"seconds?|minutes?|\bmin\b|hours?|\bhr\b|days?|weeks?"
-)
-
-# Cheap gate: words/patterns that make a message "look" time-bearing, so we only
-# spend an LLM call when the message plausibly contains a reminder time.
-TIME_HINT = re.compile(
-    r"(remind|reminder|schedule|нагада|нагадай|"
-    r"tomorrow|today|tonight|завтра|сьогодні|післязавтра|"
-    r"morning|afternoon|evening|night|noon|"
-    r"вранці|зранку|ранок|вдень|ввечері|увечері|вечір|вночі|ніч|опівдні|"
-    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-    r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ|"
-    r"пізніше|later|кілька|декілька|пару|couple|few|через|"
-    rf"{_REL_UNITS}|"
-    r"\bin\s+\d|\bat\s+\d|\d{1,2}:\d{2}|"
-    r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)",
-    re.IGNORECASE,
-)
-
-
-def looks_time_bearing(message: str) -> bool:
-    """Cheap check: does the message contain any time/reminder signal?"""
-    return bool(TIME_HINT.search(message))
-
-
-def llm_parse(text: str, now: datetime) -> datetime | None:
-    """Parse a reminder time from text via the LLM. Returns tz-aware dt or None."""
-    try:
-        from openai_client import get_client
-
-        client = get_client()
-        system = (
-            "Extract a reminder from the user's message (Ukrainian or English). "
-            "Return strict JSON: {\"is_reminder\": bool, \"remind_at\": string|null}. "
-            "remind_at is ISO-8601 local time with no timezone, e.g. 2026-07-30T09:00:00. "
-            f"Current local time is {now.strftime('%Y-%m-%dT%H:%M:%S')} "
-            f"({now.tzname()}). Resolve all relative expressions against it. "
-            "If only a part of day is given, use morning=09:00, noon=12:00, "
-            "afternoon=15:00, evening=19:00, night=21:00. If a date has no time, use 09:00. "
-            f"For an indefinite quantity ('кілька'/'декілька'/'a few') assume about "
-            f"{config.REMINDER_FEW_COUNT} of the unit. For a vague 'later'/'пізніше', "
-            f"schedule about {config.REMINDER_LATER} from now (10m=minutes, 1h=hours, 1d=days). "
-            "If the message is not asking to be reminded, set is_reminder=false."
-        )
-        resp = client.chat.completions.create(
-            model=REMINDER_LLM_MODEL,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": text},
-            ],
-        )
-        content = resp.choices[0].message.content
-        logger.info("Reminder LLM | input=%r | response=%s", text, content)
-        data = json.loads(content)
-        if not data.get("is_reminder") or not data.get("remind_at"):
-            return None
-        dt = datetime.fromisoformat(data["remind_at"])
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=now.tzinfo)
-        logger.info("Reminder LLM | resolved remind_at=%s", dt.isoformat())
-        return dt
-    except Exception:
-        logger.exception("LLM reminder extraction failed")
-        return None
 
 
 # --- Agenda ranges ("what do I have to do today?") --------------------------

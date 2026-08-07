@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import config
 import i18n
+import enrichment
 import semantic
 import storage
 import timeparser
@@ -30,7 +31,6 @@ from config import (
     LATE_NOTE_SECONDS,
 )
 from migrate import run_migrations
-from reminders import extract_reminder
 from reminder_store import (
     create_reminder,
     claim_due_reminders,
@@ -75,16 +75,44 @@ def user_locale(chat_id: int) -> str:
     return i18n.normalize(user_store.get_language(chat_id)) or i18n.DEFAULT_LOCALE
 
 
-async def offer_reminder(msg, message_id: int, text: str):
-    """If the text parses as a reminder, store it and send a confirmation with a
-    Cancel button so the user can undo a misparse before it fires."""
-    tz = user_tz(msg.chat_id)
-    rem = extract_reminder(text, now=datetime.now(tz))
-    if not (rem.is_reminder and rem.remind_at):
+NOTE_ICONS = {
+    "idea": "💡", "task": "✅", "reminder": "⏰",
+    "note": "📝", "question": "❓", "link": "🔗",
+}
+
+
+def _capture(chat_id: int, username: str, text: str, tz,
+             source_type: str = "text", audio_key: str | None = None,
+             audio_mime: str | None = None):
+    """Enrich a note, persist it (+chunks). Returns (meta, message_id)."""
+    meta = enrichment.enrich(text, datetime.now(tz))
+    chunks = semantic.build_chunks(text)
+    message_id = message_store.save_message(
+        chat_id, username, text,
+        source_type=source_type, audio_key=audio_key, audio_mime=audio_mime,
+        note_type=meta["type"], title=meta["title"], priority=meta["priority"],
+        tags=meta["tags"], projects=meta["projects"],
+    )
+    chunk_store.save_chunks(message_id, chunks)
+    logger.info("Captured %s '%s' (%d chunk(s))", meta["type"], meta["title"], len(chunks))
+    return meta, message_id
+
+
+def _saved_line(locale: str, meta: dict) -> str:
+    icon = NOTE_ICONS.get(meta["type"], "📝")
+    line = f"{icon} {meta['title']}"
+    if meta["projects"]:
+        line += f"  ·  {', '.join(meta['projects'])}"
+    return t(locale, "saved") + "\n" + line
+
+
+async def _offer_reminder(msg, message_id: int, meta: dict, tz, locale: str):
+    """If enrichment found a time, store the reminder and confirm with Cancel."""
+    remind_at = meta.get("reminder_at")
+    if not remind_at:
         return
-    locale = user_locale(msg.chat_id)
-    reminder_id = create_reminder(message_id, msg.chat_id, rem.remind_at)
-    when = rem.remind_at.astimezone(tz)
+    reminder_id = create_reminder(message_id, msg.chat_id, remind_at)
+    when = remind_at.astimezone(tz)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
     )
@@ -95,24 +123,22 @@ async def offer_reminder(msg, message_id: int, text: str):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Store every incoming text message and its chunks."""
+    """Enrich, store, and chunk an incoming text note."""
     msg = update.message
-    chunks = semantic.build_chunks(msg.text)
-    message_id = message_store.save_message(msg.chat_id, msg.from_user.username, msg.text)
-    chunk_store.save_chunks(message_id, chunks)
-    logger.info("Saved message from %s (%d chunk(s))", msg.from_user.username, len(chunks))
-    await msg.reply_text(t(user_locale(msg.chat_id), "saved"))
-    await offer_reminder(msg, message_id, msg.text)
+    tz, locale = user_tz(msg.chat_id), user_locale(msg.chat_id)
+    meta, message_id = _capture(msg.chat_id, msg.from_user.username, msg.text, tz)
+    await msg.reply_text(_saved_line(locale, meta))
+    await _offer_reminder(msg, message_id, meta, tz, locale)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Transcribe a voice note, store the transcript + raw audio, and chunk it."""
+    """Transcribe a voice note, then enrich/store it like a text note."""
     msg = update.message
     voice = msg.voice
+    tz, locale = user_tz(msg.chat_id), user_locale(msg.chat_id)
     tg_file = await voice.get_file()
     audio_bytes = bytes(await tg_file.download_as_bytearray())
 
-    locale = user_locale(msg.chat_id)
     try:
         text = transcription.transcribe(audio_bytes)
     except Exception:
@@ -126,19 +152,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mime = voice.mime_type or "audio/ogg"
     audio_key = storage.upload_audio(audio_bytes, content_type=mime)
-    chunks = semantic.build_chunks(text)
-    message_id = message_store.save_message(
-        msg.chat_id,
-        msg.from_user.username,
-        text,
-        source_type="voice",
-        audio_key=audio_key,
-        audio_mime=mime,
+    meta, message_id = _capture(
+        msg.chat_id, msg.from_user.username, text, tz,
+        source_type="voice", audio_key=audio_key, audio_mime=mime,
     )
-    chunk_store.save_chunks(message_id, chunks)
-    logger.info("Saved voice from %s (%d chunk(s))", msg.from_user.username, len(chunks))
-    await msg.reply_text(t(locale, "transcribed_saved", text=text))
-    await offer_reminder(msg, message_id, text)
+    await msg.reply_text(
+        t(locale, "transcribed_saved", text=text) + "\n" + _saved_line(locale, meta)
+    )
+    await _offer_reminder(msg, message_id, meta, tz, locale)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

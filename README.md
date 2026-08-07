@@ -1,7 +1,12 @@
-# Telegram → PostgreSQL notes bot (POC)
+# Telegram brain-dump bot (POC)
 
-Saves every text **and voice** message sent to the bot into PostgreSQL with a
-timestamp. Voice notes are transcribed with OpenAI (`whisper-1`, using a
+A frictionless capture bot: send any text **or voice** note — ideas, tasks,
+reminders, thoughts — and it's transcribed (if voice), enriched by an LLM
+(type / title / projects / tags / priority / reminder), stored in PostgreSQL,
+and made semantically searchable. Ask it questions and it answers from your
+notes (RAG); ask "what do I have to do today?" and it scopes to reminders due.
+
+Every message is saved with a timestamp. Voice notes are transcribed with OpenAI (`whisper-1`, using a
 transcription-context prompt); the raw audio is uploaded to S3-compatible object
 storage (Railway bucket / R2 / S3) and the message keeps only the object key.
 Each message's text is split into chunks that are embedded with OpenAI and stored
@@ -22,8 +27,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `storage.py`      | upload voice audio to S3-compatible object storage         |
-| `reminders.py`    | reminder extraction entry point (`extract_reminder`)       |
-| `timeparser.py`   | LLM reminder-time parsing (+ keyword gate) + agenda ranges  |
+| `enrichment.py`   | one LLM call per note → type/title/projects/tags/priority/reminder |
+| `timeparser.py`   | agenda date-range parsing for search                       |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
 | `user_store.py`   | `user_settings` (timezone, language)                       |
 | `i18n.py`, `locales.json` | localization                                       |
@@ -113,18 +118,27 @@ Cosine (`<=>`) is used because the HNSW index is `vector_cosine_ops`; similarity
 is `1 - distance`. Ranking uses a `ROW_NUMBER()` window over the distance-ordered
 top-k.
 
+## Note enrichment (brain-dump)
+
+Capture stays frictionless — you just send text or voice. Intelligence happens
+after capture: `enrichment.enrich()` makes **one LLM call per note** and returns
+structured metadata stored on the message:
+
+- **type** — idea / task / reminder / note / question / link
+- **title** — a short summary in the note's own language
+- **projects** — 0–2 kebab-case project/area names
+- **tags** — 0–5 topic keywords
+- **priority** — low / med / high
+- **reminder_at** — a time, only when the note asks to be reminded
+
+The bot replies with the type icon + title (e.g. `💡 chunk embeddings idea ·
+telegram-bot`). If `reminder_at` is set, it creates a reminder and confirms with
+a Cancel button. Enrichment runs on every note; on any failure it degrades to a
+plain `note`.
+
 ## Reminders
 
-`reminders.py` detects whether a message asks to be reminded and extracts the
-time. A cheap keyword gate (`looks_time_bearing`) first avoids spending an LLM
-call on messages with no time signal; anything that passes is parsed entirely by
-the LLM (`timeparser.llm_parse`) — Ukrainian and English alike. The prompt tells
-the model the current local time and how to resolve part-of-day words
-(morning/вранці → 09:00, etc.), a bare date → 09:00, an indefinite quantity
-("кілька"/"a few") → about `REMINDER_FEW_COUNT`, and a vague `пізніше`/`later` →
-about `REMINDER_LATER`. No `dateparser` / rule-based date parsing is used.
-
-When a message parses as a reminder, a row is written to the `reminders` table
+When enrichment finds a `reminder_at`, a row is written to the `reminders` table
 (`reminder_store.py`) and the bot confirms with "⏰ Reminder set for …" plus a
 **Cancel** button, so a misparse can be undone before it fires. A background loop
 inside the bot process polls every `REMINDER_POLL_SECONDS` (default 30) for due
@@ -198,6 +212,11 @@ pre-deploy command.
 | source_type | text        | `'text'` or `'voice'`               |
 | audio_key   | text        | S3 object key of the audio (voice only) |
 | audio_mime  | text        | audio MIME type (voice only)        |
+| note_type   | text        | idea/task/reminder/note/question/link |
+| title       | text        | short LLM summary                   |
+| priority    | text        | low / med / high                    |
+| tags        | jsonb       | topic keywords                      |
+| projects    | jsonb       | project/area names                  |
 | created_at  | timestamptz | defaults to `now()`                 |
 
 `message_chunks` — normalized chunks of a message (1:N), embedded and searched
