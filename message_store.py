@@ -12,31 +12,21 @@ def save_message(
     source_type: str = "text",
     audio_key: str | None = None,
     audio_mime: str | None = None,
-    note_type: str | None = None,
-    title: str | None = None,
-    priority: str | None = None,
-    tags: list | None = None,
-    projects: list | None = None,
 ) -> int:
-    """Insert a message row (with enrichment metadata) and return its id.
+    """Insert a message row and return its id.
 
-    For voice notes, pass source_type='voice' plus the object-storage key of the
-    uploaded audio and its MIME type. Chunks are saved separately via
-    chunk_store.save_chunks(message_id, ...).
+    Enrichment metadata (type/title/priority/tags/path) is filled later, on
+    demand, via set_metadata(). For voice notes pass source_type='voice' plus the
+    object-storage key of the uploaded audio and its MIME type.
     """
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO messages
-                (chat_id, username, text, source_type, audio_key, audio_mime,
-                 note_type, title, priority, tags, projects)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO messages (chat_id, username, text, source_type, audio_key, audio_mime)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (
-                chat_id, username, text, source_type, audio_key, audio_mime,
-                note_type, title, priority, Json(tags or []), Json(projects or []),
-            ),
+            (chat_id, username, text, source_type, audio_key, audio_mime),
         )
         return cur.fetchone()[0]
 
@@ -55,29 +45,29 @@ def set_metadata(
     title: str | None,
     priority: str | None,
     tags: list | None,
-    projects: list | None,
+    path: str | None,
 ) -> None:
     """Fill in enrichment metadata for a message (deferred/on-demand pass)."""
     with cursor() as cur:
         cur.execute(
             """
             UPDATE messages
-            SET note_type = %s, title = %s, priority = %s, tags = %s, projects = %s
+            SET note_type = %s, title = %s, priority = %s, tags = %s, path = %s
             WHERE id = %s;
             """,
-            (note_type, title, priority, Json(tags or []), Json(projects or []), message_id),
+            (note_type, title, priority, Json(tags or []), path, message_id),
         )
 
 
-def list_projects(chat_id: int, limit: int = 20) -> list[str]:
-    """The chat's existing project names, most-used first (controlled vocabulary)."""
+def list_paths(chat_id: int, limit: int = 30) -> list[str]:
+    """The chat's existing vault paths, most-used first (controlled vocabulary)."""
     with cursor() as cur:
         cur.execute(
             """
-            SELECT p, count(*) AS c
-            FROM messages, jsonb_array_elements_text(projects) AS p
-            WHERE chat_id = %s
-            GROUP BY p ORDER BY c DESC, p
+            SELECT path, count(*) AS c
+            FROM messages
+            WHERE chat_id = %s AND path IS NOT NULL AND path <> ''
+            GROUP BY path ORDER BY c DESC, path
             LIMIT %s;
             """,
             (chat_id, limit),

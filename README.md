@@ -133,16 +133,18 @@ analysis) isn't time-critical, so it only runs when you tap 🧠 Enrich. Then
 
 - **type** — idea / task / reminder / note / question / link
 - **title** — a short summary in the note's own language
-- **projects** — 0–2 kebab-case project/area names
-- **tags** — 0–5 topic keywords
+- **path** — a single vault folder path (PARA-style top level), e.g.
+  `Projects/telegram-bot/architecture` — the note's home folder for Obsidian export
+- **tags** — 0–5 topic keywords (cross-cutting membership)
 - **priority** — low / med / high
 
 Because the note's chunks are already embedded, enrichment first pulls the most
 similar *already-enriched* notes (`chunk_store.similar_notes`) and feeds their
 metadata to the prompt as few-shot examples, alongside the chat's existing
-project/tag vocabulary — so classification stays consistent instead of drifting.
-The reply is edited to show the result (`💡 title / 📁 projects / 🏷 tags / ⚡
-priority`). On failure it degrades to a plain `note`.
+path/tag vocabulary — so classification stays consistent (it extends the folder
+tree instead of inventing parallel folders). The reply is edited to show the
+result (`💡 title / 📁 path / 🏷 tags / ⚡ priority`). On failure it degrades to a
+plain `note`.
 
 ## Reminders
 
@@ -225,7 +227,7 @@ pre-deploy command.
 | title       | text        | short LLM summary                   |
 | priority    | text        | low / med / high                    |
 | tags        | jsonb       | topic keywords                      |
-| projects    | jsonb       | project/area names                  |
+| path        | text        | vault folder path (Obsidian home)   |
 | created_at  | timestamptz | defaults to `now()`                 |
 
 `message_chunks` — normalized chunks of a message (1:N), embedded and searched

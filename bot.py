@@ -105,8 +105,8 @@ def _enrich_keyboard(message_id: int, locale: str) -> InlineKeyboardMarkup:
 def _meta_line(meta: dict) -> str:
     icon = NOTE_ICONS.get(meta["type"], "📝")
     parts = [f"{icon} {meta['title']}"]
-    if meta["projects"]:
-        parts.append("📁 " + ", ".join(meta["projects"]))
+    if meta["path"]:
+        parts.append("📁 " + meta["path"])
     if meta["tags"]:
         parts.append("🏷 " + ", ".join(meta["tags"]))
     parts.append("⚡ " + meta["priority"])
@@ -175,7 +175,6 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
-    tz, locale = user_tz(chat_id), user_locale(chat_id)
     message_id = int(query.data.split(":")[1])
 
     text = message_store.get_text(message_id)
@@ -185,14 +184,14 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     embedding = semantic.embed(text)
     similar = chunk_store.similar_notes(chat_id, embedding, exclude_message_id=message_id)
     meta = enrichment.enrich(
-        text, datetime.now(tz),
-        known_projects=message_store.list_projects(chat_id),
+        text,
+        known_paths=message_store.list_paths(chat_id),
         known_tags=message_store.list_tags(chat_id),
         similar_notes=similar,
     )
     message_store.set_metadata(
         message_id, meta["type"], meta["title"], meta["priority"],
-        meta["tags"], meta["projects"],
+        meta["tags"], meta["path"],
     )
     logger.info("Enriched note %s -> %s '%s'", message_id, meta["type"], meta["title"])
     await query.edit_message_text(f"{query.message.text}\n\n{_meta_line(meta)}")

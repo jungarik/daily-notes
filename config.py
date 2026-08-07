@@ -43,7 +43,7 @@ S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", "path")
 REMINDER_TZ = os.environ.get("REMINDER_TZ", "Europe/Kyiv")
 DEFAULT_TZ = ZoneInfo(REMINDER_TZ)
 REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
-# Model that enriches each note (type/title/projects/tags/priority/reminder).
+# Model that enriches each note (type/title/path/tags/priority).
 ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o-mini")
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.

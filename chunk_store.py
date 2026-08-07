@@ -36,25 +36,25 @@ def similar_notes(chat_id: int, query_embedding: str, exclude_message_id: int,
                   limit: int = 5) -> list[dict]:
     """Already-enriched notes most similar to the query embedding (for few-shot).
 
-    Returns [{note_type, title, projects, tags}], one per message, closest first.
+    Returns [{note_type, title, path, tags}], one per message, closest first.
     Only notes that already have metadata (title set) are useful as examples.
     """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT m.note_type, m.title, m.projects, m.tags,
+            SELECT m.note_type, m.title, m.path, m.tags,
                    MIN(mc.embedding <=> %s::vector) AS distance
             FROM message_chunks mc
             JOIN messages m ON m.id = mc.message_id
             WHERE m.chat_id = %s AND m.id <> %s AND m.title IS NOT NULL
-            GROUP BY m.id, m.note_type, m.title, m.projects, m.tags
+            GROUP BY m.id, m.note_type, m.title, m.path, m.tags
             ORDER BY distance
             LIMIT %s;
             """,
             (query_embedding, chat_id, exclude_message_id, limit),
         )
         return [
-            {"note_type": r[0], "title": r[1], "projects": r[2], "tags": r[3]}
+            {"note_type": r[0], "title": r[1], "path": r[2], "tags": r[3]}
             for r in cur.fetchall()
         ]
 
