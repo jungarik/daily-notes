@@ -21,11 +21,12 @@ CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "50"))  # shared chars betwe
 # --- Voice transcription (OpenAI) ---
 OPENAI_STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "whisper-1")
 OPENAI_STT_LANGUAGE = os.environ.get("OPENAI_STT_LANGUAGE") or None
+# Neutral transcription context: it's a personal note (uk or en). Kept generic
+# on purpose — reminder/agenda detection is a separate step, so we don't bias the
+# transcript toward those words. (An echo of this text is discarded downstream.)
 OPENAI_STT_PROMPT = os.environ.get(
     "OPENAI_STT_PROMPT",
-    "Голосові нотатки українською та англійською: нагадування, завдання, "
-    "зустрічі, плани. Voice notes in Ukrainian and English: reminders, tasks, "
-    "meetings, plans.",
+    "Персональна нотатка користувача. A personal user note.",
 )
 
 # --- Object storage for voice audio (S3-compatible: Railway bucket, R2, S3) ---
