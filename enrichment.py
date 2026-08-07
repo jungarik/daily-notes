@@ -63,8 +63,44 @@ def _normalize(data: dict, text: str, now: datetime) -> dict:
     }
 
 
-def enrich(text: str, now: datetime) -> dict:
-    """Classify + extract metadata for a note. Returns a normalized dict."""
+def _vocabulary(known_projects, known_tags) -> str:
+    """A prompt block nudging the model to reuse existing projects/tags."""
+    lines = []
+    if known_projects:
+        lines.append(f"Existing projects: {', '.join(known_projects)}.")
+    if known_tags:
+        lines.append(f"Existing tags: {', '.join(known_tags)}.")
+    if not lines:
+        return ""
+    return (
+        " Reuse an existing project/tag verbatim when it fits; only create a new "
+        "one if none of these apply. " + " ".join(lines)
+    )
+
+
+def _similar(similar_notes) -> str:
+    """A few-shot block: how similar past notes were classified (for consistency)."""
+    if not similar_notes:
+        return ""
+    lines = [
+        f"- \"{n['title']}\" -> type={n['note_type']}, "
+        f"projects={n.get('projects') or []}, tags={n.get('tags') or []}"
+        for n in similar_notes
+    ]
+    return (
+        " Similar past notes and how they were classified (reuse their type / "
+        "projects / tags when appropriate):\n" + "\n".join(lines)
+    )
+
+
+def enrich(text: str, now: datetime, known_projects=None, known_tags=None,
+           similar_notes=None) -> dict:
+    """Classify + extract metadata for a note. Returns a normalized dict.
+
+    `known_projects`/`known_tags` are the chat's existing vocabulary and
+    `similar_notes` are semantically-close already-enriched notes — both keep
+    classification consistent instead of drifting.
+    """
     try:
         system = (
             "You organize a person's brain-dump notes (Ukrainian or English). "
@@ -79,6 +115,8 @@ def enrich(text: str, now: datetime) -> dict:
             "Set reminder_at only if the note explicitly asks to be reminded or "
             "scheduled at a time; resolve relative expressions against now; never "
             "invent a time."
+            + _vocabulary(known_projects, known_tags)
+            + _similar(similar_notes)
         )
         resp = get_client().chat.completions.create(
             model=config.ENRICH_LLM_MODEL,

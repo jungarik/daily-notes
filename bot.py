@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 import enrichment
+import reminders
 import semantic
 import storage
 import timeparser
@@ -81,34 +82,40 @@ NOTE_ICONS = {
 }
 
 
-def _capture(chat_id: int, username: str, text: str, tz,
+def _capture(chat_id: int, username: str, text: str,
              source_type: str = "text", audio_key: str | None = None,
-             audio_mime: str | None = None):
-    """Enrich a note, persist it (+chunks). Returns (meta, message_id)."""
-    meta = enrichment.enrich(text, datetime.now(tz))
+             audio_mime: str | None = None) -> int:
+    """Fast path: chunk + embed + save the note (no metadata yet). Returns id."""
     chunks = semantic.build_chunks(text)
     message_id = message_store.save_message(
         chat_id, username, text,
         source_type=source_type, audio_key=audio_key, audio_mime=audio_mime,
-        note_type=meta["type"], title=meta["title"], priority=meta["priority"],
-        tags=meta["tags"], projects=meta["projects"],
     )
     chunk_store.save_chunks(message_id, chunks)
-    logger.info("Captured %s '%s' (%d chunk(s))", meta["type"], meta["title"], len(chunks))
-    return meta, message_id
+    logger.info("Captured note %s (%d chunk(s))", message_id, len(chunks))
+    return message_id
 
 
-def _saved_line(locale: str, meta: dict) -> str:
+def _enrich_keyboard(message_id: int, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{message_id}")]]
+    )
+
+
+def _meta_line(meta: dict) -> str:
     icon = NOTE_ICONS.get(meta["type"], "📝")
-    line = f"{icon} {meta['title']}"
+    parts = [f"{icon} {meta['title']}"]
     if meta["projects"]:
-        line += f"  ·  {', '.join(meta['projects'])}"
-    return t(locale, "saved") + "\n" + line
+        parts.append("📁 " + ", ".join(meta["projects"]))
+    if meta["tags"]:
+        parts.append("🏷 " + ", ".join(meta["tags"]))
+    parts.append("⚡ " + meta["priority"])
+    return "\n".join(parts)
 
 
-async def _offer_reminder(msg, message_id: int, meta: dict, tz, locale: str):
-    """If enrichment found a time, store the reminder and confirm with Cancel."""
-    remind_at = meta.get("reminder_at")
+async def _offer_reminder(msg, message_id: int, text: str, tz, locale: str):
+    """Fast path: if the note is time-bearing, store a reminder and confirm."""
+    remind_at = reminders.extract_reminder(text, datetime.now(tz))
     if not remind_at:
         return
     reminder_id = create_reminder(message_id, msg.chat_id, remind_at)
@@ -123,16 +130,16 @@ async def _offer_reminder(msg, message_id: int, meta: dict, tz, locale: str):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enrich, store, and chunk an incoming text note."""
+    """Capture a text note immediately; offer on-demand enrichment."""
     msg = update.message
     tz, locale = user_tz(msg.chat_id), user_locale(msg.chat_id)
-    meta, message_id = _capture(msg.chat_id, msg.from_user.username, msg.text, tz)
-    await msg.reply_text(_saved_line(locale, meta))
-    await _offer_reminder(msg, message_id, meta, tz, locale)
+    message_id = _capture(msg.chat_id, msg.from_user.username, msg.text)
+    await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(message_id, locale))
+    await _offer_reminder(msg, message_id, msg.text, tz, locale)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Transcribe a voice note, then enrich/store it like a text note."""
+    """Transcribe a voice note, then capture it like a text note."""
     msg = update.message
     voice = msg.voice
     tz, locale = user_tz(msg.chat_id), user_locale(msg.chat_id)
@@ -152,14 +159,43 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mime = voice.mime_type or "audio/ogg"
     audio_key = storage.upload_audio(audio_bytes, content_type=mime)
-    meta, message_id = _capture(
-        msg.chat_id, msg.from_user.username, text, tz,
+    message_id = _capture(
+        msg.chat_id, msg.from_user.username, text,
         source_type="voice", audio_key=audio_key, audio_mime=mime,
     )
     await msg.reply_text(
-        t(locale, "transcribed_saved", text=text) + "\n" + _saved_line(locale, meta)
+        t(locale, "transcribed_saved", text=text),
+        reply_markup=_enrich_keyboard(message_id, locale),
     )
-    await _offer_reminder(msg, message_id, meta, tz, locale)
+    await _offer_reminder(msg, message_id, text, tz, locale)
+
+
+async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🧠 Enrich button — run the deferred metadata pass with similar-notes context."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    tz, locale = user_tz(chat_id), user_locale(chat_id)
+    message_id = int(query.data.split(":")[1])
+
+    text = message_store.get_text(message_id)
+    if not text:
+        return
+
+    embedding = semantic.embed(text)
+    similar = chunk_store.similar_notes(chat_id, embedding, exclude_message_id=message_id)
+    meta = enrichment.enrich(
+        text, datetime.now(tz),
+        known_projects=message_store.list_projects(chat_id),
+        known_tags=message_store.list_tags(chat_id),
+        similar_notes=similar,
+    )
+    message_store.set_metadata(
+        message_id, meta["type"], meta["title"], meta["priority"],
+        meta["tags"], meta["projects"],
+    )
+    logger.info("Enriched note %s -> %s '%s'", message_id, meta["type"], meta["title"])
+    await query.edit_message_text(f"{query.message.text}\n\n{_meta_line(meta)}")
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -371,6 +407,7 @@ def main():
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
+    app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot running. Press Ctrl+C to stop.")

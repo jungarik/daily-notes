@@ -27,7 +27,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `chunk_store.py`  | `message_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `storage.py`      | upload voice audio to S3-compatible object storage         |
-| `enrichment.py`   | one LLM call per note → type/title/projects/tags/priority/reminder |
+| `enrichment.py`   | on-demand note enrichment → type/title/projects/tags/priority |
+| `reminders.py`    | fast-path reminder-time extraction (keyword gate + LLM)    |
 | `timeparser.py`   | agenda date-range parsing for search                       |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
 | `user_store.py`   | `user_settings` (timezone, language)                       |
@@ -118,29 +119,37 @@ Cosine (`<=>`) is used because the HNSW index is `vector_cosine_ops`; similarity
 is `1 - distance`. Ranking uses a `ROW_NUMBER()` window over the distance-ordered
 top-k.
 
-## Note enrichment (brain-dump)
+## Capture and enrichment (brain-dump)
 
-Capture stays frictionless — you just send text or voice. Intelligence happens
-after capture: `enrichment.enrich()` makes **one LLM call per note** and returns
-structured metadata stored on the message:
+Capture is instant and cheap. When you send a note (text, or voice → transcribed)
+the bot immediately chunks + embeds it, saves it, checks for a **reminder**
+(keyword-gated LLM call in `reminders.py`), and replies "Saved ✅" with a
+**🧠 Enrich** button. If it's time-bearing, it also creates the reminder and
+confirms with a Cancel button — exactly as before.
+
+**Enrichment is deferred and on-demand.** Structuring a dump (PARA/CODE-style
+analysis) isn't time-critical, so it only runs when you tap 🧠 Enrich. Then
+`enrichment.enrich()` makes one LLM call that returns and stores:
 
 - **type** — idea / task / reminder / note / question / link
 - **title** — a short summary in the note's own language
 - **projects** — 0–2 kebab-case project/area names
 - **tags** — 0–5 topic keywords
 - **priority** — low / med / high
-- **reminder_at** — a time, only when the note asks to be reminded
 
-The bot replies with the type icon + title (e.g. `💡 chunk embeddings idea ·
-telegram-bot`). If `reminder_at` is set, it creates a reminder and confirms with
-a Cancel button. Enrichment runs on every note; on any failure it degrades to a
-plain `note`.
+Because the note's chunks are already embedded, enrichment first pulls the most
+similar *already-enriched* notes (`chunk_store.similar_notes`) and feeds their
+metadata to the prompt as few-shot examples, alongside the chat's existing
+project/tag vocabulary — so classification stays consistent instead of drifting.
+The reply is edited to show the result (`💡 title / 📁 projects / 🏷 tags / ⚡
+priority`). On failure it degrades to a plain `note`.
 
 ## Reminders
 
-When enrichment finds a `reminder_at`, a row is written to the `reminders` table
-(`reminder_store.py`) and the bot confirms with "⏰ Reminder set for …" plus a
-**Cancel** button, so a misparse can be undone before it fires. A background loop
+When a note is time-bearing, `reminders.extract_reminder` returns a time, a row
+is written to the `reminders` table (`reminder_store.py`), and the bot confirms
+with "⏰ Reminder set for …" plus a **Cancel** button, so a misparse can be undone
+before it fires. A background loop
 inside the bot process polls every `REMINDER_POLL_SECONDS` (default 30) for due
 reminders and delivers them with **Snooze** (10m / 1h / Tomorrow) and **Done**
 buttons.
