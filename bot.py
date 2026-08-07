@@ -2,7 +2,7 @@
 Telegram bot layer.
 
 Wires Telegram handlers to the service modules: transcription (voice → text),
-semantic (chunking / embeddings / search), message_store (persistence), and the
+semantic (chunking / embeddings / search), note_store (persistence), and the
 reminders parser + store. Keeps no business logic of its own beyond formatting
 and dispatch.
 """
@@ -19,7 +19,7 @@ import reminders
 import semantic
 import storage
 import timeparser
-import message_store
+import note_store
 import chunk_store
 import transcription
 import user_store
@@ -92,18 +92,18 @@ def _capture(user_id: int, username: str, text: str,
              audio_mime: str | None = None) -> int:
     """Fast path: chunk + embed + save the note (no metadata yet). Returns id."""
     chunks = semantic.build_chunks(text)
-    message_id = message_store.save_message(
+    note_id = note_store.save_note(
         user_id, username, text,
         source_type=source_type, audio_key=audio_key, audio_mime=audio_mime,
     )
-    chunk_store.save_chunks(message_id, chunks)
-    logger.info("Captured note %s (%d chunk(s))", message_id, len(chunks))
-    return message_id
+    chunk_store.save_chunks(note_id, chunks)
+    logger.info("Captured note %s (%d chunk(s))", note_id, len(chunks))
+    return note_id
 
 
-def _enrich_keyboard(message_id: int, locale: str) -> InlineKeyboardMarkup:
+def _enrich_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{message_id}")]]
+        [[InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}")]]
     )
 
 
@@ -118,12 +118,12 @@ def _meta_line(meta: dict) -> str:
     return "\n".join(parts)
 
 
-async def _offer_reminder(msg, user_id: int, message_id: int, text: str, tz, locale: str):
+async def _offer_reminder(msg, user_id: int, note_id: int, text: str, tz, locale: str):
     """Fast path: if the note is time-bearing, store a reminder and confirm."""
     remind_at = reminders.extract_reminder(text, datetime.now(tz))
     if not remind_at:
         return
-    reminder_id = create_reminder(message_id, user_id, remind_at)
+    reminder_id = create_reminder(note_id, user_id, remind_at)
     when = remind_at.astimezone(tz)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
@@ -139,9 +139,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user_id = user_id_of(update)
     tz, locale = user_tz(user_id), user_locale(user_id)
-    message_id = _capture(user_id, msg.from_user.username, msg.text)
-    await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(message_id, locale))
-    await _offer_reminder(msg, user_id, message_id, msg.text, tz, locale)
+    note_id = _capture(user_id, msg.from_user.username, msg.text)
+    await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(note_id, locale))
+    await _offer_reminder(msg, user_id, note_id, msg.text, tz, locale)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,15 +166,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mime = voice.mime_type or "audio/ogg"
     audio_key = storage.upload_audio(audio_bytes, content_type=mime)
-    message_id = _capture(
+    note_id = _capture(
         user_id, msg.from_user.username, text,
         source_type="voice", audio_key=audio_key, audio_mime=mime,
     )
     await msg.reply_text(
         t(locale, "transcribed_saved", text=text),
-        reply_markup=_enrich_keyboard(message_id, locale),
+        reply_markup=_enrich_keyboard(note_id, locale),
     )
-    await _offer_reminder(msg, message_id, text, tz, locale)
+    await _offer_reminder(msg, user_id, note_id, text, tz, locale)
 
 
 async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,25 +182,25 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = user_id_of(update)
-    message_id = int(query.data.split(":")[1])
+    note_id = int(query.data.split(":")[1])
 
-    text = message_store.get_text(message_id)
+    text = note_store.get_text(note_id)
     if not text:
         return
 
     embedding = semantic.embed(text)
-    similar = chunk_store.similar_notes(user_id, embedding, exclude_message_id=message_id)
+    similar = chunk_store.similar_notes(user_id, embedding, exclude_note_id=note_id)
     meta = enrichment.enrich(
         text,
-        known_paths=message_store.list_paths(user_id),
-        known_tags=message_store.list_tags(user_id),
+        known_paths=note_store.list_paths(user_id),
+        known_tags=note_store.list_tags(user_id),
         similar_notes=similar,
     )
-    message_store.set_metadata(
-        message_id, meta["type"], meta["title"], meta["priority"],
+    note_store.set_metadata(
+        note_id, meta["type"], meta["title"], meta["priority"],
         meta["tags"], meta["path"],
     )
-    logger.info("Enriched note %s -> %s '%s'", message_id, meta["type"], meta["title"])
+    logger.info("Enriched note %s -> %s '%s'", note_id, meta["type"], meta["title"])
     await query.edit_message_text(f"{query.message.text}\n\n{_meta_line(meta)}")
 
 

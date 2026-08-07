@@ -1,11 +1,11 @@
-"""Persistence for messages (the note row itself). Chunks live in chunk_store."""
+"""Persistence for notes (the note row itself). Chunks live in chunk_store."""
 
 from psycopg.types.json import Json
 
 from db import cursor
 
 
-def save_message(
+def save_note(
     user_id: int,
     username: str,
     text: str,
@@ -22,7 +22,7 @@ def save_message(
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO messages (user_id, username, text, source_type, audio_key, audio_mime)
+            INSERT INTO notes (user_id, username, text, source_type, audio_key, audio_mime)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
@@ -31,16 +31,16 @@ def save_message(
         return cur.fetchone()[0]
 
 
-def get_text(message_id: int) -> str | None:
+def get_text(note_id: int) -> str | None:
     """Return a message's text, or None."""
     with cursor() as cur:
-        cur.execute("SELECT text FROM messages WHERE id = %s;", (message_id,))
+        cur.execute("SELECT text FROM notes WHERE id = %s;", (note_id,))
         row = cur.fetchone()
         return row[0] if row else None
 
 
 def set_metadata(
-    message_id: int,
+    note_id: int,
     note_type: str | None,
     title: str | None,
     priority: str | None,
@@ -51,11 +51,11 @@ def set_metadata(
     with cursor() as cur:
         cur.execute(
             """
-            UPDATE messages
+            UPDATE notes
             SET note_type = %s, title = %s, priority = %s, tags = %s, path = %s
             WHERE id = %s;
             """,
-            (note_type, title, priority, Json(tags or []), path, message_id),
+            (note_type, title, priority, Json(tags or []), path, note_id),
         )
 
 
@@ -65,7 +65,7 @@ def list_paths(user_id: int, limit: int = 30) -> list[str]:
         cur.execute(
             """
             SELECT path, count(*) AS c
-            FROM messages
+            FROM notes
             WHERE user_id = %s AND path IS NOT NULL AND path <> ''
             GROUP BY path ORDER BY c DESC, path
             LIMIT %s;
@@ -81,7 +81,7 @@ def list_tags(user_id: int, limit: int = 30) -> list[str]:
         cur.execute(
             """
             SELECT g, count(*) AS c
-            FROM messages, jsonb_array_elements_text(tags) AS g
+            FROM notes, jsonb_array_elements_text(tags) AS g
             WHERE user_id = %s
             GROUP BY g ORDER BY c DESC, g
             LIMIT %s;

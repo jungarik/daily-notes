@@ -12,20 +12,20 @@ from db import cursor
 ACTIVE_STATUSES = ("scheduled", "postponed")
 
 
-def create_reminder(message_id: int, user_id: int, remind_at) -> int:
+def create_reminder(note_id: int, user_id: int, remind_at) -> int:
     """Insert a scheduled reminder and return its id.
 
-    The reminder's text is the message it was parsed from (joined via
-    message_id at read time), so it isn't stored on the reminder row.
+    The reminder's text is the note it was parsed from (joined via
+    note_id at read time), so it isn't stored on the reminder row.
     """
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO reminders (message_id, user_id, remind_at)
+            INSERT INTO reminders (note_id, user_id, remind_at)
             VALUES (%s, %s, %s)
             RETURNING id;
             """,
-            (message_id, user_id, remind_at),
+            (note_id, user_id, remind_at),
         )
         return cur.fetchone()[0]
 
@@ -34,7 +34,7 @@ def claim_due_reminders(now, stale_before, limit: int = 50):
     """Atomically claim due reminders for delivery.
 
     Moves eligible rows to the transient 'sending' status and returns
-    [(id, user_id, chat_id, text, remind_at)] — text from messages, chat_id
+    [(id, user_id, chat_id, text, remind_at)] — text from notes, chat_id
     from users (for Telegram delivery). `FOR UPDATE SKIP LOCKED` means two
     dispatchers never claim the same row. Rows stuck in 'sending' since before
     `stale_before` (crash mid-send) are reclaimed too.
@@ -52,11 +52,11 @@ def claim_due_reminders(now, stale_before, limit: int = 50):
                     FOR UPDATE SKIP LOCKED
                     LIMIT %s
                 )
-                RETURNING id, user_id, message_id, remind_at
+                RETURNING id, user_id, note_id, remind_at
             )
             SELECT c.id, c.user_id, u.chat_id, m.text, c.remind_at
             FROM claimed c
-            JOIN messages m ON m.id = c.message_id
+            JOIN notes m ON m.id = c.note_id
             JOIN users u ON u.id = c.user_id
             ORDER BY c.remind_at;
             """,
@@ -72,7 +72,7 @@ def upcoming_reminders(user_id: int, limit: int = 10):
             """
             SELECT r.id, r.remind_at, m.text, r.status
             FROM reminders r
-            JOIN messages m ON m.id = r.message_id
+            JOIN notes m ON m.id = r.note_id
             WHERE r.user_id = %s AND r.status IN ('scheduled', 'postponed')
             ORDER BY r.remind_at
             LIMIT %s;

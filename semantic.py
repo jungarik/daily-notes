@@ -33,7 +33,7 @@ def embed(text: str) -> str:
 
 
 def build_chunks(text: str) -> list[dict]:
-    """Chunk `text` and embed each chunk, ready for message_store.save_message."""
+    """Chunk `text` and embed each chunk, ready for note_store.save_note."""
     return [
         {
             "index": i,

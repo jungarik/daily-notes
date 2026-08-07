@@ -10,7 +10,7 @@ Every message is saved with a timestamp. Voice notes are transcribed with OpenAI
 transcription-context prompt); the raw audio is uploaded to S3-compatible object
 storage (Railway bucket / R2 / S3) and the message keeps only the object key.
 Each message's text is split into chunks that are embedded with OpenAI and stored
-in `message_chunks` (pgvector), powering semantic search via `/search`.
+in `note_chunks` (pgvector), powering semantic search via `/search`.
 
 ## Project layout
 
@@ -23,8 +23,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
 | `semantic.py`     | chunking + embeddings + semantic search                    |
-| `message_store.py`| `messages` row persistence                                 |
-| `chunk_store.py`  | `message_chunks` persistence                               |
+| `note_store.py`  | `notes` row persistence                                    |
+| `chunk_store.py`  | `note_chunks` persistence                               |
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `storage.py`      | upload voice audio to S3-compatible object storage         |
 | `enrichment.py`   | on-demand note enrichment → type/title/projects/tags/priority |
@@ -36,7 +36,7 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `migrate.py`, `migrations/` | schema migrations                                |
 
 Dependencies flow one way: `bot` → services (`semantic`, `transcription`,
-`reminders`) → stores (`message_store`, `reminder_store`, `user_store`) →
+`reminders`) → stores (`note_store`, `reminder_store`, `user_store`) →
 `db`/`config`. Stores never import services, so the semantic layer and the
 Telegram layer stay decoupled.
 
@@ -111,7 +111,7 @@ falls back to the top chunk's text.
 
 `rank`, `similarity` (0–1 cosine), `distance` (raw cosine), `rel_to_top`
 (similarity gap behind the #1 hit), `content` (the matched chunk text),
-`message_id`, `chunk_id`, `chunk_index`, `chunk_count`, `source_type`,
+`note_id`, `chunk_id`, `chunk_index`, `chunk_count`, `source_type`,
 `created_at`, `remind_at` (the note's next active reminder — the in-range one
 when filtering, else `None`), `token_count`, and `metadata`.
 
@@ -227,7 +227,7 @@ at the edge (`user_store.get_or_create_user`) and everything internal keys on
 | language | text        | `en` / `uk` (set via /language)    |
 | created_at / updated_at | timestamptz |                        |
 
-`messages` — one row per received note:
+`notes` — one row per received note:
 
 | column     | type         | notes                      |
 |------------|--------------|----------------------------|
@@ -245,26 +245,26 @@ at the edge (`user_store.get_or_create_user`) and everything internal keys on
 | path        | text        | vault folder path (Obsidian home)   |
 | created_at  | timestamptz | defaults to `now()`                 |
 
-`message_chunks` — normalized chunks of a message (1:N), embedded and searched
+`note_chunks` — normalized chunks of a note (1:N), embedded and searched
 at chunk granularity:
 
 | column      | type         | notes                                   |
 |-------------|--------------|-----------------------------------------|
 | id          | serial       | primary key                             |
-| message_id  | integer      | FK → `messages(id)`, `ON DELETE CASCADE`|
-| chunk_index | integer      | order of the chunk within its message   |
+| note_id     | integer      | FK → `notes(id)`, `ON DELETE CASCADE`|
+| chunk_index | integer      | order of the chunk within its note   |
 | content     | text         | normalized chunk text                   |
 | token_count | integer      | optional token count                    |
 | metadata    | jsonb        | arbitrary chunk metadata                |
 | embedding   | vector(1536) | embedding of the chunk                  |
 | created_at  | timestamptz  | defaults to `now()`                     |
 
-`reminders` — reminders parsed from messages:
+`reminders` — reminders parsed from notes:
 
 | column     | type        | notes                                            |
 |------------|-------------|--------------------------------------------------|
 | id         | serial      | primary key                                      |
-| message_id | integer     | FK → `messages(id)`, `ON DELETE CASCADE` (text comes from here) |
+| note_id    | integer     | FK → `notes(id)`, `ON DELETE CASCADE` (text comes from here) |
 | user_id    | bigint      | FK → `users(id)` (owner; chat resolved for delivery) |
 | remind_at  | timestamptz | when it should fire                              |
 | status     | text        | scheduled / postponed / sending / done / canceled |
