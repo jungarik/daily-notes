@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 import enrichment
+import links
+import link_store
 import reminders
 import semantic
 import storage
@@ -201,7 +203,79 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
         meta["tags"], meta["path"],
     )
     logger.info("Enriched note %s -> %s '%s'", note_id, meta["type"], meta["title"])
-    await query.edit_message_text(f"{query.message.text}\n\n{_meta_line(meta)}")
+    locale = user_locale(user_id)
+    await query.edit_message_text(
+        f"{query.message.text}\n\n{_meta_line(meta)}",
+        reply_markup=_link_open_keyboard(note_id, locale),
+    )
+
+
+def _link_open_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(t(locale, "btn_link"), callback_data=f"l:open:{note_id}")]]
+    )
+
+
+def _link_picker_keyboard(from_note_id: int, cands: list[dict], locale: str) -> InlineKeyboardMarkup:
+    rows = []
+    for c in cands:
+        mark = "✅ " if link_store.is_linked(from_note_id, c["note_id"]) else "◻️ "
+        title = (c["title"] or "note")[:40]
+        rows.append([InlineKeyboardButton(
+            mark + title, callback_data=f"l:tog:{from_note_id}:{c['note_id']}"
+        )])
+    rows.append([InlineKeyboardButton(t(locale, "btn_close"), callback_data=f"l:close:{from_note_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _toggle_keyboard(markup: InlineKeyboardMarkup, tapped_cb: str, linked: bool) -> InlineKeyboardMarkup:
+    """Rebuild the picker keyboard, flipping only the tapped candidate's mark."""
+    mark = "✅ " if linked else "◻️ "
+    rows = []
+    for row in markup.inline_keyboard:
+        new_row = []
+        for b in row:
+            if b.callback_data == tapped_cb:
+                title = b.text.split(" ", 1)[1] if " " in b.text else b.text
+                new_row.append(InlineKeyboardButton(mark + title, callback_data=b.callback_data))
+            else:
+                new_row.append(InlineKeyboardButton(b.text, callback_data=b.callback_data))
+        rows.append(new_row)
+    return InlineKeyboardMarkup(rows)
+
+
+async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🔗 Link picker — open a candidate list; tap a note to connect/disconnect."""
+    query = update.callback_query
+    parts = query.data.split(":")  # l:<action>:<from>[:<cand>]
+    action = parts[1]
+    user_id = user_id_of(update)
+    locale = user_locale(user_id)
+
+    if action == "open":
+        from_id = int(parts[2])
+        cands = links.candidates(user_id, from_id)
+        if not cands:
+            await query.answer(t(locale, "link_none"), show_alert=True)
+            return
+        await query.answer()
+        await query.edit_message_reply_markup(_link_picker_keyboard(from_id, cands, locale))
+    elif action == "tog":
+        await query.answer()
+        from_id, cand_id = int(parts[2]), int(parts[3])
+        if link_store.is_linked(from_id, cand_id):
+            link_store.remove_link(from_id, cand_id)
+            linked = False
+        else:
+            link_store.add_link(from_id, cand_id)
+            linked = True
+        await query.edit_message_reply_markup(
+            _toggle_keyboard(query.message.reply_markup, query.data, linked)
+        )
+    elif action == "close":
+        await query.answer()
+        from_id = int(parts[2])
+        await query.edit_message_reply_markup(_link_open_keyboard(from_id, locale))
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -415,6 +489,7 @@ def main():
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
+    app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot running. Press Ctrl+C to stop.")

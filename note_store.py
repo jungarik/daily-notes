@@ -32,11 +32,23 @@ def save_note(
 
 
 def get_text(note_id: int) -> str | None:
-    """Return a message's text, or None."""
+    """Return a note's text, or None."""
     with cursor() as cur:
         cur.execute("SELECT text FROM notes WHERE id = %s;", (note_id,))
         row = cur.fetchone()
         return row[0] if row else None
+
+
+def get_note(note_id: int) -> dict | None:
+    """Return {text, title, path, tags} for a note, or None."""
+    with cursor() as cur:
+        cur.execute(
+            "SELECT text, title, path, tags FROM notes WHERE id = %s;", (note_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"text": row[0], "title": row[1], "path": row[2], "tags": row[3]}
 
 
 def set_metadata(

@@ -28,6 +28,8 @@ Each module has a single responsibility; `bot.py` is only the Telegram layer.
 | `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `storage.py`      | upload voice audio to S3-compatible object storage         |
 | `enrichment.py`   | on-demand note enrichment → type/title/projects/tags/priority |
+| `links.py`        | ranked link candidates (similarity + shared path/tags)     |
+| `link_store.py`   | `note_links` persistence (directed; backlinks = reverse)   |
 | `reminders.py`    | fast-path reminder-time extraction (keyword gate + LLM)    |
 | `timeparser.py`   | agenda date-range parsing for search                       |
 | `reminder_store.py`| `reminders` persistence + atomic claim                    |
@@ -145,6 +147,18 @@ path/tag vocabulary — so classification stays consistent (it extends the folde
 tree instead of inventing parallel folders). The reply is edited to show the
 result (`💡 title / 📁 path / 🏷 tags / ⚡ priority`). On failure it degrades to a
 plain `note`.
+
+### Links (human-in-the-loop)
+
+After enrichment the note shows a **🔗 Link** button. Tapping it lists the ~5
+most related notes (`links.candidates`: semantic nearest neighbours re-ranked
+with a boost for a shared `path` or `tags`). Each suggested note is itself a
+button — tap it to connect (◻️ → ✅), tap again to disconnect. Selection is
+stateless: the note ids ride in the callback data and the ✅ marks live in the
+keyboard, so nothing is kept in memory and it survives a restart. Links are
+directed and stored in `note_links`; **backlinks are the reverse query**, so
+connecting A→B gives B its backlink for free. Nothing is auto-linked — you pick.
+(LLM-typed relationship labels and Obsidian `[[…]]` export are a later phase.)
 
 ## Reminders
 

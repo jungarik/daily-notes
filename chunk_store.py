@@ -59,6 +59,33 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
         ]
 
 
+def candidate_notes(user_id: int, query_embedding: str, exclude_ids: list[int],
+                    limit: int = 15) -> list[dict]:
+    """Nearest enriched notes to the embedding, for link suggestions.
+
+    Returns [{note_id, title, path, tags, distance}], closest first, excluding
+    `exclude_ids` (at least the note itself).
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.title, m.path, m.tags,
+                   MIN(mc.embedding <=> %s::vector) AS distance
+            FROM note_chunks mc
+            JOIN notes m ON m.id = mc.note_id
+            WHERE m.user_id = %s AND m.title IS NOT NULL AND NOT (m.id = ANY(%s))
+            GROUP BY m.id, m.title, m.path, m.tags
+            ORDER BY distance
+            LIMIT %s;
+            """,
+            (query_embedding, user_id, exclude_ids, limit),
+        )
+        return [
+            {"note_id": r[0], "title": r[1], "path": r[2], "tags": r[3], "distance": r[4]}
+            for r in cur.fetchall()
+        ]
+
+
 def search_chunks(
     user_id: int,
     query_embedding: str,
