@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import time
 import pathlib
 import logging
 
@@ -24,8 +25,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = os.environ.get("DATABASE_URL")
 MIGRATIONS_DIR = pathlib.Path(__file__).parent / "migrations"
+
+# Retry the initial connection so a database that isn't ready yet at deploy time
+# (or a brief network blip) doesn't hard-fail startup.
+CONNECT_ATTEMPTS = int(os.environ.get("DB_CONNECT_ATTEMPTS", "10"))
+CONNECT_BACKOFF_SECONDS = float(os.environ.get("DB_CONNECT_BACKOFF_SECONDS", "3"))
+
+
+def _connect_with_retry():
+    """Open a connection, retrying transient failures with a bounded backoff.
+
+    Raises immediately if DATABASE_URL is unset/empty — that's a misconfiguration,
+    not a transient error, and retrying would only hide it.
+    """
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is not set. This service needs a database connection "
+            "string. On Railway, add it on THIS service referencing your Postgres "
+            "service, e.g. DATABASE_URL=${{Postgres.DATABASE_URL}}."
+        )
+    last_exc = None
+    for attempt in range(1, CONNECT_ATTEMPTS + 1):
+        try:
+            return psycopg.connect(DATABASE_URL)
+        except psycopg.OperationalError as exc:
+            last_exc = exc
+            logger.warning(
+                "Database not reachable (attempt %d/%d): %s",
+                attempt, CONNECT_ATTEMPTS, str(exc).splitlines()[0],
+            )
+            if attempt < CONNECT_ATTEMPTS:
+                time.sleep(CONNECT_BACKOFF_SECONDS)
+    raise last_exc
 
 
 def _applied_versions(cur) -> set[str]:
@@ -46,7 +79,7 @@ def run_migrations():
     """Apply any migration files that have not been applied yet."""
     files = sorted(MIGRATIONS_DIR.glob("*.sql"))
 
-    with psycopg.connect(DATABASE_URL) as conn:
+    with _connect_with_retry() as conn:
         with conn.cursor() as cur:
             done = _applied_versions(cur)
         conn.commit()

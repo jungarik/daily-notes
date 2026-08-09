@@ -100,8 +100,13 @@ ordering stops mattering — only the API touches the database.
 - **No public domain.** The service is reachable only on the project's private
   network. That network is the primary access control.
 - **`API_INTERNAL_TOKEN`** is defence in depth: if set, `/internal/*` requires a
-  matching `X-Internal-Token` header. `/health` stays open for the platform
-  healthcheck.
+  matching `X-Internal-Token` header. `/health` stays open (no token) for manual
+  checks and for the bot's `ApiClient.health()`.
+- **No Railway deploy healthcheck.** The service binds IPv6-only (`::`) for
+  private networking, and Railway's healthcheck probe can arrive over IPv4 and be
+  rejected — failing the deploy even though the app is up. So `railway.api.json`
+  has no `healthcheckPath`; Railway marks the deploy healthy once the process
+  stays up. `/health` still exists for on-demand checks.
 - **The API owns schema migrations.** As the backend gateway it runs
   `run_migrations()` on startup (lifespan) before serving requests; client
   adapters (the bot) no longer migrate and assume the schema is present.
