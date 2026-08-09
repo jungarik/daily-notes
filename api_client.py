@@ -92,22 +92,31 @@ class ApiClient:
             logger.exception("API known_paths failed")
             return []
 
-    async def set_note_path(self, note_id: int, path: str) -> dict | None:
-        """Move a note to a path; returns the note's updated metadata, or None on
-        error / missing note."""
+    async def set_note_path(self, note_id: int, path: str) -> tuple[dict | None, str | None]:
+        """Move a note to a path. Returns (meta, error):
+        - (meta, None)        on success
+        - (None, detail)      when the path is rejected (e.g. not under a root folder)
+        - (None, None)        on any other failure / missing note
+        """
         if not self.configured:
-            return None
+            return (None, None)
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
                     f"{self._base_url}/internal/notes/{note_id}/path",
                     json={"path": path}, headers=self._headers(),
                 )
-                resp.raise_for_status()
-                return resp.json()
+            if resp.status_code == 422:
+                try:
+                    detail = resp.json().get("detail", "invalid path")
+                except Exception:
+                    detail = "invalid path"
+                return (None, detail)
+            resp.raise_for_status()
+            return (resp.json(), None)
         except Exception:
             logger.exception("API set_note_path failed")
-            return None
+            return (None, None)
 
     async def search(self, user_id: int, query: str) -> str | None:
         """Agenda-aware RAG answer over the user's notes, via the API. Timezone

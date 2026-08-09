@@ -41,6 +41,7 @@ from stores.reminder_store import (
 from telegram import (
     Update,
     BotCommand,
+    ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
@@ -62,6 +63,10 @@ logger = logging.getLogger(__name__)
 # Client for the API service (used for the change-path flow; other handlers still
 # call services in-process during the transition to the API gateway).
 api = ApiClient()
+
+# Pending "New path…" prompts: ForceReply prompt message_id -> the note + the
+# original enriched message to refresh once the user replies with a path.
+pending_new_path: dict[int, dict] = {}
 
 
 def user_id_of(update: Update) -> int:
@@ -125,9 +130,39 @@ async def _offer_reminder(msg, user_id: int, note_id: int, text: str, tz, locale
     )
 
 
+async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A user replied to a 'New path…' prompt: validate + set it via the API and
+    refresh the original enriched note."""
+    msg = update.message
+    info = pending_new_path.pop(msg.reply_to_message.message_id, None)
+    if not info:
+        return
+    locale = user_locale(user_id_of(update))
+    meta, err = await api.set_note_path(info["note_id"], msg.text.strip())
+    if err:
+        await msg.reply_text(t(locale, "path_invalid", roots=", ".join(config.ROOT_FOLDERS)))
+        return
+    if not meta:
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    try:
+        await context.bot.edit_message_text(
+            chat_id=info["chat_id"], message_id=info["msg_id"],
+            text=f"{info['base']}\n\n{_meta_line(meta)}",
+            reply_markup=_enriched_keyboard(info["note_id"], locale),
+        )
+    except Exception:
+        logger.exception("Failed to refresh note message after new path")
+    await msg.reply_text(t(locale, "path_set", path=meta.get("path", "")))
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Capture a text note immediately; offer on-demand enrichment."""
     msg = update.message
+    # A reply to a pending 'New path…' prompt is a path, not a new note.
+    if msg.reply_to_message and msg.reply_to_message.message_id in pending_new_path:
+        await _apply_new_path(update, context)
+        return
     user_id = user_id_of(update)
     tz, locale = user_tz(user_id), user_locale(user_id)
     note_id = note_service.capture_note(user_id, msg.from_user.username, msg.text)
@@ -210,7 +245,7 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
             return
         path = paths[idx]
-        meta = await api.set_note_path(note_id, path)
+        meta, _ = await api.set_note_path(note_id, path)
         await query.answer(t(locale, "path_set", path=path))
         if meta:
             base = (query.message.text or "").rsplit("\n\n", 1)[0]
@@ -220,6 +255,22 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+    elif action == "new":
+        # Ask the user to type a brand-new path (ForceReply); the reply is picked
+        # up in handle_message via the pending_new_path map.
+        await query.answer()
+        base = (query.message.text or "").rsplit("\n\n", 1)[0]
+        prompt = await query.message.reply_text(
+            t(locale, "path_new_prompt"), reply_markup=ForceReply(selective=True),
+        )
+        if len(pending_new_path) > 200:      # bound the map (unanswered prompts)
+            pending_new_path.clear()
+        pending_new_path[prompt.message_id] = {
+            "note_id": note_id,
+            "chat_id": query.message.chat_id,
+            "msg_id": query.message.message_id,
+            "base": base,
+        }
     elif action == "back":
         await query.answer()
         await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
@@ -239,6 +290,7 @@ def _path_picker_keyboard(note_id: int, paths: list[str], locale: str) -> Inline
         [InlineKeyboardButton(("📁 " + p)[:60], callback_data=f"p:set:{note_id}:{i}")]
         for i, p in enumerate(paths)
     ]
+    rows.append([InlineKeyboardButton(t(locale, "btn_new_path"), callback_data=f"p:new:{note_id}")])
     rows.append([InlineKeyboardButton(t(locale, "btn_back"), callback_data=f"p:back:{note_id}")])
     return InlineKeyboardMarkup(rows)
 

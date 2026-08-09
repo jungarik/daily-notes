@@ -77,10 +77,26 @@ def known_paths(user_id: int) -> list[str]:
     """The path vocabulary offered to the user/model: their existing DB paths
     (most-used first), then any predefined default folders not already present."""
     paths = [name for name, _ in note_store.list_paths(user_id)]
-    for p in config.ROOT_FOLDERS:
-        if p not in paths:
-            paths.append(p)
     return paths
+
+
+def clean_root_path(path: str) -> str | None:
+    """Normalize a user-entered path and require it to start with a root folder.
+
+    Returns the canonical path (root folder cased as in config.ROOT_FOLDERS), or
+    None if it's empty or doesn't start with a known root folder.
+    """
+    if not path:
+        return None
+    parts = [p.strip() for p in str(path).replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")]
+    if not parts:
+        return None
+    roots = {name.lower(): name for name in config.ROOT_FOLDERS}
+    canonical = roots.get(parts[0].lower())
+    if canonical is None:
+        return None
+    return "/".join([canonical] + parts[1:])
 
 
 def set_path(note_id: int, path: str) -> dict | None:
