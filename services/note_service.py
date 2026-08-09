@@ -63,7 +63,7 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
         known_tags=note_store.list_tags(user_id),
         similar_notes=similar,
         root_folders=config.ROOT_FOLDERS,
-        default_root_folder_folder=config.DROFALT_NOTE_FOLDER,
+        default_root_folder=config.DEFAULT_ROOT_FOLDER,
     )
     note_store.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"],
