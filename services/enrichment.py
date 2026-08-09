@@ -63,13 +63,24 @@ def _normalize(data: dict, text: str, default_root_folder: str | None = None) ->
         "priority": priority,
     }
 
-def _folder_defs(root_folders) -> str:
-    """Explain what each root folder is for (classification by purpose, not lexical
-    similarity), from the {folder: meaning} mapping."""
+def _root_folders(root_folders, default_root_folder) -> str:
+    """The core path rule + folder meanings + fallback, in one block.
+
+    Every path must start with exactly one of the predefined root folders; the
+    mapping gives each folder's purpose so the model classifies by meaning, not
+    by lexical similarity.
+    """
     if not root_folders:
         return ""
-    defs = [f"{name} — {desc}" for name, desc in root_folders.items()]
-    return " Root folder meanings: " + "; ".join(defs) + "."
+    names = ", ".join(root_folders)
+    meanings = "; ".join(f"{name} — {desc}" for name, desc in root_folders.items())
+    return (
+        f" The path is core to the vault: it MUST start with exactly one of these "
+        f"root folders — {names} — optionally followed by sub-folders "
+        f"(e.g. Projects/telegram-bot). Root folder meanings: {meanings}. Pick the "
+        f"root folder matching the note's purpose, and reuse an existing path when "
+        f"one fits. If you cannot determine a path, use {default_root_folder}."
+    )
 
 
 def _fmt_vocab(items) -> str:
@@ -116,17 +127,6 @@ def _neighbour_hint(neighbours) -> str:
     return " Notes most similar to this one are " + "; ".join(parts) + ". Prefer these when they fit."
 
 
-def _defaults(root_folders, default_root_folder) -> str:
-    """A prompt block offering the predefined root folders as a fallback set."""
-    if not root_folders:
-        return ""
-    return (
-        f" If no existing path fits, pick one of these root folders: "
-        f"{', '.join(root_folders)}. If you still cannot determine a path, use "
-        f"{default_root_folder}."
-    )
-
-
 def _similar(similar_notes) -> str:
     """A few-shot block: how similar past notes were classified (for consistency)."""
     if not similar_notes:
@@ -151,7 +151,7 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
     user's existing DB paths) and `root_folders` (the predefined root folders as a
     {folder: meaning} mapping). It reuses an existing path when one fits, otherwise
     picks a root folder; if it can't decide at all, the path falls back to
-    `default_path`. `known_tags` and `similar_notes` keep the rest of the
+    `default_root_folder`. `known_tags` and `similar_notes` keep the rest of the
     classification consistent.
     """
     try:
@@ -183,13 +183,12 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
             "and these tags — decide this first, before the other fields), "
             "type (one of: idea, task, reminder, note, question, link), "
             "title (a concise summary, <=8 words, in the note's own language), "
-            "path (a single vault folder path — forward slashes, no filename, e.g. "
-            "projects/telegram-bot or areas/health), "
+            "path (a single vault folder path that starts with a root folder — "
+            "forward slashes, no filename, e.g. Projects/telegram-bot or Areas/health), "
             "tags (0-5 lowercase topic keywords), "
             "priority (one of: low, med, high)."
-            + _folder_defs(root_folders)
+            + _root_folders(root_folders, default_root_folder)
             + _vocabulary(known_paths, known_tags)
-            + _defaults(root_folders, default_root_folder)
             + neighbour_block
         )
         resp = get_client().chat.completions.create(
