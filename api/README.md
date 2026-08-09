@@ -19,6 +19,7 @@ api/
     system.py        # GET /  ·  GET /health  ·  GET /health/db      (open)
     internal.py      # GET /internal/ping                             (token-guarded)
     users.py         # POST /internal/users/resolve                   (token-guarded)
+    notes.py         # GET /internal/notes/paths · POST /internal/notes/{id}/path  (token-guarded)
     search.py        # POST /internal/search                          (token-guarded)
 ```
 

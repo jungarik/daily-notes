@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import config
 import i18n
+from api_client import ApiClient
 from services import links
 from stores import link_store
 import storage
@@ -57,6 +58,10 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+# Client for the API service (used for the change-path flow; other handlers still
+# call services in-process during the transition to the API gateway).
+api = ApiClient()
 
 
 def user_id_of(update: Update) -> int:
@@ -176,14 +181,66 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     locale = user_locale(user_id)
     await query.edit_message_text(
         f"{query.message.text}\n\n{_meta_line(meta)}",
-        reply_markup=_link_open_keyboard(note_id, locale),
+        reply_markup=_enriched_keyboard(note_id, locale),
     )
 
 
-def _link_open_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(t(locale, "btn_link"), callback_data=f"l:open:{note_id}")]]
-    )
+async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """📁 Change-path picker — list the user's known paths (via the API) and move
+    the note to the tapped one."""
+    query = update.callback_query
+    parts = query.data.split(":")  # p:<action>:<note_id>[:<idx>]
+    action = parts[1]
+    note_id = int(parts[2])
+    user_id = user_id_of(update)
+    locale = user_locale(user_id)
+
+    if action == "open":
+        paths = await api.known_paths(user_id)
+        if not paths:
+            await query.answer(t(locale, "path_none"), show_alert=True)
+            return
+        await query.answer()
+        await query.edit_message_reply_markup(_path_picker_keyboard(note_id, paths, locale))
+    elif action == "set":
+        idx = int(parts[3])
+        paths = await api.known_paths(user_id)  # re-fetch: stable order → idx maps back
+        if idx >= len(paths):
+            await query.answer()
+            await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+            return
+        path = paths[idx]
+        meta = await api.set_note_path(note_id, path)
+        await query.answer(t(locale, "path_set", path=path))
+        if meta:
+            base = (query.message.text or "").rsplit("\n\n", 1)[0]
+            await query.edit_message_text(
+                f"{base}\n\n{_meta_line(meta)}",
+                reply_markup=_enriched_keyboard(note_id, locale),
+            )
+        else:
+            await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+    elif action == "back":
+        await query.answer()
+        await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+
+
+def _enriched_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
+    """Buttons shown on an enriched note: change its path, or link it to others."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(locale, "btn_change_path"), callback_data=f"p:open:{note_id}")],
+        [InlineKeyboardButton(t(locale, "btn_link"), callback_data=f"l:open:{note_id}")],
+    ])
+
+
+def _path_picker_keyboard(note_id: int, paths: list[str], locale: str) -> InlineKeyboardMarkup:
+    """A row per known path (tap to move the note there), plus Back."""
+    rows = [
+        [InlineKeyboardButton(("📁 " + p)[:60], callback_data=f"p:set:{note_id}:{i}")]
+        for i, p in enumerate(paths)
+    ]
+    rows.append([InlineKeyboardButton(t(locale, "btn_back"), callback_data=f"p:back:{note_id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _link_picker_keyboard(from_note_id: int, cands: list[dict], locale: str) -> InlineKeyboardMarkup:
@@ -240,7 +297,7 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "close":
         await query.answer()
         from_id = int(parts[2])
-        await query.edit_message_reply_markup(_link_open_keyboard(from_id, locale))
+        await query.edit_message_reply_markup(_enriched_keyboard(from_id, locale))
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -466,6 +523,7 @@ def main():
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
+    app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -71,6 +71,31 @@ def set_metadata(
         )
 
 
+def get_meta(note_id: int) -> dict | None:
+    """Return the full enrichment metadata {type, title, path, tags, priority}
+    for a note, or None if it doesn't exist."""
+    with cursor() as cur:
+        cur.execute(
+            "SELECT note_type, title, path, tags, priority FROM notes WHERE id = %s;",
+            (note_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "type": row[0], "title": row[1], "path": row[2],
+            "tags": row[3] or [], "priority": row[4],
+        }
+
+
+def set_path(note_id: int, path: str) -> None:
+    """Update just a note's vault path (leaves other metadata untouched)."""
+    with cursor() as cur:
+        cur.execute(
+            "UPDATE notes SET path = %s WHERE id = %s;", (path, note_id)
+        )
+
+
 def list_paths(user_id: int, limit: int = 30) -> list[str]:
     """The user's existing vault paths, most-used first (controlled vocabulary)."""
     with cursor() as cur:

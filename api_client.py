@@ -76,6 +76,39 @@ class ApiClient:
             logger.exception("API resolve_user failed")
             return None
 
+    async def known_paths(self, user_id: int) -> list[str]:
+        """The user's existing vault paths (controlled vocabulary). Empty on error."""
+        if not self.configured:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{self._base_url}/internal/notes/paths",
+                    params={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("paths", [])
+        except Exception:
+            logger.exception("API known_paths failed")
+            return []
+
+    async def set_note_path(self, note_id: int, path: str) -> dict | None:
+        """Move a note to a path; returns the note's updated metadata, or None on
+        error / missing note."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{note_id}/path",
+                    json={"path": path}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API set_note_path failed")
+            return None
+
     async def search(self, user_id: int, query: str) -> str | None:
         """Agenda-aware RAG answer over the user's notes, via the API. Timezone
         and language are resolved server-side from user_id. Returns the answer

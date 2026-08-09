@@ -25,3 +25,19 @@ class ResolveUserRequest(BaseModel):
 
 class ResolveUserResponse(BaseModel):
     user_id: int
+
+
+class PathsResponse(BaseModel):
+    paths: list[str]
+
+
+class SetPathRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=200)
+
+
+class NoteMeta(BaseModel):
+    type: str | None = None
+    title: str | None = None
+    path: str | None = None
+    tags: list[str] = []
+    priority: str | None = None

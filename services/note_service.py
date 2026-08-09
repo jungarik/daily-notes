@@ -65,3 +65,19 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
     )
     logger.info("Enriched note %s -> %s '%s'", note_id, meta["type"], meta["title"])
     return meta
+
+
+def known_paths(user_id: int) -> list[str]:
+    """The user's existing vault paths (controlled vocabulary), most-used first."""
+    return note_store.list_paths(user_id)
+
+
+def set_path(note_id: int, path: str) -> dict | None:
+    """Move a note to a different vault path. Returns the note's updated metadata,
+    or None if the note doesn't exist."""
+    if note_store.get_text(note_id) is None:
+        logger.warning("set_path: note %s not found", note_id)
+        return None
+    note_store.set_path(note_id, path)
+    logger.info("Note %s path set to %r", note_id, path)
+    return note_store.get_meta(note_id)
