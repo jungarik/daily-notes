@@ -9,6 +9,7 @@ On any failure it degrades gracefully to a plain note.
 
 import json
 import logging
+from collections import Counter
 from datetime import datetime
 
 import config
@@ -62,31 +63,67 @@ def _normalize(data: dict, text: str, default_path: str | None = None) -> dict:
         "priority": priority,
     }
 
+def _folder_defs(root_folders) -> str:
+    """Explain what each root folder is for (classification by purpose, not lexical
+    similarity), from the {folder: meaning} mapping."""
+    if not root_folders:
+        return ""
+    defs = [f"{name} — {desc}" for name, desc in root_folders.items()]
+    return " Root folder meanings: " + "; ".join(defs) + "."
+
+
+def _fmt_vocab(items) -> str:
+    """Render a vocabulary list; each item is a name or a (name, count) pair."""
+    out = []
+    for it in items:
+        if isinstance(it, (list, tuple)) and len(it) == 2:
+            out.append(f"{it[0]} ({it[1]})")
+        else:
+            out.append(str(it))
+    return ", ".join(out)
 
 def _vocabulary(known_paths, known_tags) -> str:
-    """A prompt block nudging the model to reuse existing paths/tags."""
+    """A prompt block nudging the model to reuse existing paths/tags (with counts)."""
     lines = []
     if known_paths:
-        lines.append(f"Existing paths: {', '.join(known_paths)}.")
+        lines.append(f"Existing paths (with note use counts): {_fmt_vocab(known_paths)}.")
     if known_tags:
-        lines.append(f"Existing tags: {', '.join(known_tags)}.")
+        lines.append(f"Existing tags (with use counts): {_fmt_vocab(known_tags)}.")
     if not lines:
         return ""
     return (
-        " Reuse an existing path/tag verbatim when it fits (extend a path rather "
-        "than inventing a parallel one); only create a new one if none apply. "
+        " Reuse an existing path/tag verbatim when it genuinely fits (extend a path "
+        "rather than inventing a parallel one); only create a new one if none apply. "
         + " ".join(lines)
     )
 
 
-def _defaults(default_paths, default_path) -> str:
-    """A prompt block offering the predefined default folders as a fallback set."""
-    if not default_paths:
+def _neighbour_hint(neighbours) -> str:
+    """Aggregate the closest notes into an explicit path/tag suggestion."""
+    paths, tags = Counter(), Counter()
+    for n in neighbours:
+        if n.get("path"):
+            paths[n["path"]] += 1
+        for tg in (n.get("tags") or []):
+            tags[tg] += 1
+    if not paths and not tags:
+        return ""
+    parts = []
+    if paths:
+        parts.append("filed under: " + ", ".join(f"{p} ({c})" for p, c in paths.most_common(5)))
+    if tags:
+        parts.append("commonly tagged: " + ", ".join(f"{t} ({c})" for t, c in tags.most_common(8)))
+    return " Notes most similar to this one are " + "; ".join(parts) + ". Prefer these when they fit."
+
+
+def _defaults(root_folders, default_root_folder) -> str:
+    """A prompt block offering the predefined root folders as a fallback set."""
+    if not root_folders:
         return ""
     return (
-        f" If no existing path fits, pick one of these default top-level folders: "
-        f"{', '.join(default_paths)}. If you still cannot determine a path, use "
-        f"{default_path}."
+        f" If no existing path fits, pick one of these root folders: "
+        f"{', '.join(root_folders)}. If you still cannot determine a path, use "
+        f"{default_root_folder}."
     )
 
 
@@ -106,30 +143,54 @@ def _similar(similar_notes) -> str:
 
 
 def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
-           default_paths=None, default_path=None) -> dict:
+           root_folders=None, default_root_folder=None) -> dict:
     """Classify + extract metadata for a note. Returns a normalized dict:
     {type, title, path, tags, priority}.
 
     Path vocabulary has two parts the model weighs together: `known_paths` (the
-    user's existing DB paths) and `default_paths` (predefined default folders).
-    It reuses an existing path when one fits, otherwise picks a default; if it
-    can't decide at all, the path falls back to `default_path`. `known_tags` and
-    `similar_notes` keep the rest of the classification consistent.
+    user's existing DB paths) and `root_folders` (the predefined root folders as a
+    {folder: meaning} mapping). It reuses an existing path when one fits, otherwise
+    picks a root folder; if it can't decide at all, the path falls back to
+    `default_path`. `known_tags` and `similar_notes` keep the rest of the
+    classification consistent.
     """
     try:
+        # Partition neighbours by closeness: strong ones drive the suggestion and
+        # few-shot; if none are close, tell the model not to force-fit a path.
+        neighbours = similar_notes or []
+        threshold = config.ENRICH_SIMILAR_MAX_DISTANCE
+        has_dist = any(n.get("distance") is not None for n in neighbours)
+        strong = (
+            [n for n in neighbours if n.get("distance") is not None and n["distance"] <= threshold]
+            if has_dist else neighbours
+        )
+        if strong:
+            neighbour_block = _neighbour_hint(strong) + _similar(strong)
+        elif neighbours:
+            neighbour_block = (
+                " None of the user's existing notes are closely related to this one, "
+                "so do not force-fit an existing path — prefer a default folder, and "
+                "create a new path only if clearly warranted."
+            )
+        else:
+            neighbour_block = ""
+
         system = (
             "You organize a person's brain-dump notes (Ukrainian or English) into "
             "an Obsidian-style vault. Classify the note and extract metadata. "
             "Return strict JSON with keys: "
+            "reasoning (1-2 short sentences naming the note's topic and why this path "
+            "and these tags — decide this first, before the other fields), "
             "type (one of: idea, task, reminder, note, question, link), "
             "title (a concise summary, <=8 words, in the note's own language), "
             "path (a single vault folder path — forward slashes, no filename, e.g. "
             "projects/telegram-bot or areas/health), "
             "tags (0-5 lowercase topic keywords), "
             "priority (one of: low, med, high)."
+            + _folder_defs(root_folders)
             + _vocabulary(known_paths, known_tags)
-            + _defaults(default_paths, default_path)
-            + _similar(similar_notes)
+            + _defaults(root_folders, default_root_folder)
+            + neighbour_block
         )
         resp = get_client().chat.completions.create(
             model=config.ENRICH_LLM_MODEL,
@@ -142,7 +203,8 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
         )
         content = resp.choices[0].message.content
         logger.info("Enrichment | input=%r | response=%s", text, content)
-        return _normalize(json.loads(content), text, default_path)
+        return _normalize(json.loads(content), text, default_root_folder)
     except Exception:
         logger.exception("Enrichment failed; storing as a plain note")
-        return _fallback(text, default_path)
+        return _fallback(text, default_root_folder)
+

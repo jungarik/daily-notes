@@ -45,6 +45,11 @@ DEFAULT_TZ = ZoneInfo(REMINDER_TZ)
 REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
 # Model that enriches each note (type/title/path/tags/priority).
 ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o-mini")
+# How many similar past notes to retrieve as classification context.
+ENRICH_SIMILAR_LIMIT = int(os.environ.get("ENRICH_SIMILAR_LIMIT", "8"))
+# Max cosine distance for a neighbour to count as "closely related" (0 = identical).
+# Beyond this, the enricher is told not to force-fit an existing path.
+ENRICH_SIMILAR_MAX_DISTANCE = float(os.environ.get("ENRICH_SIMILAR_MAX_DISTANCE", "0.6"))
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.
 REMINDER_FEW_COUNT = int(os.environ.get("REMINDER_FEW_COUNT", "5"))
@@ -56,17 +61,21 @@ SENDING_STALE_SECONDS = int(os.environ.get("REMINDER_SENDING_STALE_SECONDS", "12
 # Show a "(was due X ago)" note when a reminder fires later than this.
 LATE_NOTE_SECONDS = 60
 
-# --- Vault paths (enrichment vocabulary) ---
-# Predefined default top-level folders the enricher may choose from when no
-# existing note path fits. The model considers these alongside the user's
-# existing DB paths. Global for now; may become per-user later.
-DEFAULT_PATHS = [
-    p.strip() for p in os.environ.get(
-        "DEFAULT_PATHS", "inbox,daily_notes,projects,areas,knowledge,sources,archive"
-    ).split(",") if p.strip()
-]
+# --- Vault root folders (default structure) ---
+# The predefined top-level folders and what each is for — a single source of
+# truth for both the enrichment vocabulary and the folder meanings shown to the
+# model. Global for now; may become per-user later.
+ROOT_FOLDERS: dict[str, str] = {
+    "Inbox": "uncategorized / not yet sorted",
+    "Daily_notes": "journal entries and daily logs",
+    "Projects": "active efforts with a concrete outcome or deadline",
+    "Areas": "ongoing responsibilities to maintain over time",
+    "Knowledge": "evergreen reference notes, concepts, how-tos",
+    "Resources": "reference material and topics of interest",
+    "Archive": "inactive or completed items kept for reference",
+}
 # Where a note lands when the model can't determine any path.
-DEFAULT_NOTE_PATH = os.environ.get("DEFAULT_NOTE_PATH", "Inbox")
+DEFAULT_ROOT_FOLDER = os.environ.get("DEFAULT_ROOT_FOLDER", "Inbox")
 
 # --- Localization ---
 BOT_DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")

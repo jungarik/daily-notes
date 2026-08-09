@@ -53,14 +53,17 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
         return None
 
     embedding = semantic.embed(text)
-    similar = chunk_store.similar_notes(user_id, embedding, exclude_note_id=note_id)
+    similar = chunk_store.similar_notes(
+        user_id, embedding, exclude_note_id=note_id,
+        limit=config.ENRICH_SIMILAR_LIMIT,
+    )
     meta = enrichment.enrich(
         text,
         known_paths=note_store.list_paths(user_id),
         known_tags=note_store.list_tags(user_id),
         similar_notes=similar,
-        default_paths=config.DEFAULT_PATHS,
-        default_path=config.DEFAULT_NOTE_PATH,
+        root_folders=config.ROOT_FOLDERS,
+        default_root_folder_folder=config.DROFALT_NOTE_FOLDER,
     )
     note_store.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"],
@@ -73,8 +76,8 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
 def known_paths(user_id: int) -> list[str]:
     """The path vocabulary offered to the user/model: their existing DB paths
     (most-used first), then any predefined default folders not already present."""
-    paths = list(note_store.list_paths(user_id))
-    for p in config.DEFAULT_PATHS:
+    paths = [name for name, _ in note_store.list_paths(user_id)]
+    for p in config.ROOT_FOLDERS:
         if p not in paths:
             paths.append(p)
     return paths

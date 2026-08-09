@@ -96,8 +96,8 @@ def set_path(note_id: int, path: str) -> None:
         )
 
 
-def list_paths(user_id: int, limit: int = 30) -> list[str]:
-    """The user's existing vault paths, most-used first (controlled vocabulary)."""
+def list_paths(user_id: int, limit: int = 30) -> list[tuple[str, int]]:
+    """The user's existing vault paths with note counts, most-used first."""
     with cursor() as cur:
         cur.execute(
             """
@@ -109,11 +109,11 @@ def list_paths(user_id: int, limit: int = 30) -> list[str]:
             """,
             (user_id, limit),
         )
-        return [row[0] for row in cur.fetchall()]
+        return [(row[0], row[1]) for row in cur.fetchall()]
 
 
-def list_tags(user_id: int, limit: int = 30) -> list[str]:
-    """The user's existing tags, most-used first (controlled vocabulary)."""
+def list_tags(user_id: int, limit: int = 30) -> list[tuple[str, int]]:
+    """The user's existing tags with usage counts, most-used first."""
     with cursor() as cur:
         cur.execute(
             """
@@ -125,4 +125,4 @@ def list_tags(user_id: int, limit: int = 30) -> list[str]:
             """,
             (user_id, limit),
         )
-        return [row[0] for row in cur.fetchall()]
+        return [(row[0], row[1]) for row in cur.fetchall()]

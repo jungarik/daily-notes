@@ -36,8 +36,9 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
                   limit: int = 5) -> list[dict]:
     """Already-enriched notes most similar to the query embedding (for few-shot).
 
-    Returns [{note_type, title, path, tags}], one per note, closest first.
-    Only notes that already have metadata (title set) are useful as examples.
+    Returns [{note_type, title, path, tags, distance}], one per note, closest
+    first (cosine distance; smaller = more similar). Only notes that already have
+    metadata (title set) are useful as examples.
     """
     with cursor() as cur:
         cur.execute(
@@ -54,7 +55,8 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
             (query_embedding, user_id, exclude_note_id, limit),
         )
         return [
-            {"note_type": r[0], "title": r[1], "path": r[2], "tags": r[3]}
+            {"note_type": r[0], "title": r[1], "path": r[2], "tags": r[3],
+             "distance": float(r[4])}
             for r in cur.fetchall()
         ]
 
