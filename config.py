@@ -44,7 +44,7 @@ REMINDER_TZ = os.environ.get("REMINDER_TZ", "Europe/Kyiv")
 DEFAULT_TZ = ZoneInfo(REMINDER_TZ)
 REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
 # Model that enriches each note (type/title/path/tags/priority).
-ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o-mini")
+ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o")
 # How many similar past notes to retrieve as classification context.
 ENRICH_SIMILAR_LIMIT = int(os.environ.get("ENRICH_SIMILAR_LIMIT", "8"))
 # Max cosine distance for a neighbour to count as "closely related" (0 = identical).

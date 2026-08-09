@@ -71,7 +71,7 @@ def extract_reminder(text: str, now: datetime) -> datetime | None:
             ],
         )
         content = resp.choices[0].message.content
-        logger.info("Reminder LLM | input=%r | response=%s", text, content)
+        logger.info("Reminder LLM | input=%r | response=%r", text, content)
         data = json.loads(content)
         if not data.get("is_reminder") or not data.get("remind_at"):
             return None

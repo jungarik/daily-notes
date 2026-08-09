@@ -21,11 +21,11 @@ TYPES = ("idea", "task", "reminder", "note", "question", "link")
 PRIORITIES = ("low", "med", "high")
 
 
-def _fallback(text: str, default_path: str | None = None) -> dict:
+def _fallback(text: str, default_root_folder: str | None = None) -> dict:
     return {
         "type": "note",
         "title": text.strip()[:80],
-        "path": default_path,
+        "path": default_root_folder,
         "tags": [],
         "priority": "low",
     }
@@ -39,7 +39,7 @@ def _clean_path(raw) -> str | None:
     return "/".join(parts) or None
 
 
-def _normalize(data: dict, text: str, default_path: str | None = None) -> dict:
+def _normalize(data: dict, text: str, default_root_folder: str | None = None) -> dict:
     note_type = str(data.get("type", "note")).lower()
     if note_type not in TYPES:
         note_type = "note"
@@ -53,7 +53,7 @@ def _normalize(data: dict, text: str, default_path: str | None = None) -> dict:
         priority = "low"
 
     # If the model couldn't settle on a path, fall back to the default folder.
-    path = _clean_path(data.get("path")) or default_path
+    path = _clean_path(data.get("path")) or default_root_folder
 
     return {
         "type": note_type,
@@ -202,7 +202,10 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
             ],
         )
         content = resp.choices[0].message.content
-        logger.info("Enrichment | input=%r | response=%s", text, content)
+        logger.info(
+            "Enrichment | input=%r | system=%r | response=%r",
+            text, system, content,
+        )
         return _normalize(json.loads(content), text, default_root_folder)
     except Exception:
         logger.exception("Enrichment failed; storing as a plain note")
