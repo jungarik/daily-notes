@@ -56,6 +56,18 @@ SENDING_STALE_SECONDS = int(os.environ.get("REMINDER_SENDING_STALE_SECONDS", "12
 # Show a "(was due X ago)" note when a reminder fires later than this.
 LATE_NOTE_SECONDS = 60
 
+# --- Vault paths (enrichment vocabulary) ---
+# Predefined default top-level folders the enricher may choose from when no
+# existing note path fits. The model considers these alongside the user's
+# existing DB paths. Global for now; may become per-user later.
+DEFAULT_PATHS = [
+    p.strip() for p in os.environ.get(
+        "DEFAULT_PATHS", "inbox,daily_notes,projects,areas,knowledge,sources,archive"
+    ).split(",") if p.strip()
+]
+# Where a note lands when the model can't determine any path.
+DEFAULT_NOTE_PATH = os.environ.get("DEFAULT_NOTE_PATH", "Inbox")
+
 # --- Localization ---
 BOT_DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")
 

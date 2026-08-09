@@ -8,6 +8,7 @@ Reminder detection/creation lives in `reminders`; search in `search_service`.
 
 import logging
 
+import config
 from services import semantic
 import storage
 from services import enrichment
@@ -58,6 +59,8 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
         known_paths=note_store.list_paths(user_id),
         known_tags=note_store.list_tags(user_id),
         similar_notes=similar,
+        default_paths=config.DEFAULT_PATHS,
+        default_path=config.DEFAULT_NOTE_PATH,
     )
     note_store.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"],
@@ -68,8 +71,13 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
 
 
 def known_paths(user_id: int) -> list[str]:
-    """The user's existing vault paths (controlled vocabulary), most-used first."""
-    return note_store.list_paths(user_id)
+    """The path vocabulary offered to the user/model: their existing DB paths
+    (most-used first), then any predefined default folders not already present."""
+    paths = list(note_store.list_paths(user_id))
+    for p in config.DEFAULT_PATHS:
+        if p not in paths:
+            paths.append(p)
+    return paths
 
 
 def set_path(note_id: int, path: str) -> dict | None:

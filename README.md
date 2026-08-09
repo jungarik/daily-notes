@@ -1,10 +1,23 @@
-# Telegram brain-dump bot (POC)
+# Brain-dump knowledge base — an Obsidian-like vault with Zettelkasten linking
 
-A frictionless capture bot: send any text **or voice** note — ideas, tasks,
-reminders, thoughts — and it's transcribed (if voice), enriched by an LLM
-(type / title / projects / tags / priority / reminder), stored in PostgreSQL,
-and made semantically searchable. Ask it questions and it answers from your
-notes (RAG); ask "what do I have to do today?" and it scopes to reminders due.
+A personal knowledge system built around frictionless capture. Send any text
+**or voice** note — ideas, tasks, reminders, thoughts — and it's transcribed (if
+voice), enriched by an LLM (type / title / vault path / tags / priority /
+reminder), stored in PostgreSQL, and made semantically searchable. Ask it
+questions and it answers from your notes (RAG); ask "what do I have to do today?"
+and it scopes to reminders due.
+
+It's designed to work like an **Obsidian vault**: every note is filed under a
+single folder-style `path` (a controlled vocabulary of existing plus predefined
+default folders such as `Inbox`, `projects`, `areas`, `knowledge`), carries tags,
+and is meant to export to an Obsidian-style vault (frontmatter + folders +
+`[[wikilinks]]`). On top of that it adds **Zettelkasten**-style knowledge
+linking: after enrichment you can connect a note to related notes (semantic
+nearest neighbours re-ranked by shared path/tags), building a directed graph of
+ideas with backlinks — human-curated, not auto-generated.
+
+The Telegram bot is one client adapter; the same domain layer is fronted by a
+separate API service (`api/`) so a web or iOS client can reuse it.
 
 Every message is saved with a timestamp. Voice notes are transcribed with OpenAI (`whisper-1`, using a
 transcription-context prompt); the raw audio is uploaded to S3-compatible object
