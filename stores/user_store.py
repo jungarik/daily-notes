@@ -25,6 +25,14 @@ def get_chat_id(user_id: int) -> int | None:
         return row[0] if row else None
 
 
+def get_settings(user_id: int) -> tuple[str | None, str | None]:
+    """Return (timezone, language) for a user in one query, (None, None) if absent."""
+    with cursor() as cur:
+        cur.execute("SELECT timezone, language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+
 def get_timezone(user_id: int) -> str | None:
     with cursor() as cur:
         cur.execute("SELECT timezone FROM users WHERE id = %s;", (user_id,))

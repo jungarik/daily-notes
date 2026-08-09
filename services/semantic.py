@@ -8,7 +8,7 @@ and delegates storage/queries to chunk_store.
 import logging
 
 import config
-import chunk_store
+from stores import chunk_store
 from openai_client import get_client
 
 logger = logging.getLogger(__name__)

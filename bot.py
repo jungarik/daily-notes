@@ -1,10 +1,12 @@
 """
-Telegram bot layer.
+Telegram bot layer — a thin client adapter.
 
-Wires Telegram handlers to the service modules: transcription (voice → text),
-semantic (chunking / embeddings / search), note_store (persistence), and the
-reminders parser + store. Keeps no business logic of its own beyond formatting
-and dispatch.
+Translates Telegram updates into domain-service calls and formats the replies.
+It holds no business logic: capture, reminder detection, enrichment, link
+selection and search/answer all live in the service layer (`note_service`,
+`search_service`, `links`), so every client (bot, web, iOS, future API) shares
+the same behaviour. Only Telegram specifics live here — keyboards, message
+formatting, command wiring, reminder delivery.
 """
 
 import asyncio
@@ -14,18 +16,15 @@ from zoneinfo import ZoneInfo
 
 import config
 import i18n
-import enrichment
-import links
-import link_store
-import reminders
-import semantic
+from services import links
+from stores import link_store
 import storage
-import timeparser
-import note_store
-import chunk_store
-import transcription
-import user_store
-import reminder_store
+from services import reminders
+from services import transcription
+from stores import user_store
+from stores import reminder_store
+from services import note_service
+from services import search_service
 from i18n import t
 from config import (
     DEFAULT_TZ,
@@ -33,9 +32,7 @@ from config import (
     SENDING_STALE_SECONDS,
     LATE_NOTE_SECONDS,
 )
-from migrate import run_migrations
-from reminder_store import (
-    create_reminder,
+from stores.reminder_store import (
     claim_due_reminders,
     set_status,
     postpone,
@@ -89,20 +86,6 @@ NOTE_ICONS = {
 }
 
 
-def _capture(user_id: int, username: str, text: str,
-             source_type: str = "text", audio_key: str | None = None,
-             audio_mime: str | None = None) -> int:
-    """Fast path: chunk + embed + save the note (no metadata yet). Returns id."""
-    chunks = semantic.build_chunks(text)
-    note_id = note_store.save_note(
-        user_id, username, text,
-        source_type=source_type, audio_key=audio_key, audio_mime=audio_mime,
-    )
-    chunk_store.save_chunks(note_id, chunks)
-    logger.info("Captured note %s (%d chunk(s))", note_id, len(chunks))
-    return note_id
-
-
 def _enrich_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}")]]
@@ -121,11 +104,12 @@ def _meta_line(meta: dict) -> str:
 
 
 async def _offer_reminder(msg, user_id: int, note_id: int, text: str, tz, locale: str):
-    """Fast path: if the note is time-bearing, store a reminder and confirm."""
-    remind_at = reminders.extract_reminder(text, datetime.now(tz))
-    if not remind_at:
+    """If the note is time-bearing, ask the service to store a reminder and
+    confirm it to the user. Formatting only — detection lives in the service."""
+    result = reminders.detect_reminder(note_id, user_id, text, datetime.now(tz))
+    if not result:
         return
-    reminder_id = create_reminder(note_id, user_id, remind_at)
+    reminder_id, remind_at = result
     when = remind_at.astimezone(tz)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
@@ -141,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user_id = user_id_of(update)
     tz, locale = user_tz(user_id), user_locale(user_id)
-    note_id = _capture(user_id, msg.from_user.username, msg.text)
+    note_id = note_service.capture_note(user_id, msg.from_user.username, msg.text)
     await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(note_id, locale))
     await _offer_reminder(msg, user_id, note_id, msg.text, tz, locale)
 
@@ -167,10 +151,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mime = voice.mime_type or "audio/ogg"
-    audio_key = storage.upload_audio(audio_bytes, content_type=mime)
-    note_id = _capture(
+    note_id = note_service.capture_note(
         user_id, msg.from_user.username, text,
-        source_type="voice", audio_key=audio_key, audio_mime=mime,
+        source_type="voice", audio_bytes=audio_bytes, mime=mime,
     )
     await msg.reply_text(
         t(locale, "transcribed_saved", text=text),
@@ -186,23 +169,10 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user_id_of(update)
     note_id = int(query.data.split(":")[1])
 
-    text = note_store.get_text(note_id)
-    if not text:
+    meta = note_service.enrich_note(user_id, note_id)
+    if not meta:
         return
 
-    embedding = semantic.embed(text)
-    similar = chunk_store.similar_notes(user_id, embedding, exclude_note_id=note_id)
-    meta = enrichment.enrich(
-        text,
-        known_paths=note_store.list_paths(user_id),
-        known_tags=note_store.list_tags(user_id),
-        similar_notes=similar,
-    )
-    note_store.set_metadata(
-        note_id, meta["type"], meta["title"], meta["priority"],
-        meta["tags"], meta["path"],
-    )
-    logger.info("Enriched note %s -> %s '%s'", note_id, meta["type"], meta["title"])
     locale = user_locale(user_id)
     await query.edit_message_text(
         f"{query.message.text}\n\n{_meta_line(meta)}",
@@ -263,12 +233,7 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "tog":
         await query.answer()
         from_id, cand_id = int(parts[2]), int(parts[3])
-        if link_store.is_linked(from_id, cand_id):
-            link_store.remove_link(from_id, cand_id)
-            linked = False
-        else:
-            link_store.add_link(from_id, cand_id)
-            linked = True
+        linked = links.toggle_link(from_id, cand_id)
         await query.edit_message_reply_markup(
             _toggle_keyboard(query.message.reply_markup, query.data, linked)
         )
@@ -288,12 +253,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     tz = user_tz(user_id)
-    agenda_range = timeparser.parse_agenda(query, datetime.now(tz))
-    agenda_start, agenda_end = agenda_range[:2] if agenda_range else (None, None)
-    reply = semantic.answer(
-        user_id, query,
-        remind_start=agenda_start, remind_end=agenda_end,
-        language=locale, tz=tz,
+    reply = search_service.answer(
+        user_id, query, datetime.now(tz), language=locale, tz=tz,
     )
     await update.message.reply_text(reply or t(locale, "search_none"))
 
@@ -443,6 +404,21 @@ async def _dispatch_due_reminders(app):
             set_status(reminder_id, "scheduled")
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Global safety net: log any unhandled handler exception with context and
+    show the user a friendly message instead of failing silently."""
+    logger.exception("Unhandled error while processing update", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            locale = user_locale(user_id_of(update))
+        except Exception:
+            locale = i18n.DEFAULT_LOCALE
+        try:
+            await update.effective_message.reply_text(t(locale, "error_generic"))
+        except Exception:
+            logger.exception("Failed to deliver error message to user")
+
+
 async def _reminder_loop(app):
     """Poll the DB for due reminders every REMINDER_POLL_SECONDS."""
     while True:
@@ -471,7 +447,8 @@ async def _post_init(app):
 
 
 def main():
-    run_migrations()
+    # Schema migrations are owned by the API service (run on its startup), not
+    # by client adapters. The bot assumes the schema is already present.
     if storage.is_configured():
         logger.info("Audio storage: enabled (bucket %s).", config.S3_BUCKET)
     else:
@@ -492,6 +469,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(on_error)
     logger.info("Bot running. Press Ctrl+C to stop.")
     app.run_polling()
 

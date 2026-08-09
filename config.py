@@ -58,3 +58,17 @@ LATE_NOTE_SECONDS = 60
 
 # --- Localization ---
 BOT_DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")
+
+# --- API service (separate Railway deployable) ---
+API_TITLE = os.environ.get("API_TITLE", "daily-notes API")
+API_VERSION = os.environ.get("API_VERSION", "0.1.0")
+# OpenAPI/Swagger docs are off by default; enable for debugging only.
+API_DOCS_ENABLED = os.environ.get("API_DOCS_ENABLED", "false").lower() == "true"
+# Shared secret for /internal endpoints — defence in depth on top of the private
+# network. Leave blank to disable the check (local dev).
+API_INTERNAL_TOKEN = os.environ.get("API_INTERNAL_TOKEN")
+# Base URL the bot uses to reach the API over Railway's private network, e.g.
+# http://daily-notes-api.railway.internal:8080  (blank = bot calls in-process).
+API_BASE_URL = os.environ.get("API_BASE_URL")
+# Timeout (seconds) for outbound API calls from a client.
+API_TIMEOUT_SECONDS = float(os.environ.get("API_TIMEOUT_SECONDS", "10"))

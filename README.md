@@ -16,31 +16,41 @@ in `note_chunks` (pgvector), powering semantic search via `/search`.
 
 Each module has a single responsibility; `bot.py` is only the Telegram layer.
 
+Clients (`bot.py`, `api/`) at the root; domain logic in `services/`; persistence
+in `stores/`; shared infra at the root.
+
 | module            | responsibility                                             |
 |-------------------|------------------------------------------------------------|
 | `bot.py`          | Telegram handlers, command menu, reminder dispatcher loop  |
+| `api/`            | FastAPI gateway service (own Railway service); owns migrations |
+| `api_client.py`   | async client seam the bot uses to call the API             |
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
-| `semantic.py`     | chunking + embeddings + semantic search                    |
-| `note_store.py`  | `notes` row persistence                                    |
-| `chunk_store.py`  | `note_chunks` persistence                               |
-| `transcription.py`| voice audio → text (OpenAI whisper)                        |
 | `storage.py`      | upload voice audio to S3-compatible object storage         |
-| `enrichment.py`   | on-demand note enrichment → type/title/projects/tags/priority |
-| `links.py`        | ranked link candidates (similarity + shared path/tags)     |
-| `link_store.py`   | `note_links` persistence (directed; backlinks = reverse)   |
-| `reminders.py`    | fast-path reminder-time extraction (keyword gate + LLM)    |
-| `timeparser.py`   | agenda date-range parsing for search                       |
-| `reminder_store.py`| `reminders` persistence + atomic claim                    |
-| `user_store.py`   | `users` (surrogate id, optional chat_id, timezone, language) |
 | `i18n.py`, `locales.json` | localization                                       |
-| `migrate.py`, `migrations/` | schema migrations                                |
+| `migrate.py`, `migrations/` | schema migrations (run by the API on startup)    |
+| **`services/`**   | domain logic (below)                                       |
+| `services/note_service.py`   | capture + on-demand enrichment orchestration    |
+| `services/search_service.py` | agenda-aware RAG answer                          |
+| `services/user_service.py`   | identity resolution + per-user settings         |
+| `services/reminders.py`      | reminder-time extraction + creation             |
+| `services/links.py`          | ranked link candidates + link toggle            |
+| `services/semantic.py`       | chunking + embeddings + semantic search / answer |
+| `services/enrichment.py`     | note enrichment → type/title/path/tags/priority |
+| `services/transcription.py`  | voice audio → text (OpenAI whisper)             |
+| `services/timeparser.py`     | agenda date-range parsing for search            |
+| **`stores/`**     | persistence (below)                                        |
+| `stores/note_store.py`   | `notes` row persistence                                |
+| `stores/chunk_store.py`  | `note_chunks` persistence                              |
+| `stores/link_store.py`   | `note_links` persistence (directed; backlinks = reverse) |
+| `stores/reminder_store.py`| `reminders` persistence + atomic claim                |
+| `stores/user_store.py`   | `users` (surrogate id, optional chat_id, timezone, language) |
 
-Dependencies flow one way: `bot` → services (`semantic`, `transcription`,
-`reminders`) → stores (`note_store`, `reminder_store`, `user_store`) →
-`db`/`config`. Stores never import services, so the semantic layer and the
-Telegram layer stay decoupled.
+Dependencies flow one way: clients (`bot`, `api`) → `services/` → `stores/` →
+`db`/`config`. Stores never import services; services never import a client — so
+the domain layer stays reusable by every client and the API. Imports are
+absolute (`from services import …`, `from stores import …`).
 
 ## Setup
 
@@ -220,9 +230,10 @@ table, so running it repeatedly is safe and only new files are applied.
 - Add a change: create the next numbered file, e.g. `migrations/0003_xxx.sql`.
 - Apply pending changes: `python migrate.py`.
 
-`bot.py` also calls `run_migrations()` on startup, so a fresh deploy sets itself
-up automatically. On Railway you can alternatively set `python migrate.py` as a
-pre-deploy command.
+The **API service** runs `run_migrations()` on startup (its FastAPI lifespan), so
+it is the component that brings a fresh database up to date. Client adapters
+(`bot.py`) no longer migrate and assume the schema is present — so on a fresh
+database the API service must be up before the bot (see `api/README.md`).
 
 ## Tables
 

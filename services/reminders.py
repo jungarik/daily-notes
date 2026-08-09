@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 
 import config
+from stores import reminder_store
 from openai_client import get_client
 
 logger = logging.getLogger(__name__)
@@ -79,3 +80,17 @@ def extract_reminder(text: str, now: datetime) -> datetime | None:
     except Exception:
         logger.exception("Reminder extraction failed")
         return None
+
+
+def detect_reminder(note_id: int, user_id: int, text: str, now: datetime):
+    """If the note is time-bearing, create a reminder for it. Returns
+    (reminder_id, remind_at) or None."""
+    remind_at = extract_reminder(text, now)
+    if not remind_at:
+        return None
+    reminder_id = reminder_store.create_reminder(note_id, user_id, remind_at)
+    logger.info(
+        "Reminder %s created for note %s at %s",
+        reminder_id, note_id, remind_at.isoformat(),
+    )
+    return reminder_id, remind_at

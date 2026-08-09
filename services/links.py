@@ -6,9 +6,14 @@ so the human is offered the most obviously-related notes first. The user picks
 from the list; nothing is linked automatically.
 """
 
-import note_store
-import chunk_store
-import semantic
+import logging
+
+from stores import note_store
+from stores import chunk_store
+from stores import link_store
+from services import semantic
+
+logger = logging.getLogger(__name__)
 
 PATH_BOOST = 0.10   # same/adjacent folder
 TAG_BOOST = 0.05    # per shared tag
@@ -47,3 +52,14 @@ def candidates(user_id: int, note_id: int, limit: int = 5) -> list[dict]:
         r["score"] = round(score(r), 4)
     rows.sort(key=lambda r: r["score"], reverse=True)
     return rows[:limit]
+
+
+def toggle_link(from_note_id: int, to_note_id: int) -> bool:
+    """Flip the directed link from → to. Returns True if now linked, else False."""
+    if link_store.is_linked(from_note_id, to_note_id):
+        link_store.remove_link(from_note_id, to_note_id)
+        logger.info("Unlinked note %s -x-> %s", from_note_id, to_note_id)
+        return False
+    link_store.add_link(from_note_id, to_note_id)
+    logger.info("Linked note %s --> %s", from_note_id, to_note_id)
+    return True

@@ -2,6 +2,7 @@
   "en": {
     "saved": "Saved ✅",
     "reminder_set": "⏰ Reminder set for {when} ({tz})",
+    "error_generic": "⚠️ Something went wrong. Please try again.",
     "transcribe_failed": "Transcription failed — please try again later.",
     "transcribe_empty": "Couldn't transcribe that voice note 🤔",
     "transcribed_saved": "Transcribed & saved ✅\n\n{text}",
@@ -44,6 +45,7 @@
   "uk": {
     "saved": "Збережено ✅",
     "reminder_set": "⏰ Нагадування встановлено на {when} ({tz})",
+    "error_generic": "⚠️ Щось пішло не так. Спробуйте ще раз.",
     "transcribe_failed": "Не вдалося розпізнати голосове — спробуйте пізніше.",
     "transcribe_empty": "Не вдалося розпізнати це голосове 🤔",
     "transcribed_saved": "Розпізнано та збережено ✅\n\n{text}",
