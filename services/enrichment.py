@@ -75,8 +75,8 @@ def _root_folders(root_folders, default_root_folder) -> str:
     names = ", ".join(root_folders)
     meanings = "; ".join(f"{name} — {desc}" for name, desc in root_folders.items())
     return (
-        f" The path is core to the vault: it MUST start with exactly one of these "
-        f"root folders — {names} — optionally followed by sub-folders "
+        f" The path is core to the vault: any path starts with exactly one of these "
+        f"root folders — {names} — and MUST be followed by sub-folders "
         f"(e.g. Projects/telegram-bot). Root folder meanings: {meanings}. Pick the "
         f"root folder matching the note's purpose, and reuse an existing path when "
         f"one fits. If you cannot determine a path, use {default_root_folder}."
