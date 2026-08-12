@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 
 import config
 from migrate import run_migrations
-from api.routers import system, internal, users, notes, search
+from api.routers import system, internal, users, notes, reminders, search
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(internal.router)
     app.include_router(users.router)
     app.include_router(notes.router)
+    app.include_router(reminders.router)
     app.include_router(search.router)
 
     @app.exception_handler(Exception)

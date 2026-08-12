@@ -118,6 +118,42 @@ class ApiClient:
             logger.exception("API set_note_path failed")
             return (None, None)
 
+    async def _post_ok(self, path: str, json: dict | None = None) -> bool:
+        """POST and return True on 2xx, False otherwise."""
+        if not self.configured:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}{path}", json=json, headers=self._headers(),
+                )
+                return resp.status_code < 300
+        except Exception:
+            logger.exception("API POST %s failed", path)
+            return False
+
+    async def cancel_reminder(self, reminder_id: int) -> bool:
+        return await self._post_ok(f"/internal/reminders/{reminder_id}/cancel")
+
+    async def complete_reminder(self, reminder_id: int) -> bool:
+        return await self._post_ok(f"/internal/reminders/{reminder_id}/done")
+
+    async def snooze_reminder(self, reminder_id: int, user_id: int, mode: str) -> str | None:
+        """Postpone a reminder; returns the new remind_at (ISO) or None on failure."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/reminders/{reminder_id}/snooze",
+                    json={"user_id": user_id, "mode": mode}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("remind_at")
+        except Exception:
+            logger.exception("API snooze_reminder failed")
+            return None
+
     async def search(self, user_id: int, query: str) -> str | None:
         """Agenda-aware RAG answer over the user's notes, via the API. Timezone
         and language are resolved server-side from user_id. Returns the answer

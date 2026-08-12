@@ -41,3 +41,16 @@ class NoteMeta(BaseModel):
     path: str | None = None
     tags: list[str] = []
     priority: str | None = None
+
+
+class ReminderActionResponse(BaseModel):
+    ok: bool = True
+
+
+class SnoozeRequest(BaseModel):
+    user_id: int
+    mode: str  # "tomorrow" or a whole number of minutes, e.g. "10"
+
+
+class SnoozeResponse(BaseModel):
+    remind_at: str  # ISO-8601, in the user's timezone

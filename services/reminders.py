@@ -9,9 +9,10 @@ note metadata is handled separately, on demand, by enrichment.py.)
 import re
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
+from services import user_service
 from stores import reminder_store
 from openai_client import get_client
 
@@ -94,3 +95,36 @@ def detect_reminder(note_id: int, user_id: int, text: str, now: datetime):
         reminder_id, note_id, remind_at.isoformat(),
     )
     return reminder_id, remind_at
+
+
+# Hour a "tomorrow" snooze lands on, in the user's timezone.
+SNOOZE_TOMORROW_HOUR = 9
+
+
+def cancel(reminder_id: int) -> None:
+    """Cancel a reminder so it never fires."""
+    reminder_store.set_status(reminder_id, "canceled")
+    logger.info("Reminder %s canceled", reminder_id)
+
+
+def mark_done(reminder_id: int) -> None:
+    """Mark a reminder delivered/handled."""
+    reminder_store.set_status(reminder_id, "done")
+    logger.info("Reminder %s marked done", reminder_id)
+
+
+def snooze(reminder_id: int, user_id: int, mode: str) -> datetime:
+    """Postpone a reminder. `mode` is 'tomorrow' (→ next day at SNOOZE_TOMORROW_HOUR
+    in the user's timezone) or a number of minutes from now. Returns the new time.
+    """
+    tz = user_service.timezone(user_id)
+    now = datetime.now(tz)
+    if mode == "tomorrow":
+        new_time = (now + timedelta(days=1)).replace(
+            hour=SNOOZE_TOMORROW_HOUR, minute=0, second=0, microsecond=0,
+        )
+    else:
+        new_time = now + timedelta(minutes=int(mode))
+    reminder_store.postpone(reminder_id, new_time)
+    logger.info("Reminder %s snoozed to %s", reminder_id, new_time.isoformat())
+    return new_time

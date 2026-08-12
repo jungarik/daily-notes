@@ -36,7 +36,6 @@ from config import (
 from stores.reminder_store import (
     claim_due_reminders,
     set_status,
-    postpone,
 )
 from telegram import (
     Update,
@@ -451,8 +450,8 @@ def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
     )
 
 
-async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Cancel / Snooze / Done inline buttons."""
+async def on_button_handle_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle Cancel / Snooze / Done inline buttons (via the API service)."""
     query = update.callback_query
     await query.answer()
     parts = query.data.split(":")  # r:<action>:...:<id>
@@ -462,21 +461,19 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     base = query.message.text or "Reminder"
 
     if action == "cancel":
-        set_status(reminder_id, "canceled")
-        await query.edit_message_text(base + "\n\n" + t(locale, "canceled"))
+        ok = await api.cancel_reminder(reminder_id)
+        await query.edit_message_text(base + "\n\n" + t(locale, "canceled" if ok else "error_generic"))
     elif action == "done":
-        set_status(reminder_id, "done")
-        await query.edit_message_text(base + "\n\n" + t(locale, "done"))
+        ok = await api.complete_reminder(reminder_id)
+        await query.edit_message_text(base + "\n\n" + t(locale, "done" if ok else "error_generic"))
     elif action == "snz":
-        tz = user_tz(user_id)
-        now = datetime.now(tz)
-        if parts[2] == "tomorrow":
-            new_time = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-        else:
-            new_time = now + timedelta(minutes=int(parts[2]))
-        postpone(reminder_id, new_time)
+        remind_at = await api.snooze_reminder(reminder_id, user_id, parts[2])
+        if not remind_at:
+            await query.edit_message_text(base + "\n\n" + t(locale, "error_generic"))
+            return
+        when = datetime.fromisoformat(remind_at)
         await query.edit_message_text(
-            base + "\n\n" + t(locale, "snoozed", when=f"{new_time:%Y-%m-%d %H:%M}")
+            base + "\n\n" + t(locale, "snoozed", when=f"{when:%Y-%m-%d %H:%M}")
         )
 
 
@@ -573,7 +570,7 @@ def main():
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("language", language_command))
-    app.add_handler(CallbackQueryHandler(on_button, pattern=r"^r:"))
+    app.add_handler(CallbackQueryHandler(on_button_handle_reminder, pattern=r"^r:"))
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
