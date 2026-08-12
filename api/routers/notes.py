@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import config
 from services import note_service
 from api.deps import require_internal_token
-from api.schemas import PathsResponse, SetPathRequest, NoteMeta
+from api.schemas import PathsResponse, SetPathRequest, EnrichRequest, NoteMeta
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,16 @@ router = APIRouter(
 def known_paths(user_id: int) -> PathsResponse:
     """The user's existing vault paths, most-used first."""
     return PathsResponse(paths=note_service.known_paths(user_id))
+
+
+@router.post("/{note_id}/enrich", response_model=NoteMeta)
+def enrich(note_id: int, req: EnrichRequest) -> NoteMeta:
+    """Run the deferred enrichment pass and persist the metadata (type/title/path/
+    tags/priority). 404 if the note no longer exists."""
+    meta = note_service.enrich_note(req.user_id, note_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    return NoteMeta(**meta)
 
 
 @router.post("/{note_id}/path", response_model=NoteMeta)

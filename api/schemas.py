@@ -35,6 +35,10 @@ class SetPathRequest(BaseModel):
     path: str = Field(min_length=1, max_length=200)
 
 
+class EnrichRequest(BaseModel):
+    user_id: int
+
+
 class NoteMeta(BaseModel):
     type: str | None = None
     title: str | None = None

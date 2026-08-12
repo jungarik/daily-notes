@@ -203,19 +203,29 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """🧠 Enrich button — run the deferred metadata pass with similar-notes context."""
+    """🧠 Enrich button — run the deferred metadata pass via the API service."""
     query = update.callback_query
     await query.answer()
     user_id = user_id_of(update)
     note_id = int(query.data.split(":")[1])
+    locale = user_locale(user_id)
+    base = query.message.text or ""
 
-    meta = note_service.enrich_note(user_id, note_id)
+    # Show a friendly in-progress state and drop the button (enrichment does an
+    # embedding + LLM call, so it isn't instant; this also prevents double taps).
+    try:
+        await query.edit_message_text(f"{base}\n\n{t(locale, 'enriching')}")
+    except Exception:
+        pass
+
+    meta = await api.enrich_note(note_id, user_id)
     if not meta:
+        # Restore the original message + Enrich button so the user can retry.
+        await query.edit_message_text(base, reply_markup=_enrich_keyboard(note_id, locale))
         return
 
-    locale = user_locale(user_id)
     await query.edit_message_text(
-        f"{query.message.text}\n\n{_meta_line(meta)}",
+        f"{base}\n\n{_meta_line(meta)}",
         reply_markup=_enriched_keyboard(note_id, locale),
     )
 

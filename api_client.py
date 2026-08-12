@@ -92,6 +92,23 @@ class ApiClient:
             logger.exception("API known_paths failed")
             return []
 
+    async def enrich_note(self, note_id: int, user_id: int) -> dict | None:
+        """Run the deferred enrichment pass; returns the note's metadata, or None
+        on failure / missing note."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{note_id}/enrich",
+                    json={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API enrich_note failed")
+            return None
+
     async def set_note_path(self, note_id: int, path: str) -> tuple[dict | None, str | None]:
         """Move a note to a path. Returns (meta, error):
         - (meta, None)        on success
