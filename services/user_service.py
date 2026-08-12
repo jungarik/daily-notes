@@ -55,3 +55,39 @@ def settings(user_id: int) -> tuple[ZoneInfo, str]:
     Clients pass only a user_id — all user attributes are resolved here."""
     tz_name, lang = user_store.get_settings(user_id)
     return _resolve_tz(tz_name), _resolve_locale(lang)
+
+
+def settings_view(user_id: int) -> dict:
+    """Both the raw stored settings (or None) and the effective values with
+    defaults applied — so a client can format without knowing the defaults."""
+    tz_name, lang = user_store.get_settings(user_id)
+    return {
+        "timezone": tz_name,
+        "language": lang,
+        "tz_name": _resolve_tz(tz_name).key,
+        "locale": _resolve_locale(lang),
+    }
+
+
+def set_timezone(user_id: int, name: str) -> bool:
+    """Validate an IANA timezone name and store it. Returns False if invalid."""
+    try:
+        ZoneInfo(name)
+    except Exception:
+        logger.info("Rejected invalid timezone %r for user %s", name, user_id)
+        return False
+    user_store.set_timezone(user_id, name)
+    logger.info("User %s timezone set to %s", user_id, name)
+    return True
+
+
+def set_language(user_id: int, code: str) -> str | None:
+    """Validate/normalize a language code and store it. Returns the normalized
+    code ('en'/'uk'), or None if unsupported."""
+    lang = i18n.normalize(code)
+    if lang not in i18n.SUPPORTED:
+        logger.info("Rejected unsupported language %r for user %s", code, user_id)
+        return None
+    user_store.set_language(user_id, lang)
+    logger.info("User %s language set to %s", user_id, lang)
+    return lang

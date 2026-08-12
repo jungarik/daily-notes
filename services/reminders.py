@@ -101,6 +101,29 @@ def detect_reminder(note_id: int, user_id: int, text: str, now: datetime):
 SNOOZE_TOMORROW_HOUR = 9
 
 
+def upcoming(user_id: int, limit: int = 10):
+    """A user's active reminders as [(id, remind_at, text, status)]."""
+    return reminder_store.upcoming_reminders(user_id, limit)
+
+
+def active_count(user_id: int) -> int:
+    """Count a user's active (scheduled/postponed) reminders."""
+    return reminder_store.count_active(user_id)
+
+
+def claim_due(now, stale_before, limit: int = 50):
+    """Atomically claim due reminders for delivery. See reminder_store for the
+    contract. Delivery itself stays in the client (it owns the transport)."""
+    return reminder_store.claim_due_reminders(now, stale_before, limit)
+
+
+def reschedule(reminder_id: int) -> None:
+    """Return a claimed-but-undelivered reminder to 'scheduled' so the next poll
+    retries it (used when the client fails to deliver)."""
+    reminder_store.set_status(reminder_id, "scheduled")
+    logger.info("Reminder %s returned to scheduled (delivery retry)", reminder_id)
+
+
 def cancel(reminder_id: int) -> None:
     """Cancel a reminder so it never fires."""
     reminder_store.set_status(reminder_id, "canceled")

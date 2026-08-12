@@ -17,9 +17,11 @@ This is **not** just a Telegram bot. The Telegram bot is **one client adapter**.
 Planned clients: Telegram bot, web app, iOS app. A separate **API service**
 (`api/`, FastAPI) fronts the same domain layer and runs as its own Railway
 service on the project's private network; clients call it over
-`http://<service>.railway.internal:<port>`. It is currently an empty scaffold
-(health + a token-guarded `/internal` namespace); the bot still calls the
-services in-process, with `api_client.py` as the seam for switching later.
+`http://<service>.railway.internal:<port>`. The bot is **fully cut over**: it
+calls the API for every domain operation (identity, capture, enrichment, links,
+search, reminders + the dispatcher) through `api_client.py` and imports no
+`services`/`stores` and no `db`. The API's `/internal` namespace exposes the
+whole surface the bot needs.
 
 Consequences (follow these):
 
@@ -37,8 +39,8 @@ Consequences (follow these):
   (`POST /internal/users/resolve` with a Telegram `chat_id`), caches it, then
   passes `user_id` to every other endpoint. `chat_id` is the *only*
   Telegram-specific field the API knows about; everything else is client-agnostic.
-  (Today the bot still calls services/stores in-process — transitional — with
-  `api_client.py` as the seam.)
+  The bot caches the `chat_id → user_id` mapping to avoid a resolve round trip on
+  every update.
 - `chat_id` and other Telegram specifics stay at the adapter edge; internally use
   `user_id` (already done).
 
@@ -62,15 +64,19 @@ Consequences (follow these):
 Packages: **`services/`** (domain) and **`stores/`** (persistence); infra stays
 at the repo root (`config`, `db`, `openai_client`, `storage`, `i18n`, `migrate`).
 
-`bot.py` (thin Telegram adapter) → `services/` orchestration (`note_service`:
-capture / enrich, `reminders`: detect + create, `search_service`: agenda-aware
+`bot.py` (thin Telegram adapter) → `api_client.py` → **`api/`** (FastAPI
+gateway) → `services/` orchestration (`note_service`: capture / enrich,
+`reminders`: detect + create + dispatch state, `search_service`: agenda-aware
 RAG answer, `user_service`: identity + settings resolution, `links`: candidates
 + toggle) → `services/` domain helpers (`semantic`, `enrichment`,
 `transcription`, `timeparser`) → `stores/` (`note_store`, `chunk_store`,
 `reminder_store`, `link_store`, `user_store`) → `db`/`config`. Imports are
 absolute: `from services import X`, `from stores import Y`. `bot.py` keeps only
-Telegram specifics (keyboards, formatting, command wiring, reminder delivery,
-global `add_error_handler`).
+Telegram specifics (keyboards, formatting, command wiring, reminder *delivery*,
+global `add_error_handler`) and calls the API for everything else — it imports
+no `services`/`stores`/`db`. The API routers are thin: they validate at the edge
+(`api/schemas.py`) and compose `services/` calls; only the API touches the
+database.
 
 The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`

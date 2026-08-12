@@ -1,10 +1,12 @@
 """
-Client seam for calling the API service over Railway's private network.
+Client for calling the API service over Railway's private network.
 
-Not yet wired into the bot handlers — the bot still calls the domain services
-in-process. This exists so that migration is a swap at the adapter edge (call
-`api_client` instead of the service) rather than a rewrite. Async to match the
-bot's event loop.
+This is the bot's sole path to the backend: the bot imports no services/stores
+and never touches the database — every domain operation goes through a method
+here. Method names mirror the API's `/internal/*` endpoints. Async to match the
+bot's event loop. Each method degrades gracefully on failure (returns None / []
+/ (…, error)) so a transient API problem surfaces as a friendly reply, never a
+crash.
 """
 
 import logging
@@ -75,6 +77,174 @@ class ApiClient:
         except Exception:
             logger.exception("API resolve_user failed")
             return None
+
+    async def get_settings(self, user_id: int) -> dict | None:
+        """The user's settings context: raw + effective timezone/language and the
+        active reminder count. None on error (caller applies its own fallback)."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{self._base_url}/internal/users/settings",
+                    params={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API get_settings failed")
+            return None
+
+    async def set_timezone(self, user_id: int, name: str) -> tuple[bool, str | None]:
+        """Set the user's timezone. Returns (ok, error): (True, None) on success,
+        (False, "invalid") when rejected, (False, None) on any other failure."""
+        if not self.configured:
+            return (False, None)
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/users/timezone",
+                    json={"user_id": user_id, "timezone": name},
+                    headers=self._headers(),
+                )
+            if resp.status_code == 422:
+                return (False, "invalid")
+            resp.raise_for_status()
+            return (True, None)
+        except Exception:
+            logger.exception("API set_timezone failed")
+            return (False, None)
+
+    async def set_language(self, user_id: int, code: str) -> tuple[str | None, str | None]:
+        """Set the user's language. Returns (language, error): (lang, None) on
+        success, (None, "invalid") when unsupported, (None, None) on other error."""
+        if not self.configured:
+            return (None, None)
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/users/language",
+                    json={"user_id": user_id, "language": code},
+                    headers=self._headers(),
+                )
+            if resp.status_code == 422:
+                return (None, "invalid")
+            resp.raise_for_status()
+            return (resp.json().get("language"), None)
+        except Exception:
+            logger.exception("API set_language failed")
+            return (None, None)
+
+    async def capture_text(self, user_id: int, username: str | None, text: str) -> dict | None:
+        """Capture a text note (+ reminder detection). Returns {note_id, text,
+        reminder} or None on failure."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes",
+                    json={"user_id": user_id, "username": username, "text": text},
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API capture_text failed")
+            return None
+
+    async def capture_voice(
+        self, user_id: int, username: str | None, audio_bytes: bytes, mime: str,
+    ) -> dict | None:
+        """Transcribe + capture a voice note. Returns {note_id, text, reminder};
+        note_id is None with text="" when nothing was heard. None when the
+        transcription backend fails (502) or on any other error."""
+        if not self.configured:
+            return None
+        try:
+            data = {"user_id": str(user_id), "mime": mime}
+            if username:
+                data["username"] = username
+            files = {"audio": ("voice.ogg", audio_bytes, mime)}
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/voice",
+                    data=data, files=files, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API capture_voice failed")
+            return None
+
+    async def link_candidates(self, user_id: int, note_id: int) -> list[dict]:
+        """Ranked link candidates (each with a `linked` flag). Empty on error."""
+        if not self.configured:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{self._base_url}/internal/notes/{note_id}/link-candidates",
+                    params={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("candidates", [])
+        except Exception:
+            logger.exception("API link_candidates failed")
+            return []
+
+    async def toggle_link(self, from_note_id: int, to_note_id: int) -> bool:
+        """Toggle a directed link; returns the new linked state (False on error)."""
+        if not self.configured:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{from_note_id}/links/{to_note_id}/toggle",
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return bool(resp.json().get("linked"))
+        except Exception:
+            logger.exception("API toggle_link failed")
+            return False
+
+    async def list_reminders(self, user_id: int) -> list[dict]:
+        """The user's upcoming reminders [{id, remind_at, text, status}]. Empty on error."""
+        if not self.configured:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{self._base_url}/internal/reminders",
+                    params={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("reminders", [])
+        except Exception:
+            logger.exception("API list_reminders failed")
+            return []
+
+    async def claim_due_reminders(self, limit: int = 50) -> list[dict]:
+        """Claim due reminders for delivery [{reminder_id, user_id, chat_id,
+        remind_at, text, locale}]. Empty on error."""
+        if not self.configured:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/reminders/claim-due",
+                    json={"limit": limit}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("reminders", [])
+        except Exception:
+            logger.exception("API claim_due_reminders failed")
+            return []
+
+    async def retry_reminder(self, reminder_id: int) -> bool:
+        """Return a claimed reminder to 'scheduled' so the next poll retries it."""
+        return await self._post_ok(f"/internal/reminders/{reminder_id}/retry")
 
     async def known_paths(self, user_id: int) -> list[str]:
         """The user's existing vault paths (controlled vocabulary). Empty on error."""

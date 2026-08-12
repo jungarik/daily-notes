@@ -1,12 +1,13 @@
 """
 Telegram bot layer — a thin client adapter.
 
-Translates Telegram updates into domain-service calls and formats the replies.
-It holds no business logic: capture, reminder detection, enrichment, link
-selection and search/answer all live in the service layer (`note_service`,
-`search_service`, `links`), so every client (bot, web, iOS, future API) shares
-the same behaviour. Only Telegram specifics live here — keyboards, message
-formatting, command wiring, reminder delivery.
+Translates Telegram updates into API calls and formats the replies. It holds no
+business logic and no database access: capture, reminder detection/creation,
+enrichment, link selection, search/answer and user settings all live behind the
+API service and are reached through `api_client.ApiClient`. Only Telegram
+specifics live here — keyboards, message formatting, command wiring, and
+reminder delivery (the bot owns the transport, so the dispatcher sends messages;
+claiming/completing reminders happens over the API).
 """
 
 import asyncio
@@ -17,26 +18,11 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 from api_client import ApiClient
-from services import links
-from stores import link_store
-import storage
-from services import reminders
-from services import transcription
-from stores import user_store
-from stores import reminder_store
-from services import note_service
-from services import search_service
 from i18n import t
 from config import (
     DEFAULT_TZ,
     REMINDER_POLL_SECONDS,
-    SENDING_STALE_SECONDS,
     LATE_NOTE_SECONDS,
-)
-from stores.reminder_store import (
-    claim_due_reminders,
-    set_status,
-    postpone,
 )
 from telegram import (
     Update,
@@ -60,34 +46,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Client for the API service (used for the change-path flow; other handlers still
-# call services in-process during the transition to the API gateway).
+# The one gateway to the backend: every domain call goes through here. The bot
+# never imports services/stores or touches the database.
 api = ApiClient()
+
+# chat_id -> user_id. The mapping is stable, so cache it to avoid a resolve
+# round trip on every update.
+_uid_cache: dict[int, int] = {}
 
 # Pending "New path…" prompts: ForceReply prompt message_id -> the note + the
 # original enriched message to refresh once the user replies with a path.
 pending_new_path: dict[int, dict] = {}
 
 
-def user_id_of(update: Update) -> int:
-    """Resolve the internal user id for a Telegram update (create on first sight)."""
-    return user_store.get_or_create_user(update.effective_chat.id)
+async def resolve_uid(update: Update) -> int | None:
+    """Resolve the internal user_id for a Telegram update (cached). None if the
+    API can't be reached."""
+    chat_id = update.effective_chat.id
+    uid = _uid_cache.get(chat_id)
+    if uid is None:
+        uid = await api.resolve_user(chat_id)
+        if uid is not None:
+            _uid_cache[chat_id] = uid
+    return uid
 
 
-def user_tz(user_id: int) -> ZoneInfo:
-    """The user's timezone, or the default if unset/invalid."""
-    name = user_store.get_timezone(user_id)
+def _tz_from(name: str | None) -> ZoneInfo:
     if name:
         try:
             return ZoneInfo(name)
         except Exception:
-            logger.warning("Invalid stored timezone %r for user %s", name, user_id)
+            logger.warning("Invalid timezone %r from API; using default", name)
     return DEFAULT_TZ
 
 
-def user_locale(user_id: int) -> str:
-    """The user's language code ('en'/'uk'), or the default."""
-    return i18n.normalize(user_store.get_language(user_id)) or i18n.DEFAULT_LOCALE
+async def load_ctx(update: Update) -> tuple[int | None, ZoneInfo, str, dict]:
+    """Resolve (user_id, timezone, locale, settings) for an update in one shot.
+
+    Falls back to defaults for formatting when the API is unreachable, so error
+    replies still render. `user_id` is None when identity can't be resolved.
+    """
+    user_id = await resolve_uid(update)
+    if user_id is None:
+        return None, DEFAULT_TZ, i18n.DEFAULT_LOCALE, {}
+    settings = await api.get_settings(user_id) or {}
+    tz = _tz_from(settings.get("tz_name"))
+    locale = settings.get("locale") or i18n.DEFAULT_LOCALE
+    return user_id, tz, locale, settings
 
 
 NOTE_ICONS = {
@@ -113,16 +118,14 @@ def _meta_line(meta: dict) -> str:
     return "\n".join(parts)
 
 
-async def _offer_reminder(msg, user_id: int, note_id: int, text: str, tz, locale: str):
-    """If the note is time-bearing, ask the service to store a reminder and
-    confirm it to the user. Formatting only — detection lives in the service."""
-    result = reminders.detect_reminder(note_id, user_id, text, datetime.now(tz))
-    if not result:
+async def _offer_reminder(msg, reminder: dict | None, tz: ZoneInfo, locale: str):
+    """Confirm a reminder the API created during capture. Formatting only —
+    detection/creation happened server-side."""
+    if not reminder:
         return
-    reminder_id, remind_at = result
-    when = remind_at.astimezone(tz)
+    when = datetime.fromisoformat(reminder["remind_at"]).astimezone(tz)
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder_id}")]]
+        [[InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"r:cancel:{reminder['id']}")]]
     )
     await msg.reply_text(
         t(locale, "reminder_set", when=f"{when:%Y-%m-%d %H:%M}", tz=when.tzname()),
@@ -137,7 +140,7 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info = pending_new_path.pop(msg.reply_to_message.message_id, None)
     if not info:
         return
-    locale = user_locale(user_id_of(update))
+    _, _, locale, _ = await load_ctx(update)
     meta, err = await api.set_note_path(info["note_id"], msg.text.strip())
     if err:
         await msg.reply_text(t(locale, "path_invalid", roots=", ".join(config.ROOT_FOLDERS)))
@@ -163,53 +166,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.reply_to_message and msg.reply_to_message.message_id in pending_new_path:
         await _apply_new_path(update, context)
         return
-    user_id = user_id_of(update)
-    tz, locale = user_tz(user_id), user_locale(user_id)
-    note_id = note_service.capture_note(user_id, msg.from_user.username, msg.text)
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    res = await api.capture_text(user_id, msg.from_user.username, msg.text)
+    if not res or not res.get("note_id"):
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    note_id = res["note_id"]
     await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(note_id, locale))
-    await _offer_reminder(msg, user_id, note_id, msg.text, tz, locale)
+    await _offer_reminder(msg, res.get("reminder"), tz, locale)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Transcribe a voice note, then capture it like a text note."""
+    """Download a voice note and hand it to the API to transcribe + capture."""
     msg = update.message
     voice = msg.voice
-    user_id = user_id_of(update)
-    tz, locale = user_tz(user_id), user_locale(user_id)
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await msg.reply_text(t(locale, "error_generic"))
+        return
     tg_file = await voice.get_file()
     audio_bytes = bytes(await tg_file.download_as_bytearray())
+    mime = voice.mime_type or "audio/ogg"
 
-    try:
-        text = transcription.transcribe(audio_bytes)
-    except Exception:
-        logger.exception("Transcription failed")
+    res = await api.capture_voice(user_id, msg.from_user.username, audio_bytes, mime)
+    if res is None:
         await msg.reply_text(t(locale, "transcribe_failed"))
         return
-
-    if not text:
+    if not res.get("note_id"):
         await msg.reply_text(t(locale, "transcribe_empty"))
         return
 
-    mime = voice.mime_type or "audio/ogg"
-    note_id = note_service.capture_note(
-        user_id, msg.from_user.username, text,
-        source_type="voice", audio_bytes=audio_bytes, mime=mime,
-    )
+    note_id = res["note_id"]
     await msg.reply_text(
-        t(locale, "transcribed_saved", text=text),
+        t(locale, "transcribed_saved", text=res.get("text") or ""),
         reply_markup=_enrich_keyboard(note_id, locale),
     )
-    await _offer_reminder(msg, user_id, note_id, text, tz, locale)
+    await _offer_reminder(msg, res.get("reminder"), tz, locale)
 
 
 async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """🧠 Enrich button — run the deferred metadata pass via the API service."""
     query = update.callback_query
     await query.answer()
-    user_id = user_id_of(update)
+    user_id, tz, locale, _ = await load_ctx(update)
     note_id = int(query.data.split(":")[1])
-    locale = user_locale(user_id)
     base = query.message.text or ""
+
+    if user_id is None:
+        await query.edit_message_text(base, reply_markup=_enrich_keyboard(note_id, locale))
+        return
 
     # Show a friendly in-progress state and drop the button (enrichment does an
     # embedding + LLM call, so it isn't instant; this also prevents double taps).
@@ -237,8 +245,10 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = query.data.split(":")  # p:<action>:<note_id>[:<idx>]
     action = parts[1]
     note_id = int(parts[2])
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await query.answer(t(locale, "error_generic"), show_alert=True)
+        return
 
     if action == "open":
         paths = await api.known_paths(user_id)
@@ -308,8 +318,8 @@ def _path_picker_keyboard(note_id: int, paths: list[str], locale: str) -> Inline
 def _link_picker_keyboard(from_note_id: int, cands: list[dict], locale: str) -> InlineKeyboardMarkup:
     rows = []
     for c in cands:
-        mark = "✅ " if link_store.is_linked(from_note_id, c["note_id"]) else "◻️ "
-        title = (c["title"] or "note")[:40]
+        mark = "✅ " if c.get("linked") else "◻️ "
+        title = (c.get("title") or "note")[:40]
         rows.append([InlineKeyboardButton(
             mark + title, callback_data=f"l:tog:{from_note_id}:{c['note_id']}"
         )])
@@ -338,12 +348,14 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     parts = query.data.split(":")  # l:<action>:<from>[:<cand>]
     action = parts[1]
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await query.answer(t(locale, "error_generic"), show_alert=True)
+        return
 
     if action == "open":
         from_id = int(parts[2])
-        cands = links.candidates(user_id, from_id)
+        cands = await api.link_candidates(user_id, from_id)
         if not cands:
             await query.answer(t(locale, "link_none"), show_alert=True)
             return
@@ -352,7 +364,7 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "tog":
         await query.answer()
         from_id, cand_id = int(parts[2]), int(parts[3])
-        linked = links.toggle_link(from_id, cand_id)
+        linked = await api.toggle_link(from_id, cand_id)
         await query.edit_message_reply_markup(
             _toggle_keyboard(query.message.reply_markup, query.data, linked)
         )
@@ -363,87 +375,90 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/search <query> — return semantically similar stored notes."""
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
+    """/search <query> — return the agenda-aware RAG answer over stored notes."""
+    user_id, tz, locale, _ = await load_ctx(update)
     query = " ".join(context.args).strip()
     if not query:
         await update.message.reply_text(t(locale, "search_usage"))
         return
-
-    tz = user_tz(user_id)
-    reply = search_service.answer(
-        user_id, query, datetime.now(tz), language=locale, tz=tz,
-    )
+    if user_id is None:
+        await update.message.reply_text(t(locale, "error_generic"))
+        return
+    # Timezone and language are resolved server-side from user_id.
+    reply = await api.search(user_id, query)
     await update.message.reply_text(reply or t(locale, "search_none"))
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/timezone [IANA name] — show or set the user's timezone."""
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
+    user_id, tz, locale, settings = await load_ctx(update)
     if not context.args:
-        current = user_store.get_timezone(user_id) or f"{DEFAULT_TZ} (default)"
+        current = settings.get("timezone") or f"{DEFAULT_TZ} (default)"
         await update.message.reply_text(t(locale, "tz_current", tz=current))
         return
-    name = context.args[0]
-    try:
-        ZoneInfo(name)
-    except Exception:
-        await update.message.reply_text(t(locale, "tz_unknown"))
+    if user_id is None:
+        await update.message.reply_text(t(locale, "error_generic"))
         return
-    user_store.set_timezone(user_id, name)
-    await update.message.reply_text(t(locale, "tz_set", tz=name))
+    ok, err = await api.set_timezone(user_id, context.args[0])
+    if not ok:
+        key = "tz_unknown" if err == "invalid" else "error_generic"
+        await update.message.reply_text(t(locale, key))
+        return
+    await update.message.reply_text(t(locale, "tz_set", tz=context.args[0]))
 
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/language [uk|en] — show or set the user's language."""
-    user_id = user_id_of(update)
+    user_id, tz, locale, _ = await load_ctx(update)
     if not context.args:
-        current = user_locale(user_id)
-        await update.message.reply_text(t(current, "lang_current", lang=current))
+        await update.message.reply_text(t(locale, "lang_current", lang=locale))
         return
-    lang = i18n.normalize(context.args[0])
-    if lang not in i18n.SUPPORTED:
-        await update.message.reply_text(t(user_locale(user_id), "lang_unknown"))
+    if user_id is None:
+        await update.message.reply_text(t(locale, "error_generic"))
         return
-    user_store.set_language(user_id, lang)
+    lang, err = await api.set_language(user_id, context.args[0])
+    if lang is None:
+        key = "lang_unknown" if err == "invalid" else "error_generic"
+        await update.message.reply_text(t(locale, key))
+        return
     await update.message.reply_text(t(lang, "lang_set", lang=lang))
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/start — welcome message."""
-    await update.message.reply_text(t(user_locale(user_id_of(update)), "start"))
+    _, _, locale, _ = await load_ctx(update)
+    await update.message.reply_text(t(locale, "start"))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/help — overview of functionality."""
-    await update.message.reply_text(t(user_locale(user_id_of(update)), "help"))
+    _, _, locale, _ = await load_ctx(update)
+    await update.message.reply_text(t(locale, "help"))
 
 
 async def user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/user — show the user's current settings."""
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
-    tz = user_store.get_timezone(user_id) or f"{DEFAULT_TZ} (default)"
-    count = reminder_store.count_active(user_id)
+    _, tz, locale, settings = await load_ctx(update)
+    tz_disp = settings.get("timezone") or f"{DEFAULT_TZ} (default)"
+    count = settings.get("active_reminders", 0)
     await update.message.reply_text(
-        t(locale, "user_settings", lang=locale, tz=tz, count=count)
+        t(locale, "user_settings", lang=locale, tz=tz_disp, count=count)
     )
 
 
 async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/reminders — list the user's upcoming reminders."""
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
-    tz = user_tz(user_id)
-    rows = reminder_store.upcoming_reminders(user_id)
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await update.message.reply_text(t(locale, "error_generic"))
+        return
+    rows = await api.list_reminders(user_id)
     if not rows:
         await update.message.reply_text(t(locale, "reminders_none"))
         return
     lines = [
-        f"{i}. {remind_at.astimezone(tz):%Y-%m-%d %H:%M} — {text}"
-        for i, (_id, remind_at, text, _status) in enumerate(rows, 1)
+        f"{i}. {datetime.fromisoformat(r['remind_at']).astimezone(tz):%Y-%m-%d %H:%M} — {r['text']}"
+        for i, r in enumerate(rows, 1)
     ]
     await update.message.reply_text(t(locale, "reminders_header") + "\n" + "\n".join(lines))
 
@@ -462,31 +477,28 @@ def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
 
 
 async def on_button_handle_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Cancel / Snooze / Done inline buttons."""
+    """Handle Cancel / Snooze / Done inline buttons (all via the API)."""
     query = update.callback_query
     await query.answer()
     parts = query.data.split(":")  # r:<action>:...:<id>
     action, reminder_id = parts[1], int(parts[-1])
-    user_id = user_id_of(update)
-    locale = user_locale(user_id)
+    user_id, tz, locale, _ = await load_ctx(update)
     base = query.message.text or "Reminder"
 
     if action == "cancel":
-        set_status(reminder_id, "canceled")
+        await api.cancel_reminder(reminder_id)
         await query.edit_message_text(base + "\n\n" + t(locale, "canceled"))
     elif action == "done":
-        set_status(reminder_id, "done")
+        await api.complete_reminder(reminder_id)
         await query.edit_message_text(base + "\n\n" + t(locale, "done"))
     elif action == "snz":
-        tz = user_tz(user_id)
-        now = datetime.now(tz)
-        if parts[2] == "tomorrow":
-            new_time = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-        else:
-            new_time = now + timedelta(minutes=int(parts[2]))
-        postpone(reminder_id, new_time)
+        remind_at = await api.snooze_reminder(reminder_id, user_id, parts[2])
+        if not remind_at:
+            await query.edit_message_text(base + "\n\n" + t(locale, "error_generic"))
+            return
+        when = datetime.fromisoformat(remind_at).astimezone(tz)
         await query.edit_message_text(
-            base + "\n\n" + t(locale, "snoozed", when=f"{new_time:%Y-%m-%d %H:%M}")
+            base + "\n\n" + t(locale, "snoozed", when=f"{when:%Y-%m-%d %H:%M}")
         )
 
 
@@ -503,24 +515,31 @@ def _humanize_ago(delay: timedelta) -> str:
 
 
 async def _dispatch_due_reminders(app):
-    """Claim and send due reminders, marking each 'done' only after it sends."""
+    """Claim due reminders via the API and deliver them; mark each 'done' only
+    after it sends, otherwise hand it back for retry. Delivery is the bot's job;
+    claiming/state lives behind the API."""
     now = datetime.now(timezone.utc)
-    stale_before = now - timedelta(seconds=SENDING_STALE_SECONDS)
-    for reminder_id, user_id, chat_id, text, remind_at in claim_due_reminders(now, stale_before):
-        locale = user_locale(user_id)
-        ago = _humanize_ago(now - remind_at)
+    for r in await api.claim_due_reminders():
+        reminder_id = r["reminder_id"]
+        chat_id = r.get("chat_id")
+        locale = r.get("locale") or i18n.DEFAULT_LOCALE
+        if chat_id is None:
+            logger.warning("Reminder %s has no chat_id; deferring", reminder_id)
+            await api.retry_reminder(reminder_id)
+            continue
+        ago = _humanize_ago(now - datetime.fromisoformat(r["remind_at"]))
         note = t(locale, "reminder_late", ago=ago) if ago else ""
         try:
             await app.bot.send_message(
                 chat_id=chat_id,
-                text=t(locale, "reminder_fire", note=note, text=text),
+                text=t(locale, "reminder_fire", note=note, text=r["text"]),
                 reply_markup=_snooze_keyboard(reminder_id, locale),
             )
-            set_status(reminder_id, "done")
+            await api.complete_reminder(reminder_id)
         except Exception:
-            # Revert so the next tick retries it (it's currently 'sending').
+            # Hand it back so the next tick retries it (it's currently 'sending').
             logger.exception("Failed to send reminder %s", reminder_id)
-            set_status(reminder_id, "scheduled")
+            await api.retry_reminder(reminder_id)
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -528,10 +547,11 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     show the user a friendly message instead of failing silently."""
     logger.exception("Unhandled error while processing update", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
+        locale = i18n.DEFAULT_LOCALE
         try:
-            locale = user_locale(user_id_of(update))
+            _, _, locale, _ = await load_ctx(update)
         except Exception:
-            locale = i18n.DEFAULT_LOCALE
+            pass
         try:
             await update.effective_message.reply_text(t(locale, "error_generic"))
         except Exception:
@@ -539,7 +559,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _reminder_loop(app):
-    """Poll the DB for due reminders every REMINDER_POLL_SECONDS."""
+    """Poll for due reminders every REMINDER_POLL_SECONDS."""
     while True:
         try:
             await _dispatch_due_reminders(app)
@@ -566,15 +586,15 @@ async def _post_init(app):
 
 
 def main():
-    # Schema migrations are owned by the API service (run on its startup), not
-    # by client adapters. The bot assumes the schema is already present.
-    if storage.is_configured():
-        logger.info("Audio storage: enabled (bucket %s).", config.S3_BUCKET)
-    else:
+    # The bot is a thin client: no schema migrations (owned by the API service)
+    # and no database/storage access — everything goes through the API gateway.
+    if not api.configured:
         logger.warning(
-            "Audio storage: DISABLED — voice audio won't be stored. Missing: %s",
-            ", ".join(storage.missing_config()),
+            "API_BASE_URL is not set — the bot cannot reach the API gateway; "
+            "all domain calls will fail until it is configured."
         )
+    else:
+        logger.info("API gateway: %s", config.API_BASE_URL)
     app = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))

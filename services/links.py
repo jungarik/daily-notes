@@ -54,6 +54,11 @@ def candidates(user_id: int, note_id: int, limit: int = 5) -> list[dict]:
     return rows[:limit]
 
 
+def is_linked(from_note_id: int, to_note_id: int) -> bool:
+    """Whether a directed link from → to currently exists."""
+    return link_store.is_linked(from_note_id, to_note_id)
+
+
 def toggle_link(from_note_id: int, to_note_id: int) -> bool:
     """Flip the directed link from → to. Returns True if now linked, else False."""
     if link_store.is_linked(from_note_id, to_note_id):
