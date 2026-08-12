@@ -36,6 +36,7 @@ from config import (
 from stores.reminder_store import (
     claim_due_reminders,
     set_status,
+    postpone,
 )
 from telegram import (
     Update,
@@ -451,7 +452,7 @@ def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
 
 
 async def on_button_handle_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Cancel / Snooze / Done inline buttons (via the API service)."""
+    """Handle Cancel / Snooze / Done inline buttons."""
     query = update.callback_query
     await query.answer()
     parts = query.data.split(":")  # r:<action>:...:<id>
@@ -461,19 +462,21 @@ async def on_button_handle_reminder(update: Update, context: ContextTypes.DEFAUL
     base = query.message.text or "Reminder"
 
     if action == "cancel":
-        ok = await api.cancel_reminder(reminder_id)
-        await query.edit_message_text(base + "\n\n" + t(locale, "canceled" if ok else "error_generic"))
+        set_status(reminder_id, "canceled")
+        await query.edit_message_text(base + "\n\n" + t(locale, "canceled"))
     elif action == "done":
-        ok = await api.complete_reminder(reminder_id)
-        await query.edit_message_text(base + "\n\n" + t(locale, "done" if ok else "error_generic"))
+        set_status(reminder_id, "done")
+        await query.edit_message_text(base + "\n\n" + t(locale, "done"))
     elif action == "snz":
-        remind_at = await api.snooze_reminder(reminder_id, user_id, parts[2])
-        if not remind_at:
-            await query.edit_message_text(base + "\n\n" + t(locale, "error_generic"))
-            return
-        when = datetime.fromisoformat(remind_at)
+        tz = user_tz(user_id)
+        now = datetime.now(tz)
+        if parts[2] == "tomorrow":
+            new_time = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        else:
+            new_time = now + timedelta(minutes=int(parts[2]))
+        postpone(reminder_id, new_time)
         await query.edit_message_text(
-            base + "\n\n" + t(locale, "snoozed", when=f"{when:%Y-%m-%d %H:%M}")
+            base + "\n\n" + t(locale, "snoozed", when=f"{new_time:%Y-%m-%d %H:%M}")
         )
 
 
