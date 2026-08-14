@@ -36,10 +36,30 @@ def _clean_path(raw) -> str | None:
         return None
     parts = [p.strip() for p in str(raw).replace("\\", "/").split("/")]
     parts = [p for p in parts if p and p not in (".", "..")]
+    # Guardrail: the vault is at most two levels (root folder + one sub-folder),
+    # so drop anything the model nests deeper regardless of the prompt.
+    parts = parts[:2]
     return "/".join(parts) or None
 
 
-def _normalize(data: dict, text: str, default_root_folder: str | None = None) -> dict:
+def _enforce_root(path, root_folders, default_root_folder):
+    """Require the path's first segment to be one of the predefined root folders
+    (matched case-insensitively, re-cased to config); otherwise fall back to the
+    default folder. Keeps the vault's top level to the known PARA roots."""
+    if not path:
+        return default_root_folder
+    if not root_folders:
+        return path
+    roots = {name.lower(): name for name in root_folders}
+    parts = path.split("/")
+    canonical = roots.get(parts[0].lower())
+    if canonical is None:
+        return default_root_folder
+    return "/".join([canonical] + parts[1:])
+
+
+def _normalize(data: dict, text: str, root_folders=None,
+               default_root_folder: str | None = None) -> dict:
     note_type = str(data.get("type", "note")).lower()
     if note_type not in TYPES:
         note_type = "note"
@@ -52,8 +72,10 @@ def _normalize(data: dict, text: str, default_root_folder: str | None = None) ->
     if priority not in PRIORITIES:
         priority = "low"
 
-    # If the model couldn't settle on a path, fall back to the default folder.
+    # If the model couldn't settle on a path, fall back to the default folder;
+    # and require a predefined root folder (else fall back to the default too).
     path = _clean_path(data.get("path")) or default_root_folder
+    path = _enforce_root(path, root_folders, default_root_folder)
 
     return {
         "type": note_type,
@@ -76,8 +98,9 @@ def _root_folders(root_folders, default_root_folder) -> str:
     meanings = "; ".join(f"{name} — {desc}" for name, desc in root_folders.items())
     return (
         f" The path is core to the vault: any path starts with exactly one of these "
-        f"root folders — {names} — and MUST be followed by sub-folders "
-        f"(e.g. Projects/telegram-bot). Root folder meanings: {meanings}. Pick the "
+        f"root folders — {names} — followed by at most one sub-folder, so a path is "
+        f"one or two levels total (e.g. Projects/telegram-bot or Areas/health). Never "
+        f"nest deeper than two levels. Root folder meanings: {meanings}. Pick the "
         f"root folder matching the note's purpose, and reuse an existing path when "
         f"one fits. If you cannot determine a path, use {default_root_folder}."
     )
@@ -177,14 +200,15 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
 
         system = (
             "You organize a person's brain-dump notes (Ukrainian or English) into "
-            "an Obsidian-style vault. Classify the note and extract metadata. "
-            "Return strict JSON with keys: "
+            "an PARA-style vault (i.e. Obsidian-style)."
+            "Classify the note and extract metadata. Return strict JSON with keys: "
             "reasoning (1-2 short sentences naming the note's topic and why this path "
             "and these tags — decide this first, before the other fields), "
             "type (one of: idea, task, reminder, note, question, link), "
             "title (a concise summary, <=8 words, in the note's own language), "
-            "path (a single vault folder path that starts with a root folder — "
-            "forward slashes, no filename, e.g. Projects/telegram-bot or Areas/health), "
+            "path (a single vault folder path: a root folder plus at most one "
+            "sub-folder — two levels at most, forward slashes, no filename, no "
+            "deeper nesting, e.g. Projects/telegram-bot or Areas/health), "
             "tags (0-5 lowercase topic keywords), "
             "priority (one of: low, med, high)."
             + _root_folders(root_folders, default_root_folder)
@@ -205,7 +229,7 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
             "Enrichment | input=%r | system=%r | response=%r",
             text, system, content,
         )
-        return _normalize(json.loads(content), text, default_root_folder)
+        return _normalize(json.loads(content), text, root_folders, default_root_folder)
     except Exception:
         logger.exception("Enrichment failed; storing as a plain note")
         return _fallback(text, default_root_folder)

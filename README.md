@@ -158,8 +158,9 @@ analysis) isn't time-critical, so it only runs when you tap 🧠 Enrich. Then
 
 - **type** — idea / task / reminder / note / question / link
 - **title** — a short summary in the note's own language
-- **path** — a single vault folder path (PARA-style top level), e.g.
-  `Projects/telegram-bot/architecture` — the note's home folder for Obsidian export
+- **path** — a single vault folder path (PARA-style top level), at most two
+  levels — a root folder plus one optional sub-folder, e.g.
+  `Projects/telegram-bot` — the note's home folder for Obsidian export
 - **tags** — 0–5 topic keywords (cross-cutting membership)
 - **priority** — low / med / high
 
