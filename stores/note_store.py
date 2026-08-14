@@ -7,28 +7,50 @@ from db import cursor
 
 def save_note(
     user_id: int,
-    username: str,
     text: str,
     source_type: str = "text",
     audio_key: str | None = None,
     audio_mime: str | None = None,
 ) -> int:
-    """Insert a message row and return its id.
+    """Insert a note row and return its id.
 
-    Enrichment metadata (type/title/priority/tags/path) is filled later, on
-    demand, via set_metadata(). For voice notes pass source_type='voice' plus the
+    The sender's username lives on the users row, not here. Enrichment metadata
+    (type/title/priority/tags/path) is filled later, on demand, via
+    set_metadata(). For voice notes pass source_type='voice' plus the
     object-storage key of the uploaded audio and its MIME type.
     """
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO notes (user_id, username, text, source_type, audio_key, audio_mime)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO notes (user_id, text, source_type, audio_key, audio_mime)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (user_id, username, text, source_type, audio_key, audio_mime),
+            (user_id, text, source_type, audio_key, audio_mime),
         )
         return cur.fetchone()[0]
+
+
+def delete_if_bare(note_id: int) -> bool:
+    """Delete a note only if it has no enrichment metadata and no links — a guard
+    against accidental deletion of notes the user has invested in. Chunks and
+    reminders cascade (FK ON DELETE CASCADE). Returns True if the row was deleted,
+    False if the guard blocked it (or it didn't exist)."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM notes
+            WHERE id = %s
+              AND path IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM note_links l
+                  WHERE l.from_note_id = %s OR l.to_note_id = %s
+              )
+            RETURNING id;
+            """,
+            (note_id, note_id, note_id),
+        )
+        return cur.fetchone() is not None
 
 
 def get_text(note_id: int) -> str | None:

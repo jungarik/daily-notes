@@ -65,7 +65,8 @@ async def resolve_uid(update: Update) -> int | None:
     chat_id = update.effective_chat.id
     uid = _uid_cache.get(chat_id)
     if uid is None:
-        uid = await api.resolve_user(chat_id)
+        username = update.effective_user.username if update.effective_user else None
+        uid = await api.resolve_user(chat_id, username)
         if uid is not None:
             _uid_cache[chat_id] = uid
     return uid
@@ -101,10 +102,14 @@ NOTE_ICONS = {
 }
 
 
-def _enrich_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}")]]
-    )
+def _capture_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
+    """Actions on a freshly captured (not yet enriched) note: enrich it, split it
+    into atomic notes, or cancel (delete) it."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}"),
+        InlineKeyboardButton(t(locale, "btn_atomize"), callback_data=f"a:{note_id}"),
+        InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"c:{note_id}"),
+    ]])
 
 
 def _meta_line(meta: dict) -> str:
@@ -166,16 +171,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.reply_to_message and msg.reply_to_message.message_id in pending_new_path:
         await _apply_new_path(update, context)
         return
+    text = msg.text
+    if not text:      # non-text messages never reach this handler, but be safe
+        return
     user_id, tz, locale, _ = await load_ctx(update)
     if user_id is None:
         await msg.reply_text(t(locale, "error_generic"))
         return
-    res = await api.capture_text(user_id, msg.from_user.username, msg.text)
+    res = await api.capture_text(user_id, text)
     if not res or not res.get("note_id"):
         await msg.reply_text(t(locale, "error_generic"))
         return
     note_id = res["note_id"]
-    await msg.reply_text(t(locale, "saved"), reply_markup=_enrich_keyboard(note_id, locale))
+    await msg.reply_text(t(locale, "saved"), reply_markup=_capture_keyboard(note_id, locale))
     await _offer_reminder(msg, res.get("reminder"), tz, locale)
 
 
@@ -191,7 +199,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     audio_bytes = bytes(await tg_file.download_as_bytearray())
     mime = voice.mime_type or "audio/ogg"
 
-    res = await api.capture_voice(user_id, msg.from_user.username, audio_bytes, mime)
+    res = await api.capture_voice(user_id, audio_bytes, mime)
     if res is None:
         await msg.reply_text(t(locale, "transcribe_failed"))
         return
@@ -202,7 +210,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     note_id = res["note_id"]
     await msg.reply_text(
         t(locale, "transcribed_saved", text=res.get("text") or ""),
-        reply_markup=_enrich_keyboard(note_id, locale),
+        reply_markup=_capture_keyboard(note_id, locale),
     )
     await _offer_reminder(msg, res.get("reminder"), tz, locale)
 
@@ -216,7 +224,7 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     base = query.message.text or ""
 
     if user_id is None:
-        await query.edit_message_text(base, reply_markup=_enrich_keyboard(note_id, locale))
+        await query.edit_message_text(base, reply_markup=_capture_keyboard(note_id, locale))
         return
 
     # Show a friendly in-progress state and drop the button (enrichment does an
@@ -229,13 +237,54 @@ async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
     meta = await api.enrich_note(note_id, user_id)
     if not meta:
         # Restore the original message + Enrich button so the user can retry.
-        await query.edit_message_text(base, reply_markup=_enrich_keyboard(note_id, locale))
+        await query.edit_message_text(base, reply_markup=_capture_keyboard(note_id, locale))
         return
 
     await query.edit_message_text(
         f"{base}\n\n{_meta_line(meta)}",
         reply_markup=_enriched_keyboard(note_id, locale),
     )
+
+
+async def on_atomize(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """✂️ Atomize — split a note into atomic notes, each posted as its own note
+    with the same actions. Non-destructive: the original note is left as-is."""
+    query = update.callback_query
+    await query.answer()      # dismiss the spinner up front (the split LLM call isn't instant)
+    user_id, tz, locale, _ = await load_ctx(update)
+    note_id = int(query.data.split(":")[1])
+    if user_id is None:
+        await query.message.reply_text(t(locale, "error_generic"))
+        return
+    atoms = await api.atomize_note(note_id, user_id)
+    if not atoms:
+        await query.message.reply_text(t(locale, "atomize_single"))
+        return
+    for a in atoms:
+        await query.message.reply_text(
+            t(locale, "saved") + "\n\n" + a["text"],
+            reply_markup=_capture_keyboard(a["note_id"], locale),
+        )
+
+
+async def on_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """✖️ Cancel — delete a freshly captured/atomized note. Guarded server-side:
+    only notes with no metadata and no links are removed, so an accidental tap on
+    an enriched or linked note is refused."""
+    query = update.callback_query
+    note_id = int(query.data.split(":")[1])
+    _, _, locale, _ = await load_ctx(update)
+    ok, deleted = await api.delete_note(note_id)
+    if deleted:
+        await query.answer()
+        try:
+            await query.edit_message_text(t(locale, "note_deleted"))
+        except Exception:
+            logger.exception("Failed to update message after delete")
+    elif ok:
+        await query.answer(t(locale, "cancel_blocked"), show_alert=True)
+    else:
+        await query.answer(t(locale, "error_generic"), show_alert=True)
 
 
 async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -605,6 +654,8 @@ def main():
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button_handle_reminder, pattern=r"^r:"))
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
+    app.add_handler(CallbackQueryHandler(on_atomize, pattern=r"^a:"))
+    app.add_handler(CallbackQueryHandler(on_cancel, pattern=r"^c:"))
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))

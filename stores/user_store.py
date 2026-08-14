@@ -3,16 +3,22 @@
 from db import cursor
 
 
-def get_or_create_user(chat_id: int) -> int:
-    """Return the internal user id for a Telegram chat, creating it if needed."""
+def get_or_create_user(chat_id: int, username: str | None = None) -> int:
+    """Return the internal user id for a Telegram chat, creating it if needed.
+
+    Records the sender's username on creation and refreshes it when a new one is
+    provided (kept as NULL until first seen).
+    """
     with cursor() as cur:
         cur.execute(
             """
-            INSERT INTO users (chat_id) VALUES (%s)
-            ON CONFLICT (chat_id) DO UPDATE SET updated_at = now()
+            INSERT INTO users (chat_id, username) VALUES (%s, %s)
+            ON CONFLICT (chat_id) DO UPDATE
+              SET updated_at = now(),
+                  username = COALESCE(EXCLUDED.username, users.username)
             RETURNING id;
             """,
-            (chat_id,),
+            (chat_id, username),
         )
         return cur.fetchone()[0]
 

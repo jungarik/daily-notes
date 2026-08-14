@@ -17,10 +17,10 @@ from stores import user_store
 logger = logging.getLogger(__name__)
 
 
-def resolve(chat_id: int) -> int:
+def resolve(chat_id: int, username: str | None = None) -> int:
     """Return the internal user_id for an external chat identity, creating the
-    user on first sight."""
-    user_id = user_store.get_or_create_user(chat_id)
+    user on first sight and recording the sender's username."""
+    user_id = user_store.get_or_create_user(chat_id, username)
     logger.debug("Resolved chat_id=%s -> user_id=%s", chat_id, user_id)
     return user_id
 

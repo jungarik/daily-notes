@@ -29,6 +29,9 @@ from api.schemas import (
     LinkCandidate,
     LinkCandidatesResponse,
     ToggleLinkResponse,
+    AtomizedNote,
+    AtomizeResponse,
+    DeleteResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +58,7 @@ def _detect_reminder_info(note_id: int, user_id: int, text: str) -> ReminderInfo
 def capture(req: CaptureRequest) -> CaptureResponse:
     """Capture a text note (chunk + embed + persist) and, if it's time-bearing,
     create its reminder — the fast capture path, in one round trip."""
-    note_id = note_service.capture_note(req.user_id, req.username, req.text)
+    note_id = note_service.capture_note(req.user_id, req.text)
     reminder = _detect_reminder_info(note_id, req.user_id, req.text)
     return CaptureResponse(note_id=note_id, text=req.text, reminder=reminder)
 
@@ -63,7 +66,6 @@ def capture(req: CaptureRequest) -> CaptureResponse:
 @router.post("/voice", response_model=CaptureResponse)
 async def capture_voice(
     user_id: int = Form(...),
-    username: str | None = Form(None),
     mime: str | None = Form(None),
     audio: UploadFile = File(...),
 ) -> CaptureResponse:
@@ -82,11 +84,26 @@ async def capture_voice(
         return CaptureResponse(note_id=None, text="", reminder=None)
 
     note_id = note_service.capture_note(
-        user_id, username, text,
+        user_id, text,
         source_type="voice", audio_bytes=audio_bytes, mime=mime or "audio/ogg",
     )
     reminder = _detect_reminder_info(note_id, user_id, text)
     return CaptureResponse(note_id=note_id, text=text, reminder=reminder)
+
+
+@router.post("/{note_id}/atomize", response_model=AtomizeResponse)
+def atomize(note_id: int, req: EnrichRequest) -> AtomizeResponse:
+    """Split a note into atomic notes, each persisted as a new plain note. Returns
+    the created atoms; empty when the note was already a single idea."""
+    created = note_service.atomize_note(req.user_id, note_id)
+    return AtomizeResponse(atoms=[AtomizedNote(**a) for a in created])
+
+
+@router.post("/{note_id}/delete", response_model=DeleteResponse)
+def delete(note_id: int) -> DeleteResponse:
+    """Delete a note only if it has no metadata and no links (guarded). `deleted`
+    is False when the guard blocked it."""
+    return DeleteResponse(deleted=note_service.delete_bare_note(note_id))
 
 
 @router.get("/{note_id}/link-candidates", response_model=LinkCandidatesResponse)

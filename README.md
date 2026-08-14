@@ -148,9 +148,18 @@ top-k.
 
 Capture is instant and cheap. When you send a note (text, or voice → transcribed)
 the bot immediately chunks + embeds it, saves it, checks for a **reminder**
-(keyword-gated LLM call in `reminders.py`), and replies "Saved ✅" with a
-**🧠 Enrich** button. If it's time-bearing, it also creates the reminder and
-confirms with a Cancel button — exactly as before.
+(keyword-gated LLM call in `reminders.py`), and replies "Saved ✅" with three
+actions: **🧠 Enrich**, **✂️ Atomize**, and **❌ Cancel**. If it's time-bearing, it
+also creates the reminder and confirms with a Cancel button.
+
+**Atomize (Zettelkasten).** A brain-dump often holds several ideas; Zettelkasten
+wants one idea per note. Tapping ✂️ Atomize makes a single LLM call
+(`atomize.py`) that splits the note into atomic notes, each persisted as a new
+plain note and posted with the same three actions — so you enrich, split again,
+or cancel each independently. It's non-destructive: the original note is kept, and
+if the note is already a single idea nothing is created. **Cancel** deletes a note
+only if it has no metadata and no links (a guard against accidental taps on notes
+you've enriched or linked).
 
 **Enrichment is deferred and on-demand.** Structuring a dump (PARA/CODE-style
 analysis) isn't time-critical, so it only runs when you tap 🧠 Enrich. Then
@@ -262,6 +271,7 @@ at the edge (`user_store.get_or_create_user`) and everything internal keys on
 |----------|-------------|------------------------------------|
 | id       | bigserial   | primary key (internal user id)     |
 | chat_id  | bigint      | Telegram chat, unique, **optional**|
+| username | text        | sender username (nullable)         |
 | timezone | text        | IANA name (set via /timezone)      |
 | language | text        | `en` / `uk` (set via /language)    |
 | created_at / updated_at | timestamptz |                        |
@@ -272,7 +282,6 @@ at the edge (`user_store.get_or_create_user`) and everything internal keys on
 |------------|--------------|----------------------------|
 | id         | serial       | primary key                |
 | user_id    | bigint       | FK → `users(id)`           |
-| username   | text         | sender username (nullable) |
 | text        | text        | message body (transcript for voice) |
 | source_type | text        | `'text'` or `'voice'`               |
 | audio_key   | text        | S3 object key of the audio (voice only) |

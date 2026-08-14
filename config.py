@@ -43,6 +43,8 @@ S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", "path")
 REMINDER_TZ = os.environ.get("REMINDER_TZ", "Europe/Kyiv")
 DEFAULT_TZ = ZoneInfo(REMINDER_TZ)
 REMINDER_LLM_MODEL = os.environ.get("REMINDER_LLM_MODEL", "gpt-4o-mini")
+# Model that splits a multi-idea dump into atomic notes (Zettelkasten).
+ATOMIZE_LLM_MODEL = os.environ.get("ATOMIZE_LLM_MODEL", "gpt-4o-mini")
 # Model that enriches each note (type/title/path/tags/priority).
 ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o")
 # How many similar past notes to retrieve as classification context.

@@ -35,7 +35,7 @@ router = APIRouter(
 
 @router.post("/resolve", response_model=ResolveUserResponse)
 def resolve_user(req: ResolveUserRequest) -> ResolveUserResponse:
-    user_id = user_service.resolve(req.chat_id)
+    user_id = user_service.resolve(req.chat_id, req.username)
     return ResolveUserResponse(user_id=user_id)
 
 

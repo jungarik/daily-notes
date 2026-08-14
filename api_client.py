@@ -60,17 +60,18 @@ class ApiClient:
             logger.exception("API ping failed")
             return False
 
-    async def resolve_user(self, chat_id: int) -> int | None:
+    async def resolve_user(self, chat_id: int, username: str | None = None) -> int | None:
         """Exchange a Telegram chat_id for the internal user_id (created on first
-        sight). Thin clients call this before any domain endpoint. Returns None
-        on error."""
+        sight, recording the username). Thin clients call this before any domain
+        endpoint. Returns None on error."""
         if not self.configured:
             return None
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
                     f"{self._base_url}/internal/users/resolve",
-                    json={"chat_id": chat_id}, headers=self._headers(),
+                    json={"chat_id": chat_id, "username": username},
+                    headers=self._headers(),
                 )
                 resp.raise_for_status()
                 return resp.json().get("user_id")
@@ -135,7 +136,7 @@ class ApiClient:
             logger.exception("API set_language failed")
             return (None, None)
 
-    async def capture_text(self, user_id: int, username: str | None, text: str) -> dict | None:
+    async def capture_text(self, user_id: int, text: str) -> dict | None:
         """Capture a text note (+ reminder detection). Returns {note_id, text,
         reminder} or None on failure."""
         if not self.configured:
@@ -144,7 +145,7 @@ class ApiClient:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
                     f"{self._base_url}/internal/notes",
-                    json={"user_id": user_id, "username": username, "text": text},
+                    json={"user_id": user_id, "text": text},
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
@@ -154,7 +155,7 @@ class ApiClient:
             return None
 
     async def capture_voice(
-        self, user_id: int, username: str | None, audio_bytes: bytes, mime: str,
+        self, user_id: int, audio_bytes: bytes, mime: str,
     ) -> dict | None:
         """Transcribe + capture a voice note. Returns {note_id, text, reminder};
         note_id is None with text="" when nothing was heard. None when the
@@ -163,8 +164,6 @@ class ApiClient:
             return None
         try:
             data = {"user_id": str(user_id), "mime": mime}
-            if username:
-                data["username"] = username
             files = {"audio": ("voice.ogg", audio_bytes, mime)}
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
@@ -176,6 +175,41 @@ class ApiClient:
         except Exception:
             logger.exception("API capture_voice failed")
             return None
+
+    async def atomize_note(self, note_id: int, user_id: int) -> list[dict]:
+        """Split a note into atomic notes. Returns [{note_id, text}] for the
+        created atoms, or [] when the note was already a single idea / on error."""
+        if not self.configured:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{note_id}/atomize",
+                    json={"user_id": user_id}, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("atoms", [])
+        except Exception:
+            logger.exception("API atomize_note failed")
+            return []
+
+    async def delete_note(self, note_id: int) -> tuple[bool, bool]:
+        """Delete a note if it's bare. Returns (ok, deleted): ok=False on a
+        transport error; when ok, `deleted` reflects the server guard (False means
+        it was blocked because the note has metadata or links)."""
+        if not self.configured:
+            return (False, False)
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{note_id}/delete",
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return (True, bool(resp.json().get("deleted")))
+        except Exception:
+            logger.exception("API delete_note failed")
+            return (False, False)
 
     async def link_candidates(self, user_id: int, note_id: int) -> list[dict]:
         """Ranked link candidates (each with a `linked` flag). Empty on error."""

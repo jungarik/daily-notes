@@ -10,6 +10,7 @@ import logging
 
 import config
 from services import semantic
+from services import atomize
 import storage
 from services import enrichment
 from stores import note_store
@@ -20,20 +21,23 @@ logger = logging.getLogger(__name__)
 
 def capture_note(
     user_id: int,
-    username: str | None,
     text: str,
     source_type: str = "text",
     audio_bytes: bytes | None = None,
     mime: str | None = None,
 ) -> int:
-    """Persist a note (upload audio if any, chunk + embed). Returns the note id."""
+    """Persist a note (upload audio if any, chunk + embed). Returns the note id.
+
+    The sender's username is stored on the user, not the note, so it isn't passed
+    here.
+    """
     audio_key = None
     if audio_bytes is not None:
         audio_key = storage.upload_audio(audio_bytes, content_type=mime or "audio/ogg")
 
     chunks = semantic.build_chunks(text)
     note_id = note_store.save_note(
-        user_id, username, text,
+        user_id, text,
         source_type=source_type, audio_key=audio_key, audio_mime=mime,
     )
     chunk_store.save_chunks(note_id, chunks)
@@ -42,6 +46,38 @@ def capture_note(
         note_id, user_id, source_type, len(chunks),
     )
     return note_id
+
+
+def atomize_note(user_id: int, note_id: int) -> list[dict]:
+    """Split a note into atomic notes, persisting each as a new (plain) note.
+
+    Returns [{note_id, text}] for the created atoms, or [] when the note is
+    already a single idea (nothing is created). Atoms are plain notes — no
+    metadata, no links — so each can be enriched, atomized again, or cancelled
+    independently.
+    """
+    text = note_store.get_text(note_id)
+    if not text:
+        logger.warning("atomize_note: note %s not found", note_id)
+        return []
+    atoms = atomize.split(text)
+    if len(atoms) < 2:
+        logger.info("Note %s is already atomic; nothing split", note_id)
+        return []
+    created = [{"note_id": capture_note(user_id, atom), "text": atom} for atom in atoms]
+    logger.info("Atomized note %s into %d note(s)", note_id, len(created))
+    return created
+
+
+def delete_bare_note(note_id: int) -> bool:
+    """Delete a note only if it has no metadata and no links (guarded, to protect
+    enriched/linked notes from an accidental Cancel). Returns True if deleted."""
+    deleted = note_store.delete_if_bare(note_id)
+    logger.info(
+        "Delete note %s: %s", note_id,
+        "deleted" if deleted else "blocked (has metadata or links)",
+    )
+    return deleted
 
 
 def enrich_note(user_id: int, note_id: int) -> dict | None:

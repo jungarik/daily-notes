@@ -21,6 +21,8 @@ class ResolveUserRequest(BaseModel):
     # External client identity. Today the only client is Telegram, whose chat_id
     # is stored on the users row; other clients will add their own identity later.
     chat_id: int
+    # Optional display identity recorded on the user at create/resolve time.
+    username: str | None = None
 
 
 class ResolveUserResponse(BaseModel):
@@ -100,7 +102,6 @@ class ReminderInfo(BaseModel):
 
 class CaptureRequest(BaseModel):
     user_id: int
-    username: str | None = None
     text: str = Field(min_length=1, max_length=20000)
 
 
@@ -109,6 +110,21 @@ class CaptureResponse(BaseModel):
     note_id: int | None = None
     text: str | None = None
     reminder: ReminderInfo | None = None
+
+
+class AtomizedNote(BaseModel):
+    note_id: int
+    text: str
+
+
+class AtomizeResponse(BaseModel):
+    # Empty when the note was already a single idea (nothing was created).
+    atoms: list[AtomizedNote] = []
+
+
+class DeleteResponse(BaseModel):
+    # False when the guard blocked deletion (the note has metadata or links).
+    deleted: bool
 
 
 # --- Links ---
