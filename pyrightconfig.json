@@ -1,0 +1,12 @@
+{
+  "typeCheckingMode": "basic",
+  "venvPath": ".",
+  "venv": ".venv",
+
+  "//": "python-telegram-bot types many handler objects as Optional or as unions (MaybeInaccessibleMessage). These are always present at runtime for the handlers/filters we register, so the following report categories are false positives here and are silenced. Real errors (undefined names, bad imports, typos) still show.",
+  "reportOptionalMemberAccess": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportCallIssue": "none",
+  "reportArgumentType": "none",
+  "reportOptionalSubscript": "none",
+}

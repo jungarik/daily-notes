@@ -67,10 +67,8 @@ LATE_NOTE_SECONDS = 60
 # model. Global for now; may become per-user later.
 ROOT_FOLDERS: dict[str, str] = {
     "Inbox": "uncategorized / not yet sorted",
-    "Daily_notes": "journal entries and daily logs",
     "Projects": "active efforts with a concrete outcome or deadline",
     "Areas": "ongoing responsibilities to maintain over time",
-    "Knowledge": "evergreen reference notes, concepts, how-tos",
     "Resources": "reference material and topics of interest",
     "Archive": "inactive or completed items kept for reference",
 }
