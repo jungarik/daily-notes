@@ -211,6 +211,23 @@ class ApiClient:
             logger.exception("API delete_note failed")
             return (False, False)
 
+    async def polish_note(self, note_id: int) -> str | None:
+        """Clean up a note's wording/punctuation (no invention). Returns the
+        (possibly unchanged) text, or None on failure / missing note."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/{note_id}/polish",
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("text")
+        except Exception:
+            logger.exception("API polish_note failed")
+            return None
+
     async def link_candidates(self, user_id: int, note_id: int) -> list[dict]:
         """Ranked link candidates (each with a `linked` flag). Empty on error."""
         if not self.configured:

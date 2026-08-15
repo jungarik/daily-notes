@@ -32,6 +32,12 @@ def save_chunks(note_id: int, chunks: list[dict]) -> None:
             )
 
 
+def delete_chunks(note_id: int) -> None:
+    """Remove all chunks for a note (used before re-embedding its text)."""
+    with cursor() as cur:
+        cur.execute("DELETE FROM note_chunks WHERE note_id = %s;", (note_id,))
+
+
 def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
                   limit: int = 5) -> list[dict]:
     """Already-enriched notes most similar to the query embedding (for few-shot).

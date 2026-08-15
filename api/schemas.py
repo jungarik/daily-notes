@@ -127,6 +127,11 @@ class DeleteResponse(BaseModel):
     deleted: bool
 
 
+class PolishResponse(BaseModel):
+    # The cleaned-up text (unchanged if it was already clean); None if not found.
+    text: str | None = None
+
+
 # --- Links ---
 
 class LinkCandidate(BaseModel):

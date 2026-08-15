@@ -53,6 +53,13 @@ def delete_if_bare(note_id: int) -> bool:
         return cur.fetchone() is not None
 
 
+def set_text(note_id: int, text: str) -> None:
+    """Overwrite a note's text (e.g. after a polish pass). Chunks are rebuilt
+    separately by the caller so embeddings stay in sync."""
+    with cursor() as cur:
+        cur.execute("UPDATE notes SET text = %s WHERE id = %s;", (text, note_id))
+
+
 def get_text(note_id: int) -> str | None:
     """Return a note's text, or None."""
     with cursor() as cur:

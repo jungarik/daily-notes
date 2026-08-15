@@ -11,6 +11,7 @@ import logging
 import config
 from services import semantic
 from services import atomize
+from services import polish as polish_svc
 import storage
 from services import enrichment
 from stores import note_store
@@ -67,6 +68,26 @@ def atomize_note(user_id: int, note_id: int) -> list[dict]:
     created = [{"note_id": capture_note(user_id, atom), "text": atom} for atom in atoms]
     logger.info("Atomized note %s into %d note(s)", note_id, len(created))
     return created
+
+
+def polish_note(note_id: int) -> str | None:
+    """Clean up a note's wording/punctuation via the LLM (no invention). When the
+    text actually changes, persist it and rebuild the note's chunks so semantic
+    search reflects the corrected text. Returns the (possibly unchanged) text, or
+    None if the note doesn't exist."""
+    text = note_store.get_text(note_id)
+    if not text:
+        logger.warning("polish_note: note %s not found", note_id)
+        return None
+    cleaned = polish_svc.polish(text)
+    if cleaned != text:
+        note_store.set_text(note_id, cleaned)
+        chunk_store.delete_chunks(note_id)
+        chunk_store.save_chunks(note_id, semantic.build_chunks(cleaned))
+        logger.info("Polished note %s (re-embedded)", note_id)
+    else:
+        logger.info("Polish left note %s unchanged", note_id)
+    return cleaned
 
 
 def delete_bare_note(note_id: int) -> bool:

@@ -32,6 +32,7 @@ from api.schemas import (
     AtomizedNote,
     AtomizeResponse,
     DeleteResponse,
+    PolishResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,16 @@ def delete(note_id: int) -> DeleteResponse:
     """Delete a note only if it has no metadata and no links (guarded). `deleted`
     is False when the guard blocked it."""
     return DeleteResponse(deleted=note_service.delete_bare_note(note_id))
+
+
+@router.post("/{note_id}/polish", response_model=PolishResponse)
+def polish(note_id: int) -> PolishResponse:
+    """Clean up a note's wording/punctuation (no invention); rebuilds its chunks
+    when the text changes. 404 if the note doesn't exist."""
+    text = note_service.polish_note(note_id)
+    if text is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    return PolishResponse(text=text)
 
 
 @router.get("/{note_id}/link-candidates", response_model=LinkCandidatesResponse)

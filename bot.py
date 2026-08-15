@@ -103,13 +103,18 @@ NOTE_ICONS = {
 
 
 def _capture_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
-    """Actions on a freshly captured (not yet enriched) note: enrich it, split it
-    into atomic notes, or cancel (delete) it."""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}"),
-        InlineKeyboardButton(t(locale, "btn_atomize"), callback_data=f"a:{note_id}"),
-        InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"c:{note_id}"),
-    ]])
+    """Actions on a freshly captured (not yet enriched) note — two per row:
+    enrich, atomize, polish (tidy the wording), or cancel (delete)."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}"),
+            InlineKeyboardButton(t(locale, "btn_atomize"), callback_data=f"a:{note_id}"),
+        ],
+        [
+            InlineKeyboardButton(t(locale, "btn_polish"), callback_data=f"f:{note_id}"),
+            InlineKeyboardButton(t(locale, "btn_cancel"), callback_data=f"c:{note_id}"),
+        ],
+    ])
 
 
 def _meta_line(meta: dict) -> str:
@@ -285,6 +290,27 @@ async def on_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(t(locale, "cancel_blocked"), show_alert=True)
     else:
         await query.answer(t(locale, "error_generic"), show_alert=True)
+
+
+async def on_polish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """✨ Polish — clean up the note's wording and punctuation via the LLM (no
+    invention), then show the result (chunks are re-embedded server-side)."""
+    query = update.callback_query
+    await query.answer()      # the LLM call isn't instant; dismiss the spinner
+    _, _, locale, _ = await load_ctx(update)
+    note_id = int(query.data.split(":")[1])
+    text = await api.polish_note(note_id)
+    if not text:
+        await query.message.reply_text(t(locale, "error_generic"))
+        return
+    try:
+        await query.edit_message_text(
+            t(locale, "polished") + "\n\n" + text,
+            reply_markup=_capture_keyboard(note_id, locale),
+        )
+    except Exception:
+        # e.g. "message is not modified" when the note was already clean.
+        logger.info("Polish: message unchanged for note %s", note_id)
 
 
 async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -656,6 +682,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
     app.add_handler(CallbackQueryHandler(on_atomize, pattern=r"^a:"))
     app.add_handler(CallbackQueryHandler(on_cancel, pattern=r"^c:"))
+    app.add_handler(CallbackQueryHandler(on_polish, pattern=r"^f:"))
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
