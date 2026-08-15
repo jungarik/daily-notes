@@ -27,16 +27,17 @@ in `note_chunks` (pgvector), powering semantic search via `/search`.
 
 ## Project layout
 
-Each module has a single responsibility; `bot.py` is only the Telegram layer.
+Each module has a single responsibility; the Telegram bot is only the UI layer.
 
-Clients (`bot.py`, `api/`) at the root; domain logic in `services/`; persistence
-in `stores/`; shared infra at the root.
+Client adapters live under `frontend/` (the Telegram bot in
+`frontend/Telegram_Bot/`); the API gateway is `api/`; domain logic in
+`services/`; persistence in `stores/`; shared infra at the root.
 
 | module            | responsibility                                             |
 |-------------------|------------------------------------------------------------|
-| `bot.py`          | Telegram handlers, command menu, reminder dispatcher loop  |
+| `frontend/Telegram_Bot/bot.py`        | Telegram handlers, command menu, reminder dispatcher loop  |
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
-| `api_client.py`   | async client seam the bot uses to call the API             |
+| `frontend/Telegram_Bot/api_client.py` | async client the bot uses to call the API      |
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
@@ -97,7 +98,7 @@ absolute (`from services import …`, `from stores import …`).
 6. Run it:
 
    ```bash
-   python bot.py
+   python -m frontend.Telegram_Bot.bot
    ```
 
 Send any text message and the bot replies "Saved ✅". Send a voice note and it

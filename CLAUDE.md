@@ -64,7 +64,8 @@ Consequences (follow these):
 Packages: **`services/`** (domain) and **`stores/`** (persistence); infra stays
 at the repo root (`config`, `db`, `openai_client`, `storage`, `i18n`, `migrate`).
 
-`bot.py` (thin Telegram adapter) → `api_client.py` → **`api/`** (FastAPI
+`frontend/Telegram_Bot/bot.py` (thin Telegram adapter) →
+`frontend/Telegram_Bot/api_client.py` → **`api/`** (FastAPI
 gateway) → `services/` orchestration (`note_service`: capture / enrich,
 `reminders`: detect + create + dispatch state, `search_service`: agenda-aware
 RAG answer, `user_service`: identity + settings resolution, `links`: candidates
@@ -82,4 +83,4 @@ The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`
 on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json` →
 `uvicorn api.main:app --host :: --port $PORT`) while the bot uses
-`railway.bot.json` → `python bot.py`. See `api/README.md`.
+`railway.bot.json` → `python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
