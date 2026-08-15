@@ -78,8 +78,8 @@ Two services in one project (shared repo, shared private network):
 1. **Push the repo.** Both services build from the same image.
 2. **Create the API service** in the same project (New → GitHub Repo → this repo).
    Point Settings → *Config-as-code* at `railway.api.json` (start command
-   `uvicorn api.main:app --host :: --port $PORT`). Point the bot service at
-   `railway.bot.json`.
+   `python -m api.run` — a dual-stack launcher, see the note below). Point the bot
+   service at `railway.bot.json`.
 3. **API env:** `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `OPENAI_API_KEY`,
    `PORT=8080` (stable internal port), `API_INTERNAL_TOKEN=<random secret>`.
 4. **Bot env:** same `API_INTERNAL_TOKEN`, and
@@ -105,8 +105,18 @@ against an empty database, its DB calls fail until the API has migrated.
 Once the bot is fully cut over to call the API (no direct DB access), this
 ordering stops mattering — only the API touches the database.
 
-> Private networking is **IPv6-only**, so the `--host ::` bind is required
-> (`0.0.0.0` is not reachable internally).
+> ### Binding: dual stack (`python -m api.run`)
+>
+> Railway **private** networking is IPv6-only, so the app must listen on `::`
+> (a plain `0.0.0.0` bind is unreachable privately — the bot couldn't call it).
+> But Railway's **public** edge reaches the container over **IPv4**, and a plain
+> `--host ::` socket is IPv6-only, so it refuses those connections — the public
+> domain returns **502** even though the app is up and private calls work.
+>
+> `api/run.py` fixes both at once: it binds `::` with `IPV6_V6ONLY=0`, a single
+> dual-stack socket that accepts IPv6 (private) **and** IPv4-mapped (public) and
+> hands it to uvicorn. That's why the start command is `python -m api.run` rather
+> than `uvicorn … --host ::`.
 
 ## Access model
 
@@ -115,11 +125,11 @@ ordering stops mattering — only the API touches the database.
 - **`API_INTERNAL_TOKEN`** is defence in depth: if set, `/internal/*` requires a
   matching `X-Internal-Token` header. `/health` stays open (no token) for manual
   checks and for the bot's `ApiClient.health()`.
-- **No Railway deploy healthcheck.** The service binds IPv6-only (`::`) for
-  private networking, and Railway's healthcheck probe can arrive over IPv4 and be
-  rejected — failing the deploy even though the app is up. So `railway.api.json`
-  has no `healthcheckPath`; Railway marks the deploy healthy once the process
-  stays up. `/health` still exists for on-demand checks.
+- **No Railway deploy healthcheck.** `railway.api.json` has no `healthcheckPath`;
+  Railway marks the deploy healthy once the process stays up. `/health` still
+  exists for on-demand checks. (The dual-stack `api/run.py` bind — see above —
+  means both the public edge and any IPv4 probe can now reach the app, but the
+  healthcheck stays off to keep deploys simple.)
 - **The API owns schema migrations.** As the backend gateway it runs
   `run_migrations()` on startup (lifespan) before serving requests; client
   adapters (the bot) no longer migrate and assume the schema is present.

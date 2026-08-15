@@ -82,5 +82,6 @@ database.
 The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`
 on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json` →
-`uvicorn api.main:app --host :: --port $PORT`) while the bot uses
+`python -m api.run`, a dual-stack launcher — binds `::` with IPV6_V6ONLY=0 so
+it serves both private IPv6 and the public IPv4 edge) while the bot uses
 `railway.bot.json` → `python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
