@@ -27,6 +27,7 @@
     color: var(--text);
     font-family: var(--mono);
     font-size: 14px;
+    font-weight: 300;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
@@ -39,24 +40,16 @@
     background: var(--bg-alt);
     border-bottom: 1px solid var(--border);
   }
-  .title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: .3px; }
-  .title .dot { color: var(--accent); }
-  .subtitle { margin-top: 2px; color: var(--text-faint); font-size: 12px; }
-
-  .search { margin-top: 10px; position: relative; }
-  .search input {
-    width: 100%;
-    padding: 8px 10px 8px 30px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px;
-    outline: none;
+  .tabs { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .tab {
+    flex: 1; padding: 7px 10px;
+    background: transparent; border: none; border-radius: 6px;
+    color: var(--text-muted); font-family: var(--mono); font-size: 13px; font-weight: 400;
+    cursor: pointer; transition: background .12s ease, color .12s ease;
   }
-  .search input:focus { border-color: var(--accent); }
-  .search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: .5; }
+  .tab.active { background: var(--accent-soft); color: var(--text); }
+
+  .view.hidden { display: none; }
 
   main { flex: 1; overflow-y: auto; padding: 6px 8px 40px; }
 
@@ -88,7 +81,7 @@
   .file.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 
   .ico { flex: none; opacity: .85; }
-  .folder > .row .ico { color: var(--accent); }
+  .folder > .row .ico { color: var(--text-muted); }
   .file .ico { color: var(--text-muted); }
 
   .empty { text-align: center; color: var(--text-faint); padding: 48px 20px; font-size: 13px; }
@@ -111,22 +104,25 @@
   }
   .sheet.show { transform: translateY(0); }
   .sheet .grip { width: 36px; height: 4px; border-radius: 3px; background: var(--border); margin: 0 auto 12px; }
-  .sheet .card-title { font-size: 16px; font-weight: 600; word-break: break-word; }
+  .sheet .card-title { font-size: 16px; font-weight: 400; word-break: break-word; }
   .sheet .card-path { margin-top: 4px; color: var(--accent); font-size: 12px; }
   .sheet .card-body { margin-top: 14px; color: var(--text-muted); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 12px; }
 </style>
 </head>
 <body>
   <header>
-    <div class="title"><span class="dot">◈</span> Notes <span style="color:var(--text-faint);font-weight:400">vault</span></div>
-    <div class="subtitle" id="subtitle">loading…</div>
-    <div class="search">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="search" type="text" placeholder="Filter notes…" autocomplete="off" spellcheck="false" />
+    <div class="tabs">
+      <button class="tab active" data-view="browser">Browser</button>
+      <button class="tab" data-view="map">Map</button>
     </div>
   </header>
 
-  <main id="tree"></main>
+  <main>
+    <div id="tree" class="view"></div>
+    <div id="map" class="view hidden">
+      <div class="empty">🕸  Mind-map coming soon.</div>
+    </div>
+  </main>
 
   <div class="sheet-backdrop" id="backdrop"></div>
   <div class="sheet" id="sheet">
@@ -222,7 +218,7 @@ function countNotes(node) {
 
 /* ------- Icons ------- */
 const folderSvg =
-  '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>';
+  '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>';
 const fileSvg =
   '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5"/></svg>';
 
@@ -261,9 +257,6 @@ function renderFile(note) {
 
 function renderTree(notes) {
   const notesArr = Array.isArray(notes) ? notes : [];
-  document.getElementById("subtitle").textContent =
-    notesArr.length + " note" + (notesArr.length === 1 ? "" : "s");
-
   const root = buildTree(notesArr);
   const mount = document.getElementById("tree");
   mount.innerHTML = "";
@@ -273,8 +266,7 @@ function renderTree(notes) {
     mount.innerHTML = '<div class="empty">No notes yet.<br>Send one to the bot to get started.</div>';
     return;
   }
-  const open = !!currentFilter; // auto-expand while filtering
-  for (const f of rootFolders) mount.appendChild(renderFolder(f, root.folders[f], open));
+  for (const f of rootFolders) mount.appendChild(renderFolder(f, root.folders[f], false));
   for (const file of root.files) mount.appendChild(renderFile(file));
 }
 
@@ -297,16 +289,15 @@ function closeCard() {
 }
 document.getElementById("backdrop").addEventListener("click", closeCard);
 
-/* ------- Filter ------- */
-let ALL_NOTES = [];
-let currentFilter = "";
-document.getElementById("search").addEventListener("input", (e) => {
-  currentFilter = e.target.value.trim().toLowerCase();
-  if (!currentFilter) return renderTree(ALL_NOTES);
-  const q = currentFilter;
-  renderTree(ALL_NOTES.filter(n =>
-    (n.title || "").toLowerCase().includes(q) || (n.path || "").toLowerCase().includes(q)
-  ));
+/* ------- Tabs (Browser | Map) ------- */
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+    const view = btn.dataset.view;
+    document.getElementById("tree").classList.toggle("hidden", view !== "browser");
+    document.getElementById("map").classList.toggle("hidden", view !== "map");
+    tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+  });
 });
 
 /* ------- Utils ------- */
@@ -317,8 +308,7 @@ function escapeHtml(s) {
 
 /* ------- Boot ------- */
 (async function () {
-  ALL_NOTES = await fetchNotes();
-  renderTree(ALL_NOTES);
+  renderTree(await fetchNotes());
 })();
 </script>
 </body>
