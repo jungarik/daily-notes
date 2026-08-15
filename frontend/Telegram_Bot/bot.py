@@ -513,6 +513,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t(locale, "help"))
 
 
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/info — a primer on the PARA folders and the Zettelkasten method, with the
+    button that achieves each principle. Assembled from two localized parts."""
+    _, _, locale, _ = await load_ctx(update)
+    await update.message.reply_text(
+        t(locale, "info_para") + "\n\n" + t(locale, "info_zettel")
+    )
+
+
 async def user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/user — show the user's current settings."""
     _, tz, locale, settings = await load_ctx(update)
@@ -646,7 +655,7 @@ async def _reminder_loop(app):
 
 
 # Commands shown in the Telegram menu (order matters), by key.
-MENU_COMMANDS = ["start", "help", "search", "reminders", "timezone", "language", "user"]
+MENU_COMMANDS = ["start", "help", "info", "search", "reminders", "timezone", "language", "user"]
 
 
 def _menu(locale: str) -> list[BotCommand]:
@@ -688,6 +697,7 @@ def main():
     app = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler("user", user_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("search", search_command))
