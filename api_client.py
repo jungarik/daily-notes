@@ -196,7 +196,7 @@ class ApiClient:
     async def delete_note(self, note_id: int) -> tuple[bool, bool]:
         """Delete a note if it's bare. Returns (ok, deleted): ok=False on a
         transport error; when ok, `deleted` reflects the server guard (False means
-        it was blocked because the note has metadata or links)."""
+        it was blocked because the note has metadata, links, or an active reminder)."""
         if not self.configured:
             return (False, False)
         try:

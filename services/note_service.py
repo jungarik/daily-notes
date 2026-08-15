@@ -96,7 +96,7 @@ def delete_bare_note(note_id: int) -> bool:
     deleted = note_store.delete_if_bare(note_id)
     logger.info(
         "Delete note %s: %s", note_id,
-        "deleted" if deleted else "blocked (has metadata or links)",
+        "deleted" if deleted else "blocked (has metadata, links, or an active reminder)",
     )
     return deleted
 

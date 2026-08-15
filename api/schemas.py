@@ -123,7 +123,7 @@ class AtomizeResponse(BaseModel):
 
 
 class DeleteResponse(BaseModel):
-    # False when the guard blocked deletion (the note has metadata or links).
+    # False when the guard blocked deletion (metadata, links, or an active reminder).
     deleted: bool
 
 

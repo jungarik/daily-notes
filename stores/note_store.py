@@ -32,10 +32,12 @@ def save_note(
 
 
 def delete_if_bare(note_id: int) -> bool:
-    """Delete a note only if it has no enrichment metadata and no links — a guard
-    against accidental deletion of notes the user has invested in. Chunks and
-    reminders cascade (FK ON DELETE CASCADE). Returns True if the row was deleted,
-    False if the guard blocked it (or it didn't exist)."""
+    """Delete a note only if it has no enrichment metadata (no path), no links and
+    no active reminder — a guard against accidentally discarding notes the user has
+    invested in (an active reminder would otherwise be silently cascade-deleted).
+    Chunks, links and reminders all cascade (FK ON DELETE CASCADE) once deletion
+    proceeds. Returns True if the row was deleted, False if the guard blocked it
+    (or the note didn't exist)."""
     with cursor() as cur:
         cur.execute(
             """
@@ -46,9 +48,13 @@ def delete_if_bare(note_id: int) -> bool:
                   SELECT 1 FROM note_links l
                   WHERE l.from_note_id = %s OR l.to_note_id = %s
               )
+              AND NOT EXISTS (
+                  SELECT 1 FROM reminders r
+                  WHERE r.note_id = %s AND r.status IN ('scheduled', 'postponed')
+              )
             RETURNING id;
             """,
-            (note_id, note_id, note_id),
+            (note_id, note_id, note_id, note_id),
         )
         return cur.fetchone() is not None
 
