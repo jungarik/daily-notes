@@ -158,7 +158,12 @@ if (tg) {
    GET {API_BASE}/webapp/notes with the Telegram initData for auth, expecting
    [{ id, title, path }]. Until then it falls back to SAMPLE_NOTES so the UI
    renders on its own. */
-window.__API_BASE__ = window.__API_BASE__ || "scintillating-celebration-production-69b8.up.railway.app";
+// Served from the API's own domain, so same-origin works; the explicit https
+// URL is a fallback. (A bare host with no scheme would be treated as a relative
+// path and fail — always include https://.)
+window.__API_BASE__ = window.__API_BASE__
+  || location.origin
+  || "https://scintillating-celebration-production-69b8.up.railway.app";
 
 const SAMPLE_NOTES = [
   { id: 1,  title: "Refactor bot to call API", path: "Projects/daily-notes" },
