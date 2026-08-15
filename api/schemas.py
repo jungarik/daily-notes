@@ -132,6 +132,14 @@ class PolishResponse(BaseModel):
     text: str | None = None
 
 
+class WebAppNote(BaseModel):
+    # One note as shown in the web-app browser. `title` falls back to a text
+    # snippet server-side when the note hasn't been enriched yet.
+    id: int
+    title: str
+    path: str | None = None
+
+
 # --- Links ---
 
 class LinkCandidate(BaseModel):

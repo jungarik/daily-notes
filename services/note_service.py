@@ -130,6 +130,26 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
     return meta
 
 
+def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
+    """A note's browser label: its enriched title, else a trimmed text snippet."""
+    t = (title or "").strip()
+    if t:
+        return t
+    snippet = " ".join((text or "").split())
+    if not snippet:
+        return "untitled"
+    return snippet[:limit] + "…" if len(snippet) > limit else snippet
+
+
+def list_notes_for_user(user_id: int) -> list[dict]:
+    """The user's notes for the web-app browser: [{id, title, path}], with a text
+    snippet standing in for the title of notes that haven't been enriched yet."""
+    return [
+        {"id": n["id"], "title": _display_title(n["title"], n["text"]), "path": n["path"]}
+        for n in note_store.list_notes(user_id)
+    ]
+
+
 def known_paths(user_id: int) -> list[str]:
     """The path vocabulary offered to the user/model: their existing DB paths
     (most-used first), then any predefined default folders not already present."""

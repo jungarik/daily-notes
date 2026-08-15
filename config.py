@@ -95,3 +95,17 @@ API_INTERNAL_TOKEN = os.environ.get("API_INTERNAL_TOKEN")
 API_BASE_URL = os.environ.get("API_BASE_URL")
 # Timeout (seconds) for outbound API calls from a client.
 API_TIMEOUT_SECONDS = float(os.environ.get("API_TIMEOUT_SECONDS", "10"))
+
+# --- Telegram Mini App (note-browser web app) ---
+# Public HTTPS URL where frontend/Telegram_WebApp is served. When set, the bot
+# exposes a Menu Button that opens it. Blank = the button stays off.
+WEBAPP_URL = os.environ.get("WEBAPP_URL")
+# Reject Mini App initData older than this many seconds (replay protection);
+# 0 disables the age check. The API validates initData with BOT_TOKEN, so that
+# must be set on the API service too for the public /webapp endpoints.
+WEBAPP_INITDATA_MAX_AGE_SECONDS = int(os.environ.get("WEBAPP_INITDATA_MAX_AGE_SECONDS", "86400"))
+# CORS origins allowed to call the public /webapp endpoints (comma-separated;
+# "*" allows any — fine here since auth is per-request via signed initData).
+WEBAPP_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("WEBAPP_ALLOWED_ORIGINS", "*").split(",") if o.strip()
+]

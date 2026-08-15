@@ -131,6 +131,26 @@ def set_path(note_id: int, path: str) -> None:
         )
 
 
+def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
+    """All of a user's notes for the browser: [{id, title, path, text}], newest
+    first. `title` may be None (not enriched) — the caller supplies a fallback."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, title, path, text
+            FROM notes
+            WHERE user_id = %s
+            ORDER BY id DESC
+            LIMIT %s;
+            """,
+            (user_id, limit),
+        )
+        return [
+            {"id": r[0], "title": r[1], "path": r[2], "text": r[3]}
+            for r in cur.fetchall()
+        ]
+
+
 def list_paths(user_id: int, limit: int = 30) -> list[tuple[str, int]]:
     """The user's existing vault paths with note counts, most-used first."""
     with cursor() as cur:

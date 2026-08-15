@@ -30,6 +30,8 @@ from telegram import (
     ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    MenuButtonWebApp,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -658,6 +660,19 @@ async def _post_init(app):
     await app.bot.set_my_commands(_menu("en"))
     await app.bot.set_my_commands(_menu("uk"), language_code="uk")
     logger.info("Bot command menu set.")
+    # Menu button that opens the note-browser mini app (when a URL is configured).
+    if config.WEBAPP_URL:
+        try:
+            await app.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Browse", web_app=WebAppInfo(url=config.WEBAPP_URL)
+                )
+            )
+            logger.info("Web app menu button set -> %s", config.WEBAPP_URL)
+        except Exception:
+            logger.exception("Failed to set web app menu button")
+    else:
+        logger.info("WEBAPP_URL not set — web app menu button disabled.")
 
 
 def main():

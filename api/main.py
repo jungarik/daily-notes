@@ -17,10 +17,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from migrate import run_migrations
-from api.routers import system, internal, users, notes, reminders, search
+from api.routers import system, internal, users, notes, reminders, search, webapp
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -51,12 +52,23 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if config.API_DOCS_ENABLED else None,
     )
 
+    # Public Mini App endpoints are called cross-origin from the user's browser,
+    # so they need CORS. They authenticate per-request via signed initData, not
+    # cookies, so a wildcard origin is safe (no credentials).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.WEBAPP_ALLOWED_ORIGINS,
+        allow_methods=["GET", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
     app.include_router(system.router)
     app.include_router(internal.router)
     app.include_router(users.router)
     app.include_router(notes.router)
     app.include_router(reminders.router)
     app.include_router(search.router)
+    app.include_router(webapp.router)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):
