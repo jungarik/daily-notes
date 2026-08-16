@@ -395,7 +395,7 @@ def _path_picker_keyboard(note_id: int, paths: list[str], locale: str) -> Inline
 def _link_picker_keyboard(from_note_id: int, cands: list[dict], locale: str) -> InlineKeyboardMarkup:
     rows = []
     for c in cands:
-        mark = "✅ " if c.get("linked") else "◻️ "
+        mark = "🔗 " if c.get("linked") else "• "
         title = (c.get("title") or "note")[:40]
         rows.append([InlineKeyboardButton(
             mark + title, callback_data=f"l:tog:{from_note_id}:{c['note_id']}"
@@ -406,7 +406,7 @@ def _link_picker_keyboard(from_note_id: int, cands: list[dict], locale: str) -> 
 
 def _toggle_keyboard(markup: InlineKeyboardMarkup, tapped_cb: str, linked: bool) -> InlineKeyboardMarkup:
     """Rebuild the picker keyboard, flipping only the tapped candidate's mark."""
-    mark = "✅ " if linked else "◻️ "
+    mark = "🔗 " if linked else "• "
     rows = []
     for row in markup.inline_keyboard:
         new_row = []
