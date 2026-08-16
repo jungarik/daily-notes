@@ -66,15 +66,36 @@
 
   .folder > .row .count { margin-left: auto; color: var(--text-faint); font-size: 11px; }
   .folder > .row .chevron {
-    width: 0; height: 0; flex: none;
-    border-left: 5px solid var(--text-muted);
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
-    transition: transform .12s ease;
+    flex: none; width: 12px;
+    text-align: center; line-height: 1;
+    color: var(--text-muted); font-size: 14px;
   }
-  .folder.open > .row .chevron { transform: rotate(90deg); }
-  .folder .children { display: none; margin-left: 10px; border-left: 1px solid var(--border); padding-left: 4px; }
+  .folder > .row .chevron::before { content: "+"; }
+  .folder.open > .row .chevron::before { content: "−"; }
+  .folder .children { display: none; margin-left: 10px; padding-left: 4px; }
   .folder.open > .children { display: block; }
+
+  /* Tree guides: a dashed vertical line per node + a dashed connector to it.
+     The LAST node's vertical stops at the connector (└), not continuing past it. */
+  .children > .file,
+  .children > .folder,
+  .children > .folder > .row { position: relative; }
+  .children > .file::before,
+  .children > .folder > .row::before {           /* horizontal connector */
+    content: ""; position: absolute;
+    left: -4px; top: 50%; width: 8px;
+    border-top: 1px dashed var(--border);
+  }
+  .children > .file::after,
+  .children > .folder::after {                    /* vertical guide */
+    content: ""; position: absolute;
+    left: -4px; top: 0; height: 100%;
+    border-left: 1px dashed var(--border);
+  }
+  .children > .file:last-child::after,
+  .children > .folder:last-child::after {
+    height: 16px;                                 /* stop at the connector */
+  }
 
   .file .name { color: var(--text); }
   .file .name .ext { color: var(--text-faint); }
@@ -220,7 +241,7 @@ function countNotes(node) {
 const folderSvg =
   '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>';
 const fileSvg =
-  '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5"/></svg>';
+  '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5"/><line x1="8" y1="12" x2="14" y2="12"/><line x1="8" y1="15.5" x2="14" y2="15.5"/><line x1="8" y1="19" x2="11.5" y2="19"/></svg>';
 
 /* ------- Rendering ------- */
 function renderFolder(name, node, forceOpen) {
