@@ -64,7 +64,6 @@
   .row:hover { background: var(--hover); }
   .row .name { overflow: hidden; text-overflow: ellipsis; }
 
-  .folder > .row .count { margin-left: auto; color: var(--text-faint); font-size: 11px; }
   .folder > .row .chevron {
     flex: none; width: 12px;
     text-align: center; line-height: 1;
@@ -100,6 +99,20 @@
   .file .name { color: var(--text); }
   .file .name .ext { color: var(--text-faint); }
   .file.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .row.selected { background: var(--accent-soft); }
+
+  footer.status {
+    flex: none;
+    padding: 7px 14px;
+    background: var(--bg-alt);
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    letter-spacing: .3px;
+    white-space: nowrap;
+  }
+  footer.status b { color: var(--text); font-weight: 400; }
+  footer.status .sep { color: var(--text-faint); margin: 0 8px; }
 
   .ico { flex: none; opacity: .85; }
   .folder > .row .ico { color: var(--text-muted); }
@@ -145,6 +158,8 @@
     </div>
   </main>
 
+  <footer class="status" id="status"></footer>
+
   <div class="sheet-backdrop" id="backdrop"></div>
   <div class="sheet" id="sheet">
     <div class="grip"></div>
@@ -183,20 +198,20 @@ window.__API_BASE__ = window.__API_BASE__
   || "https://scintillating-celebration-production-69b8.up.railway.app";
 
 const SAMPLE_NOTES = [
-  { id: 1,  title: "Refactor bot to call API", path: "Projects/daily-notes" },
-  { id: 2,  title: "Atomize multi-idea dumps", path: "Projects/daily-notes" },
-  { id: 3,  title: "Google Calendar integration idea", path: "Projects/daily-notes" },
-  { id: 4,  title: "Ship the note-browser mini app", path: "Projects/webapp" },
-  { id: 5,  title: "Mindmap graph view (later)", path: "Projects/webapp" },
-  { id: 6,  title: "Morning stretch routine", path: "Areas/health" },
-  { id: 7,  title: "Sleep before midnight", path: "Areas/health" },
-  { id: 8,  title: "Quarterly budget review", path: "Areas/finance" },
-  { id: 9,  title: "PARA method overview", path: "Resources/productivity" },
-  { id: 10, title: "Zettelkasten linking notes", path: "Resources/productivity" },
-  { id: 11, title: "pgvector cheatsheet", path: "Resources/postgres" },
-  { id: 12, title: "Old side project postmortem", path: "Archive" },
-  { id: 13, title: "Random thought about coffee", path: "Inbox" },
-  { id: 14, title: "Call the dentist", path: "Inbox" },
+  { id: 1,  title: "Refactor bot to call API", path: "Projects/daily-notes", links: 3 },
+  { id: 2,  title: "Atomize multi-idea dumps", path: "Projects/daily-notes", links: 2 },
+  { id: 3,  title: "Google Calendar integration idea", path: "Projects/daily-notes", links: 1 },
+  { id: 4,  title: "Ship the note-browser mini app", path: "Projects/webapp", links: 2 },
+  { id: 5,  title: "Mindmap graph view (later)", path: "Projects/webapp", links: 0 },
+  { id: 6,  title: "Morning stretch routine", path: "Areas/health", links: 1 },
+  { id: 7,  title: "Sleep before midnight", path: "Areas/health", links: 0 },
+  { id: 8,  title: "Quarterly budget review", path: "Areas/finance", links: 0 },
+  { id: 9,  title: "PARA method overview", path: "Resources/productivity", links: 4 },
+  { id: 10, title: "Zettelkasten linking notes", path: "Resources/productivity", links: 4 },
+  { id: 11, title: "pgvector cheatsheet", path: "Resources/postgres", links: 1 },
+  { id: 12, title: "Old side project postmortem", path: "Archive", links: 0 },
+  { id: 13, title: "Random thought about coffee", path: "Inbox", links: 0 },
+  { id: 14, title: "Call the dentist", path: "Inbox", links: 0 },
 ];
 
 async function fetchNotes() {
@@ -237,6 +252,25 @@ function countNotes(node) {
   return c;
 }
 
+function countLinks(node) {
+  let c = 0;
+  for (const f of node.files) c += (f.links || 0);
+  for (const k in node.folders) c += countLinks(node.folders[k]);
+  return c;
+}
+
+/* ------- Status bar (scoped to the selected folder) ------- */
+let selectedRow = null;
+function setStatus(notes, links) {
+  document.getElementById("status").innerHTML =
+    "notes: <b>" + notes + "</b><span class=\"sep\">|</span>links: <b>" + links + "</b>";
+}
+function selectFolder(node, rowEl) {
+  if (selectedRow) selectedRow.classList.remove("selected");
+  if (rowEl) { rowEl.classList.add("selected"); selectedRow = rowEl; }
+  setStatus(countNotes(node), countLinks(node));
+}
+
 /* ------- Icons ------- */
 const folderSvg =
   '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>';
@@ -251,8 +285,7 @@ function renderFolder(name, node, forceOpen) {
   header.className = "row";
   header.innerHTML =
     '<span class="chevron"></span>' + folderSvg +
-    '<span class="name">' + escapeHtml(name) + '</span>' +
-    '<span class="count">' + countNotes(node) + '</span>';
+    '<span class="name">' + escapeHtml(name) + '</span>';
   const children = document.createElement("div");
   children.className = "children";
 
@@ -261,7 +294,10 @@ function renderFolder(name, node, forceOpen) {
   const files = node.files.slice().sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   for (const file of files) children.appendChild(renderFile(file));
 
-  header.addEventListener("click", () => el.classList.toggle("open"));
+  header.addEventListener("click", () => {
+    el.classList.toggle("open");
+    selectFolder(node, header);
+  });
   el.appendChild(header);
   el.appendChild(children);
   return el;
@@ -281,6 +317,8 @@ function renderTree(notes) {
   const root = buildTree(notesArr);
   const mount = document.getElementById("tree");
   mount.innerHTML = "";
+  selectedRow = null;
+  setStatus(countNotes(root), countLinks(root));   // default scope: the whole vault
 
   const rootFolders = Object.keys(root.folders).sort((a, b) => a.localeCompare(b));
   if (!rootFolders.length && !root.files.length) {

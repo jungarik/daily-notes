@@ -145,7 +145,8 @@ def list_notes_for_user(user_id: int) -> list[dict]:
     """The user's notes for the web-app browser: [{id, title, path}], with a text
     snippet standing in for the title of notes that haven't been enriched yet."""
     return [
-        {"id": n["id"], "title": _display_title(n["title"], n["text"]), "path": n["path"]}
+        {"id": n["id"], "title": _display_title(n["title"], n["text"]),
+         "path": n["path"], "links": n["links"]}
         for n in note_store.list_notes(user_id)
     ]
 

@@ -134,10 +134,12 @@ class PolishResponse(BaseModel):
 
 class WebAppNote(BaseModel):
     # One note as shown in the web-app browser. `title` falls back to a text
-    # snippet server-side when the note hasn't been enriched yet.
+    # snippet server-side when the note hasn't been enriched yet. `links` is how
+    # many links the note participates in (for the status bar).
     id: int
     title: str
     path: str | None = None
+    links: int = 0
 
 
 # --- Links ---

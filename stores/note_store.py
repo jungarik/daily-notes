@@ -132,21 +132,24 @@ def set_path(note_id: int, path: str) -> None:
 
 
 def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
-    """All of a user's notes for the browser: [{id, title, path, text}], newest
-    first. `title` may be None (not enriched) — the caller supplies a fallback."""
+    """All of a user's notes for the browser: [{id, title, path, text, links}],
+    newest first. `title` may be None (not enriched) — the caller supplies a
+    fallback. `links` is how many links the note participates in (either direction)."""
     with cursor() as cur:
         cur.execute(
             """
-            SELECT id, title, path, text
-            FROM notes
-            WHERE user_id = %s
-            ORDER BY id DESC
+            SELECT n.id, n.title, n.path, n.text,
+                   (SELECT count(*) FROM note_links l
+                    WHERE l.from_note_id = n.id OR l.to_note_id = n.id) AS links
+            FROM notes n
+            WHERE n.user_id = %s
+            ORDER BY n.id DESC
             LIMIT %s;
             """,
             (user_id, limit),
         )
         return [
-            {"id": r[0], "title": r[1], "path": r[2], "text": r[3]}
+            {"id": r[0], "title": r[1], "path": r[2], "text": r[3], "links": r[4]}
             for r in cur.fetchall()
         ]
 
