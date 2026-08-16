@@ -62,16 +62,23 @@
     white-space: nowrap;
   }
   .row:hover { background: var(--hover); }
-  .row .name { overflow: hidden; text-overflow: ellipsis; }
-
-  .folder > .row .chevron {
-    flex: none; width: 12px;
-    text-align: center; line-height: 1;
-    color: var(--text-muted); font-size: 14px;
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .row .dots {
+    flex: none; margin-left: 6px;
+    padding: 0 5px; border-radius: 4px;
+    color: var(--text-faint); font-size: 16px; line-height: 1;
+    cursor: pointer;
   }
-  .folder > .row .chevron::before { content: "+"; }
-  .folder.open > .row .chevron::before { content: "−"; }
-  .folder .children { display: none; margin-left: 10px; padding-left: 4px; }
+  .row .dots:hover { color: var(--text); background: var(--hover); }
+
+  .folder > .row { position: relative; }
+  /* Dashed line descending from under an open folder into its children. */
+  .folder.open > .row::after {
+    content: ""; position: absolute;
+    left: 15px; top: calc(50% + 8px); bottom: 0;   /* start below the folder icon, centered under it */
+    border-left: 1px dashed var(--border);
+  }
+  .folder .children { display: none; margin-left: 15px; padding-left: 4px; }
   .folder.open > .children { display: block; }
 
   /* Tree guides: a dashed vertical line per node + a dashed connector to it.
@@ -261,14 +268,15 @@ function countLinks(node) {
 
 /* ------- Status bar (scoped to the selected folder) ------- */
 let selectedRow = null;
-function setStatus(notes, links) {
+function setStatus(folder, notes, links) {
   document.getElementById("status").innerHTML =
+    "folder: <b>" + escapeHtml(folder) + "</b><span class=\"sep\">|</span>" +
     "notes: <b>" + notes + "</b><span class=\"sep\">|</span>links: <b>" + links + "</b>";
 }
-function selectFolder(node, rowEl) {
+function selectFolder(node, rowEl, path) {
   if (selectedRow) selectedRow.classList.remove("selected");
   if (rowEl) { rowEl.classList.add("selected"); selectedRow = rowEl; }
-  setStatus(countNotes(node), countLinks(node));
+  setStatus(path, countNotes(node), countLinks(node));
 }
 
 /* ------- Icons ------- */
@@ -278,25 +286,29 @@ const fileSvg =
   '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v5h5"/><line x1="8" y1="12" x2="14" y2="12"/><line x1="8" y1="15.5" x2="14" y2="15.5"/><line x1="8" y1="19" x2="11.5" y2="19"/></svg>';
 
 /* ------- Rendering ------- */
-function renderFolder(name, node, forceOpen) {
+function renderFolder(name, node, forceOpen, path) {
   const el = document.createElement("div");
   el.className = "folder" + (forceOpen ? " open" : "");
   const header = document.createElement("div");
   header.className = "row";
   header.innerHTML =
-    '<span class="chevron"></span>' + folderSvg +
-    '<span class="name">' + escapeHtml(name) + '</span>';
+    folderSvg +
+    '<span class="name">' + escapeHtml(name) + '</span>' +
+    '<span class="dots" role="button" aria-label="menu">⋮</span>';
+  header.querySelector(".dots").addEventListener("click", (e) => {
+    e.stopPropagation();   // menu: empty for now
+  });
   const children = document.createElement("div");
   children.className = "children";
 
   const folderNames = Object.keys(node.folders).sort((a, b) => a.localeCompare(b));
-  for (const f of folderNames) children.appendChild(renderFolder(f, node.folders[f], forceOpen));
+  for (const f of folderNames) children.appendChild(renderFolder(f, node.folders[f], forceOpen, path + "/" + f));
   const files = node.files.slice().sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   for (const file of files) children.appendChild(renderFile(file));
 
   header.addEventListener("click", () => {
     el.classList.toggle("open");
-    selectFolder(node, header);
+    selectFolder(node, header, path);
   });
   el.appendChild(header);
   el.appendChild(children);
@@ -307,7 +319,12 @@ function renderFile(note) {
   const el = document.createElement("div");
   el.className = "row file";
   const title = (note.title && note.title.trim()) || "untitled";
-  el.innerHTML = fileSvg + '<span class="name">' + escapeHtml(title) + '<span class="ext">.md</span></span>';
+  el.innerHTML = fileSvg + '<span class="name">' + escapeHtml(title) +
+    '<span class="ext">.md</span></span>' +
+    '<span class="dots" role="button" aria-label="menu">⋮</span>';
+  el.querySelector(".dots").addEventListener("click", (e) => {
+    e.stopPropagation();   // menu: empty for now
+  });
   el.addEventListener("click", () => openCard(note, el));
   return el;
 }
@@ -318,14 +335,14 @@ function renderTree(notes) {
   const mount = document.getElementById("tree");
   mount.innerHTML = "";
   selectedRow = null;
-  setStatus(countNotes(root), countLinks(root));   // default scope: the whole vault
+  setStatus("All", countNotes(root), countLinks(root));   // default scope: the whole vault
 
   const rootFolders = Object.keys(root.folders).sort((a, b) => a.localeCompare(b));
   if (!rootFolders.length && !root.files.length) {
     mount.innerHTML = '<div class="empty">No notes yet.<br>Send one to the bot to get started.</div>';
     return;
   }
-  for (const f of rootFolders) mount.appendChild(renderFolder(f, root.folders[f], false));
+  for (const f of rootFolders) mount.appendChild(renderFolder(f, root.folders[f], false, f));
   for (const file of root.files) mount.appendChild(renderFile(file));
 }
 
