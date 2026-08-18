@@ -269,8 +269,10 @@ function countLinks(node) {
 /* ------- Status bar (scoped to the selected folder) ------- */
 let selectedRow = null;
 function setStatus(folder, notes, links) {
+  // Show only the selected folder's own name, not the full breadcrumb path.
+  const name = String(folder).split("/").pop() || folder;
   document.getElementById("status").innerHTML =
-    "folder: <b>" + escapeHtml(folder) + "</b><span class=\"sep\">|</span>" +
+    "folder: <b>" + escapeHtml(name) + "</b><span class=\"sep\">|</span>" +
     "notes: <b>" + notes + "</b><span class=\"sep\">|</span>links: <b>" + links + "</b>";
 }
 function selectFolder(node, rowEl, path) {
