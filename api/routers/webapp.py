@@ -16,7 +16,7 @@ import config
 from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
-from api.schemas import WebAppNote
+from api.schemas import WebAppNote, WebAppNoteDetail
 
 logger = logging.getLogger(__name__)
 
@@ -42,3 +42,14 @@ def notes(x_telegram_init_data: str | None = Header(default=None)) -> list[WebAp
     items = note_service.list_notes_for_user(user_id)
     logger.info("Web app notes for user=%s -> %d", user_id, len(items))
     return [WebAppNote(**it) for it in items]
+
+
+@router.get("/notes/{note_id}", response_model=WebAppNoteDetail)
+def note_detail(note_id: int,
+                x_telegram_init_data: str | None = Header(default=None)) -> WebAppNoteDetail:
+    """One note's full detail for the preview card. 404 if it isn't the user's."""
+    user_id = _auth(x_telegram_init_data)
+    detail = note_service.web_note_detail(user_id, note_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    return WebAppNoteDetail(**detail)

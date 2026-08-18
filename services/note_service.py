@@ -151,6 +151,24 @@ def list_notes_for_user(user_id: int) -> list[dict]:
     ]
 
 
+def web_note_detail(user_id: int, note_id: int) -> dict | None:
+    """Full note detail for the web-app preview, scoped to its owner. Returns None
+    if the note doesn't exist or isn't the user's."""
+    n = note_store.get_note_for_user(user_id, note_id)
+    if n is None:
+        return None
+    created = n.get("created_at")
+    return {
+        "id": n["id"],
+        "title": _display_title(n["title"], n["text"]),
+        "path": n["path"],
+        "text": n["text"] or "",
+        "tags": n["tags"] or [],
+        "type": n["type"],
+        "created_at": created.isoformat() if created else None,
+    }
+
+
 def known_paths(user_id: int) -> list[str]:
     """The path vocabulary offered to the user/model: their existing DB paths
     (most-used first), then any predefined default folders not already present."""

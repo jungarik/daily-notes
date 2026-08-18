@@ -85,3 +85,11 @@ on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json` �
 `python -m api.run`, a dual-stack launcher — binds `::` with IPV6_V6ONLY=0 so
 it serves both private IPv6 and the public IPv4 edge) while the bot uses
 `railway.bot.json` → `python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
+
+## Design docs
+
+`devdoc/` holds implementation specs for planned/agreed features (design agreed
+but not yet built) as Markdown. Before implementing a feature, check `devdoc/`
+for an existing spec and follow it; when a spec is fully implemented, update or
+remove it. Current specs: `devdoc/plugin-capture-tokens.md` (personal access
+tokens + public `/capture` for plugin clients — Chrome/Codex/Claude).

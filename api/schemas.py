@@ -132,6 +132,17 @@ class PolishResponse(BaseModel):
     text: str | None = None
 
 
+class WebAppNoteDetail(BaseModel):
+    # Full note detail for the web-app preview (opened on tap).
+    id: int
+    title: str
+    path: str | None = None
+    text: str = ""
+    tags: list[str] = []
+    type: str | None = None
+    created_at: str | None = None
+
+
 class WebAppNote(BaseModel):
     # One note as shown in the web-app browser. `title` falls back to a text
     # snippet server-side when the note hasn't been enriched yet. `links` is how

@@ -86,6 +86,27 @@ def get_note(note_id: int) -> dict | None:
         return {"text": row[0], "title": row[1], "path": row[2], "tags": row[3]}
 
 
+def get_note_for_user(user_id: int, note_id: int) -> dict | None:
+    """Full note detail scoped to an owner (for the web-app preview). Returns None
+    if the note doesn't exist or belongs to someone else."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, text, title, path, tags, note_type, source_type, created_at
+            FROM notes WHERE id = %s AND user_id = %s;
+            """,
+            (note_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "text": row[1], "title": row[2], "path": row[3],
+            "tags": row[4] or [], "type": row[5], "source_type": row[6],
+            "created_at": row[7],
+        }
+
+
 def set_metadata(
     note_id: int,
     note_type: str | None,

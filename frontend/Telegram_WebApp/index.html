@@ -147,7 +147,9 @@
   .sheet .grip { width: 36px; height: 4px; border-radius: 3px; background: var(--border); margin: 0 auto 12px; }
   .sheet .card-title { font-size: 16px; font-weight: 400; word-break: break-word; }
   .sheet .card-path { margin-top: 4px; color: var(--accent); font-size: 12px; }
-  .sheet .card-body { margin-top: 14px; color: var(--text-muted); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 12px; }
+  .sheet .card-meta { margin-top: 6px; color: var(--text-faint); font-size: 12px; }
+  .sheet .card-body { margin-top: 14px; color: var(--text-muted); font-size: 13px; line-height: 1.5; border-top: 1px dashed var(--border); padding-top: 12px; white-space: pre-wrap; word-break: break-word; max-height: 42vh; overflow-y: auto; }
+  .sheet .card-body.muted { color: var(--text-faint); font-style: italic; }
 </style>
 </head>
 <body>
@@ -172,7 +174,8 @@
     <div class="grip"></div>
     <div class="card-title" id="cardTitle"></div>
     <div class="card-path" id="cardPath"></div>
-    <div class="card-body">Note preview & mind-map open here next. (coming soon)</div>
+    <div class="card-meta" id="cardMeta"></div>
+    <div class="card-body" id="cardBody"></div>
   </div>
 
 <script>
@@ -348,17 +351,66 @@ function renderTree(notes) {
   for (const file of root.files) mount.appendChild(renderFile(file));
 }
 
-/* ------- Note card (stub) ------- */
+/* ------- Note card ------- */
 let activeEl = null;
-function openCard(note, el) {
+let cardReq = 0;   // guards against a stale fetch landing after a newer card opens
+
+async function fetchNote(id) {
+  const base = window.__API_BASE__;
+  if (!base) return null;
+  try {
+    const res = await fetch(base.replace(/\/$/, "") + "/webapp/notes/" + encodeURIComponent(id), {
+      headers: { "X-Telegram-Init-Data": INIT_DATA },
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  } catch (e) {
+    console.warn("Note detail unavailable:", e);
+    return null;
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function setBody(text, muted) {
+  const body = document.getElementById("cardBody");
+  body.textContent = text;
+  body.classList.toggle("muted", !!muted);
+}
+
+async function openCard(note, el) {
   if (activeEl) activeEl.classList.remove("active");
   el.classList.add("active");
   activeEl = el;
   document.getElementById("cardTitle").textContent = ((note.title || "untitled")) + ".md";
   document.getElementById("cardPath").textContent = "📁 " + (note.path || "Inbox");
+  document.getElementById("cardMeta").textContent = "";
+  setBody("Loading…", true);
   document.getElementById("sheet").classList.add("show");
   document.getElementById("backdrop").classList.add("show");
   tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+
+  const req = ++cardReq;
+  const detail = await fetchNote(note.id);
+  if (req !== cardReq) return;   // a newer card was opened meanwhile
+
+  if (!detail) {
+    setBody("Preview unavailable.", true);
+    return;
+  }
+  const meta = [];
+  if (detail.tags && detail.tags.length) meta.push("🏷 " + detail.tags.join(", "));
+  const date = fmtDate(detail.created_at);
+  if (date) meta.push(date);
+  document.getElementById("cardMeta").textContent = meta.join("   ·   ");
+
+  const text = (detail.text || "").trim();
+  if (text) setBody(text, false);
+  else setBody("(empty note)", true);
 }
 function closeCard() {
   document.getElementById("sheet").classList.remove("show");
