@@ -150,6 +150,12 @@
   .sheet .card-meta { margin-top: 6px; color: var(--text-faint); font-size: 12px; }
   .sheet .card-body { margin-top: 14px; color: var(--text-muted); font-size: 13px; line-height: 1.5; border-top: 1px dashed var(--border); padding-top: 12px; white-space: pre-wrap; word-break: break-word; max-height: 42vh; overflow-y: auto; }
   .sheet .card-body.muted { color: var(--text-faint); font-style: italic; }
+  .sheet .card-links { margin-top: 14px; }
+  .sheet .card-links:empty { display: none; }
+  .sheet .links-label { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 6px; }
+  .sheet .links-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sheet .link-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 5px 10px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet .link-chip:active { background: var(--border); }
 </style>
 </head>
 <body>
@@ -176,6 +182,7 @@
     <div class="card-path" id="cardPath"></div>
     <div class="card-meta" id="cardMeta"></div>
     <div class="card-body" id="cardBody"></div>
+    <div class="card-links" id="cardLinks"></div>
   </div>
 
 <script>
@@ -382,13 +389,39 @@ function setBody(text, muted) {
   body.classList.toggle("muted", !!muted);
 }
 
+function renderLinks(detail) {
+  const wrap = document.getElementById("cardLinks");
+  wrap.innerHTML = "";
+  const section = (label, items) => {
+    if (!items || !items.length) return;
+    const h = document.createElement("div");
+    h.className = "links-label";
+    h.textContent = label;
+    wrap.appendChild(h);
+    const row = document.createElement("div");
+    row.className = "links-row";
+    for (const it of items) {
+      const b = document.createElement("button");
+      b.className = "link-chip";
+      b.textContent = "🔗 " + (it.title || "untitled");
+      // One hop per tap — no recursion; navigate to the linked note's preview.
+      b.addEventListener("click", () => openCard({ id: it.id, title: it.title }, null));
+      row.appendChild(b);
+    }
+    wrap.appendChild(row);
+  };
+  section("Links", detail.links);
+  section("Backlinks", detail.backlinks);
+}
+
 async function openCard(note, el) {
   if (activeEl) activeEl.classList.remove("active");
-  el.classList.add("active");
-  activeEl = el;
+  activeEl = null;
+  if (el) { el.classList.add("active"); activeEl = el; }   // el is null for link navigation
   document.getElementById("cardTitle").textContent = ((note.title || "untitled")) + ".md";
   document.getElementById("cardPath").textContent = "📁 " + (note.path || "Inbox");
   document.getElementById("cardMeta").textContent = "";
+  document.getElementById("cardLinks").innerHTML = "";
   setBody("Loading…", true);
   document.getElementById("sheet").classList.add("show");
   document.getElementById("backdrop").classList.add("show");
@@ -402,6 +435,11 @@ async function openCard(note, el) {
     setBody("Preview unavailable.", true);
     return;
   }
+  // Authoritative header from the loaded note (matters for link navigation,
+  // where the passed note only carries id + title).
+  document.getElementById("cardTitle").textContent = ((detail.title || note.title || "untitled")) + ".md";
+  document.getElementById("cardPath").textContent = "📁 " + (detail.path || "Inbox");
+
   const meta = [];
   if (detail.tags && detail.tags.length) meta.push("🏷 " + detail.tags.join(", "));
   const date = fmtDate(detail.created_at);
@@ -411,6 +449,8 @@ async function openCard(note, el) {
   const text = (detail.text || "").trim();
   if (text) setBody(text, false);
   else setBody("(empty note)", true);
+
+  renderLinks(detail);
 }
 function closeCard() {
   document.getElementById("sheet").classList.remove("show");

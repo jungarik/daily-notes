@@ -132,8 +132,16 @@ class PolishResponse(BaseModel):
     text: str | None = None
 
 
+class WebAppLink(BaseModel):
+    # A neighbour note in the preview (tap to navigate to it).
+    id: int
+    title: str
+
+
 class WebAppNoteDetail(BaseModel):
-    # Full note detail for the web-app preview (opened on tap).
+    # Full note detail for the web-app preview (opened on tap). `links` are notes
+    # this one points to; `backlinks` are notes pointing to it. Both are direct
+    # (depth-1) neighbours only.
     id: int
     title: str
     path: str | None = None
@@ -141,6 +149,8 @@ class WebAppNoteDetail(BaseModel):
     tags: list[str] = []
     type: str | None = None
     created_at: str | None = None
+    links: list[WebAppLink] = []
+    backlinks: list[WebAppLink] = []
 
 
 class WebAppNote(BaseModel):

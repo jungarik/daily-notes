@@ -16,6 +16,7 @@ import storage
 from services import enrichment
 from stores import note_store
 from stores import chunk_store
+from stores import link_store
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,15 @@ def web_note_detail(user_id: int, note_id: int) -> dict | None:
     if n is None:
         return None
     created = n.get("created_at")
+
+    # Direct neighbours only (depth 1) — a single non-recursive query. The client
+    # navigates one hop per tap, so graph cycles never cause recursion here.
+    links, backlinks = [], []
+    for _id, title, text, direction in link_store.links_of_for_user(user_id, note_id):
+        (links if direction == "out" else backlinks).append(
+            {"id": _id, "title": _display_title(title, text)}
+        )
+
     return {
         "id": n["id"],
         "title": _display_title(n["title"], n["text"]),
@@ -166,6 +176,8 @@ def web_note_detail(user_id: int, note_id: int) -> dict | None:
         "tags": n["tags"] or [],
         "type": n["type"],
         "created_at": created.isoformat() if created else None,
+        "links": links,
+        "backlinks": backlinks,
     }
 
 
