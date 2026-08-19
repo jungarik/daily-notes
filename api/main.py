@@ -36,6 +36,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Serve the Mini App with `Cache-Control: no-cache` so clients (Telegram
+    webview / browsers) always revalidate against the server. StaticFiles still
+    sends ETag/Last-Modified, so unchanged files return a cheap 304 while a new
+    deploy is picked up immediately — no manual reload."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # The API service owns schema migrations: it is the backend gateway, so it
@@ -78,7 +90,7 @@ def create_app() -> FastAPI:
 
     # Serve the Mini App at /app/ (index.html). Same origin as /webapp/notes.
     if WEBAPP_DIR.is_dir():
-        app.mount("/app", StaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp_static")
+        app.mount("/app", NoCacheStaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp_static")
         logger.info("Serving web app from %s at /app/", WEBAPP_DIR)
     else:
         logger.warning("Web app directory not found: %s", WEBAPP_DIR)
