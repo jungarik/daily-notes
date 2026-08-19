@@ -394,34 +394,34 @@ function setBody(text, muted) {
 function renderLinks(detail) {
   const wrap = document.getElementById("cardLinks");
   wrap.innerHTML = "";
-  const section = (label, items) => {
-    if (!items || !items.length) return;
-    const h = document.createElement("div");
-    h.className = "links-label";
-    h.textContent = label;
-    wrap.appendChild(h);
-    const row = document.createElement("div");
-    row.className = "links-row";
-    for (const it of items) {
-      const b = document.createElement("button");
-      b.className = "link-chip";
-      b.textContent = "🔗 " + (it.title || "untitled");
-      // One hop per tap — no recursion; navigate to the linked note's preview.
-      b.addEventListener("click", () => openCard({ id: it.id, title: it.title }, null));
-      row.appendChild(b);
-    }
-    wrap.appendChild(row);
-  };
-  const links = detail.links || [];
-  const backlinks = detail.backlinks || [];
-  section("🔗 Links", links);
-  section("↩ Backlinks", backlinks);
-  if (!links.length && !backlinks.length) {
-    const empty = document.createElement("div");
-    empty.className = "links-label";
-    empty.textContent = "No linked notes yet";
-    wrap.appendChild(empty);
+
+  // Direction (links vs backlinks) is kept in the API for the future map view;
+  // here we show a single de-duplicated "Linked notes" list.
+  const seen = new Set();
+  const items = [];
+  for (const it of [...(detail.links || []), ...(detail.backlinks || [])]) {
+    if (seen.has(it.id)) continue;
+    seen.add(it.id);
+    items.push(it);
   }
+
+  const label = document.createElement("div");
+  label.className = "links-label";
+  label.textContent = items.length ? "🔗 Linked notes" : "No linked notes yet";
+  wrap.appendChild(label);
+
+  if (!items.length) return;
+  const row = document.createElement("div");
+  row.className = "links-row";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "link-chip";
+    b.textContent = "🔗 " + (it.title || "untitled");
+    // One hop per tap — no recursion; navigate to the linked note's preview.
+    b.addEventListener("click", () => openCard({ id: it.id, title: it.title }, null));
+    row.appendChild(b);
+  }
+  wrap.appendChild(row);
 }
 
 async function openCard(note, el) {
