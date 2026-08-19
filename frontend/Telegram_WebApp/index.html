@@ -412,8 +412,16 @@ function renderLinks(detail) {
     }
     wrap.appendChild(row);
   };
-  section("Links", detail.links);
-  section("Backlinks", detail.backlinks);
+  const links = detail.links || [];
+  const backlinks = detail.backlinks || [];
+  section("🔗 Links", links);
+  section("↩ Backlinks", backlinks);
+  if (!links.length && !backlinks.length) {
+    const empty = document.createElement("div");
+    empty.className = "links-label";
+    empty.textContent = "No linked notes yet";
+    wrap.appendChild(empty);
+  }
 }
 
 async function openCard(note, el) {
