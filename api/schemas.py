@@ -138,6 +138,23 @@ class WebAppLink(BaseModel):
     title: str
 
 
+class WebAppGraphNode(BaseModel):
+    id: int
+    title: str
+    path: str | None = None
+    degree: int = 0
+
+
+class WebAppGraphEdge(BaseModel):
+    source: int
+    target: int
+
+
+class WebAppGraph(BaseModel):
+    nodes: list[WebAppGraphNode] = []
+    edges: list[WebAppGraphEdge] = []
+
+
 class WebAppNoteDetail(BaseModel):
     # Full note detail for the web-app preview (opened on tap). `links` are notes
     # this one points to; `backlinks` are notes pointing to it. Both are direct

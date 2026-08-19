@@ -107,6 +107,19 @@ def get_note_for_user(user_id: int, note_id: int) -> dict | None:
         }
 
 
+def notes_brief(user_id: int, ids) -> list[dict]:
+    """Minimal fields for a set of the user's notes (for the map). [{id,title,text,path}]."""
+    ids = list(ids)
+    if not ids:
+        return []
+    with cursor() as cur:
+        cur.execute(
+            "SELECT id, title, text, path FROM notes WHERE user_id = %s AND id = ANY(%s);",
+            (user_id, ids),
+        )
+        return [{"id": r[0], "title": r[1], "text": r[2], "path": r[3]} for r in cur.fetchall()]
+
+
 def set_metadata(
     note_id: int,
     note_type: str | None,

@@ -77,3 +77,20 @@ def links_of_for_user(user_id: int, note_id: int, limit: int = 100):
             (note_id, user_id, note_id, user_id, limit),
         )
         return cur.fetchall()
+
+
+def all_links(user_id: int, limit: int = 1000):
+    """Every directed link within a user's vault as [(from_id, to_id)] — the edge
+    list for the connections map. Bounded; both endpoints must belong to the user."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.from_note_id, l.to_note_id
+            FROM note_links l
+            JOIN notes a ON a.id = l.from_note_id AND a.user_id = %s
+            JOIN notes b ON b.id = l.to_note_id AND b.user_id = %s
+            LIMIT %s;
+            """,
+            (user_id, user_id, limit),
+        )
+        return cur.fetchall()

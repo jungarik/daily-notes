@@ -158,6 +158,10 @@
   .sheet .links-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .sheet .link-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 5px 10px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sheet .link-chip:active { background: var(--border); }
+  /* Connections map */
+  #map { padding: 0; position: relative; }
+  #graph { display: block; width: 100%; height: calc(100vh - 120px); touch-action: none; }
+  .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -171,7 +175,8 @@
   <main>
     <div id="tree" class="view"></div>
     <div id="map" class="view hidden">
-      <div class="empty">🕸  Mind-map coming soon.</div>
+      <canvas id="graph"></canvas>
+      <div class="map-hint">tap a node to open · drag to pan · pinch / scroll to zoom</div>
     </div>
   </main>
 
@@ -469,6 +474,216 @@ function closeCard() {
 }
 document.getElementById("backdrop").addEventListener("click", closeCard);
 
+/* ------- Connections map (canvas force-directed graph) ------- */
+const GRAPH = { canvas: null, ctx: null, dpr: 1, sim: null, raf: null,
+  running: false, loaded: false, selected: null, view: { scale: 1, tx: 0, ty: 0 } };
+
+function rootFolder(path) { const s = (path || "Inbox").split("/")[0].trim(); return s || "Inbox"; }
+function folderColor(name) {
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return "hsl(" + (h % 360) + ",55%,62%)";
+}
+function truncateLabel(ctx, s, maxW) {
+  s = String(s || "");
+  if (ctx.measureText(s).width <= maxW) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ctx.measureText(s.slice(0, mid) + "…").width <= maxW) lo = mid; else hi = mid - 1; }
+  return s.slice(0, lo) + "…";
+}
+function nodeRadius(n) { return 4 + Math.min(11, (n.degree || 0) * 1.6); }
+
+function DEMO_GRAPH() {
+  const byFolder = {};
+  for (const n of SAMPLE_NOTES) (byFolder[n.path] = byFolder[n.path] || []).push(n.id);
+  const edges = [];
+  for (const k in byFolder) { const ids = byFolder[k]; for (let i = 1; i < ids.length; i++) edges.push({ source: ids[i - 1], target: ids[i] }); }
+  edges.push({ source: 1, target: 9 }, { source: 9, target: 11 });
+  const deg = {}; edges.forEach(e => { deg[e.source] = (deg[e.source] || 0) + 1; deg[e.target] = (deg[e.target] || 0) + 1; });
+  const nodes = SAMPLE_NOTES.map(n => ({ id: n.id, title: n.title, path: n.path, degree: deg[n.id] || 0 }))
+    .filter(n => n.degree > 0);
+  return { nodes, edges };
+}
+
+async function fetchGraph() {
+  const base = window.__API_BASE__;
+  if (!base) return DEMO_GRAPH();
+  try {
+    const res = await fetch(base.replace(/\/$/, "") + "/webapp/graph", { headers: { "X-Telegram-Init-Data": INIT_DATA } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  } catch (e) { console.warn("Graph API unavailable:", e); return DEMO_GRAPH(); }
+}
+
+function buildSim(data, W, H) {
+  const spread = Math.min(W, H) * 0.5 || 200;
+  const nodes = data.nodes.map(n => ({ ...n, x: (Math.random() - .5) * spread, y: (Math.random() - .5) * spread, vx: 0, vy: 0 }));
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const edges = (data.edges || []).map(e => ({ a: byId.get(e.source), b: byId.get(e.target) })).filter(e => e.a && e.b);
+  return { nodes, edges, alpha: 1 };
+}
+
+function stepSim(sim) {
+  const nodes = sim.nodes, a = sim.alpha;
+  const REPEL = 1600, SPRING = 0.02, LEN = 64, CENTER = 0.015, DAMP = 0.85;
+  for (let i = 0; i < nodes.length; i++) {
+    const ni = nodes[i];
+    for (let j = i + 1; j < nodes.length; j++) {
+      const nj = nodes[j];
+      let dx = ni.x - nj.x, dy = ni.y - nj.y, d2 = dx * dx + dy * dy;
+      if (d2 < 0.01) { dx = Math.random() - .5; dy = Math.random() - .5; d2 = dx * dx + dy * dy + 0.01; }
+      const inv = 1 / Math.sqrt(d2), f = REPEL / d2, fx = dx * inv * f, fy = dy * inv * f;
+      ni.vx += fx; ni.vy += fy; nj.vx -= fx; nj.vy -= fy;
+    }
+  }
+  for (const e of sim.edges) {
+    let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y; const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const f = (d - LEN) * SPRING, fx = dx / d * f, fy = dy / d * f;
+    e.a.vx += fx; e.a.vy += fy; e.b.vx -= fx; e.b.vy -= fy;
+  }
+  for (const n of nodes) {
+    n.vx += -n.x * CENTER; n.vy += -n.y * CENTER;
+    n.x += n.vx * a; n.y += n.vy * a;
+    n.vx *= DAMP; n.vy *= DAMP;
+  }
+  sim.alpha = Math.max(0.03, a * 0.985);
+}
+
+function sizeCanvas() {
+  const c = GRAPH.canvas; if (!c) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); GRAPH.dpr = dpr;
+  c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+}
+
+function autoFit() {
+  const { sim, canvas, view } = GRAPH; if (!sim || !sim.nodes.length) return;
+  let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+  for (const n of sim.nodes) { a = Math.min(a, n.x); c = Math.max(c, n.x); b = Math.min(b, n.y); d = Math.max(d, n.y); }
+  const w = canvas.clientWidth, h = canvas.clientHeight, gw = Math.max(1, c - a), gh = Math.max(1, d - b);
+  view.scale = Math.min(w / (gw + 120), h / (gh + 120), 2);
+  view.tx = w / 2 - (a + c) / 2 * view.scale;
+  view.ty = h / 2 - (b + d) / 2 * view.scale;
+}
+
+function drawGraph() {
+  const { ctx, canvas, sim, view, dpr, selected } = GRAPH; if (!ctx || !sim) return;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(view.tx, view.ty); ctx.scale(view.scale, view.scale);
+  ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1 / view.scale;
+  ctx.beginPath();
+  for (const e of sim.edges) { ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); }
+  ctx.stroke();
+  for (const n of sim.nodes) {
+    ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n), 0, Math.PI * 2);
+    ctx.fillStyle = folderColor(rootFolder(n.path)); ctx.fill();
+    if (selected === n.id) { ctx.lineWidth = 2 / view.scale; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+  }
+  ctx.restore();
+  drawLabels();
+}
+
+function drawLabels() {
+  const { ctx, sim, view, selected } = GRAPH;
+  ctx.font = "11px -apple-system,Segoe UI,Roboto,sans-serif"; ctx.textBaseline = "top";
+  const showAll = sim.nodes.length <= 14, placed = [];
+  let count = 0;
+  for (const n of [...sim.nodes].sort((x, y) => (y.degree || 0) - (x.degree || 0))) {
+    if (count >= 36) break;
+    const isSel = selected === n.id;
+    if (!showAll && !isSel && (n.degree || 0) < 2) continue;
+    const sx = n.x * view.scale + view.tx, sy = n.y * view.scale + view.ty;
+    const label = truncateLabel(ctx, n.title, 120), tw = ctx.measureText(label).width;
+    const bx = sx - tw / 2, by = sy + nodeRadius(n) * view.scale + 2, bw = tw, bh = 13;
+    if (!isSel && placed.some(p => bx < p.x + p.w && bx + bw > p.x && by < p.y + p.h && by + bh > p.y)) continue;
+    placed.push({ x: bx, y: by, w: bw, h: bh });
+    ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(bx - 3, by - 1, bw + 6, bh + 2);
+    ctx.fillStyle = isSel ? "#fff" : "rgba(230,230,230,.92)"; ctx.fillText(label, bx, by);
+    count++;
+  }
+}
+
+function graphEmptyMessage(msg) {
+  const { ctx, canvas, dpr } = GRAPH;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  ctx.fillStyle = "rgba(150,150,150,.85)"; ctx.font = "13px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(msg, canvas.clientWidth / 2, canvas.clientHeight / 2); ctx.textAlign = "start";
+}
+
+function graphLoop() {
+  if (!GRAPH.running) return;
+  stepSim(GRAPH.sim); drawGraph();
+  GRAPH.raf = requestAnimationFrame(graphLoop);
+}
+function startGraphLoop() { if (GRAPH.running || !GRAPH.sim) return; GRAPH.running = true; GRAPH.raf = requestAnimationFrame(graphLoop); }
+function stopGraphLoop() { GRAPH.running = false; if (GRAPH.raf) cancelAnimationFrame(GRAPH.raf); GRAPH.raf = null; }
+
+function zoomAt(cx, cy, factor) {
+  const v = GRAPH.view, gx = (cx - v.tx) / v.scale, gy = (cy - v.ty) / v.scale;
+  v.scale = Math.max(0.2, Math.min(4, v.scale * factor));
+  v.tx = cx - gx * v.scale; v.ty = cy - gy * v.scale;
+}
+function graphTap(clientX, clientY) {
+  const c = GRAPH.canvas, rect = c.getBoundingClientRect(), v = GRAPH.view;
+  const gx = (clientX - rect.left - v.tx) / v.scale, gy = (clientY - rect.top - v.ty) / v.scale;
+  let best = null, bestd = 1e9;
+  for (const n of (GRAPH.sim ? GRAPH.sim.nodes : [])) {
+    const r = nodeRadius(n) + 8, dx = n.x - gx, dy = n.y - gy, d = dx * dx + dy * dy;
+    if (d < r * r && d < bestd) { best = n; bestd = d; }
+  }
+  if (best) { GRAPH.selected = best.id; openCard({ id: best.id, title: best.title }, null); }
+}
+function setupGraphInput() {
+  const c = GRAPH.canvas; if (!c || c._wired) return; c._wired = true;
+  const pointers = new Map(); let last = null, moved = 0, pinch = 0;
+  c.addEventListener("pointerdown", (e) => {
+    c.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    last = { x: e.clientX, y: e.clientY }; moved = 0;
+    if (pointers.size === 2) { const p = [...pointers.values()]; pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); }
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const p = [...pointers.values()], d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      if (pinch > 0) { const rect = c.getBoundingClientRect(); zoomAt((p[0].x + p[1].x) / 2 - rect.left, (p[0].y + p[1].y) / 2 - rect.top, d / pinch); }
+      pinch = d; moved = 999; return;
+    }
+    if (last) { const dx = e.clientX - last.x, dy = e.clientY - last.y; moved += Math.abs(dx) + Math.abs(dy); GRAPH.view.tx += dx; GRAPH.view.ty += dy; last = { x: e.clientX, y: e.clientY }; }
+  });
+  const up = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    if (pointers.size === 1 && moved < 6) graphTap(e.clientX, e.clientY);
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = 0;
+    last = pointers.size === 1 ? [...pointers.values()][0] : null;
+  };
+  c.addEventListener("pointerup", up); c.addEventListener("pointercancel", up);
+  c.addEventListener("wheel", (e) => { e.preventDefault(); const rect = c.getBoundingClientRect(); zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
+}
+
+async function ensureGraph() {
+  GRAPH.canvas = document.getElementById("graph");
+  GRAPH.ctx = GRAPH.canvas.getContext("2d");
+  sizeCanvas();
+  setupGraphInput();
+  if (GRAPH.loaded) { startGraphLoop(); return; }
+  GRAPH.loaded = true;
+  const data = await fetchGraph();
+  if (!data.nodes || !data.nodes.length) { graphEmptyMessage("No connections yet — link notes in the bot."); return; }
+  GRAPH.sim = buildSim(data, GRAPH.canvas.clientWidth, GRAPH.canvas.clientHeight);
+  for (let i = 0; i < 80; i++) stepSim(GRAPH.sim);   // warm up before first paint
+  autoFit();
+  startGraphLoop();
+}
+
+window.addEventListener("resize", () => {
+  if (document.getElementById("map").classList.contains("hidden")) return;
+  sizeCanvas(); autoFit();
+});
+
 /* ------- Tabs (Browser | Map) ------- */
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -476,6 +691,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     const view = btn.dataset.view;
     document.getElementById("tree").classList.toggle("hidden", view !== "browser");
     document.getElementById("map").classList.toggle("hidden", view !== "map");
+    if (view === "map") ensureGraph(); else stopGraphLoop();
     tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
   });
 });

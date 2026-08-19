@@ -181,6 +181,32 @@ def web_note_detail(user_id: int, note_id: int) -> dict | None:
     }
 
 
+def graph(user_id: int) -> dict:
+    """The user's connection map: {nodes:[{id,title,path,degree}], edges:[{source,target}]}.
+
+    Only notes that participate in a link appear. Direction is preserved in the
+    edges (the client can render it undirected for now, directed later)."""
+    edges = link_store.all_links(user_id)
+    ids = {i for e in edges for i in e}
+    briefs = {b["id"]: b for b in note_store.notes_brief(user_id, ids)}
+
+    degree: dict[int, int] = {}
+    for f, t in edges:
+        degree[f] = degree.get(f, 0) + 1
+        degree[t] = degree.get(t, 0) + 1
+
+    nodes = [
+        {"id": nid, "title": _display_title(b["title"], b["text"]),
+         "path": b["path"], "degree": degree.get(nid, 0)}
+        for nid, b in briefs.items()
+    ]
+    out_edges = [
+        {"source": f, "target": t}
+        for f, t in edges if f in briefs and t in briefs
+    ]
+    return {"nodes": nodes, "edges": out_edges}
+
+
 def known_paths(user_id: int) -> list[str]:
     """The path vocabulary offered to the user/model: their existing DB paths
     (most-used first), then any predefined default folders not already present."""
