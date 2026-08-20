@@ -1,5 +1,10 @@
 {
   "en": {
+    "folder_inbox": "Inbox",
+    "folder_projects": "Projects",
+    "folder_areas": "Areas",
+    "folder_resources": "Resources",
+    "folder_archive": "Archive",
     "saved": "Saved ✅",
     "reminder_set": "⏰ Reminder set for {when} ({tz})",
     "error_generic": "⚠️ Something went wrong. Please try again.",
@@ -60,6 +65,11 @@
     "cmd_user": "Your settings"
   },
   "uk": {
+    "folder_inbox": "Вхідні",
+    "folder_projects": "Проєкти",
+    "folder_areas": "Сфери",
+    "folder_resources": "Матеріали",
+    "folder_archive": "Архів",
     "saved": "Збережено ✅",
     "reminder_set": "⏰ Нагадування встановлено на {when} ({tz})",
     "error_generic": "⚠️ Щось пішло не так. Спробуйте ще раз.",

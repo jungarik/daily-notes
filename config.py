@@ -66,18 +66,21 @@ SENDING_STALE_SECONDS = int(os.environ.get("REMINDER_SENDING_STALE_SECONDS", "12
 LATE_NOTE_SECONDS = 60
 
 # --- Vault root folders (default structure) ---
-# The predefined top-level folders and what each is for — a single source of
-# truth for both the enrichment vocabulary and the folder meanings shown to the
-# model. Global for now; may become per-user later.
+# Root folders as {i18n key -> English definition}. The KEY is a locale key
+# resolved via locales.json to the folder's display name in the user's language;
+# that translated name is what the enrichment LLM writes into the note path and
+# what gets stored. Definitions stay English (shared across all locales) and are
+# the stable anchor + prompt vocabulary. Extend by adding a key here plus its
+# translations under each locale in locales.json.
 ROOT_FOLDERS: dict[str, str] = {
-    "Inbox": "uncategorized / not yet sorted",
-    "Projects": "active efforts with a concrete outcome or deadline",
-    "Areas": "ongoing responsibilities to maintain over time",
-    "Resources": "reference material and topics of interest",
-    "Archive": "inactive or completed items kept for reference",
+    "folder_inbox": "uncategorized / not yet sorted",
+    "folder_projects": "active efforts with a concrete outcome or deadline",
+    "folder_areas": "ongoing responsibilities to maintain over time",
+    "folder_resources": "reference material and topics of interest",
+    "folder_archive": "inactive or completed items kept for reference",
 }
-# Where a note lands when the model can't determine any path.
-DEFAULT_ROOT_FOLDER = os.environ.get("DEFAULT_ROOT_FOLDER", "Inbox")
+# i18n key of the folder a note lands in when the model can't determine a path.
+DEFAULT_ROOT_FOLDER_KEY = os.environ.get("DEFAULT_ROOT_FOLDER_KEY", "folder_inbox")
 
 # --- Localization ---
 BOT_DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")

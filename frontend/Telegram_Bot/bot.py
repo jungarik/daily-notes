@@ -155,7 +155,7 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, _, locale, _ = await load_ctx(update)
     meta, err = await api.set_note_path(info["note_id"], msg.text.strip())
     if err:
-        await msg.reply_text(t(locale, "path_invalid", roots=", ".join(config.ROOT_FOLDERS)))
+        await msg.reply_text(t(locale, "path_invalid", roots=", ".join(t(locale, k) for k in config.ROOT_FOLDERS)))
         return
     if not meta:
         await msg.reply_text(t(locale, "error_generic"))

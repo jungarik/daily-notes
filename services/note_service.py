@@ -14,11 +14,28 @@ from services import atomize
 from services import polish as polish_svc
 import storage
 from services import enrichment
+import i18n
+from services import user_service
 from stores import note_store
 from stores import chunk_store
 from stores import link_store
 
 logger = logging.getLogger(__name__)
+
+
+def _localized_roots(locale: str) -> tuple[dict[str, str], str]:
+    """Root folders for a locale: {translated folder name -> English definition},
+    plus the translated default folder name. The translated name is what the LLM
+    writes into the path and what gets stored."""
+    roots = {i18n.t(locale, key): definition for key, definition in config.ROOT_FOLDERS.items()}
+    default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
+    return roots, default
+
+
+def _all_root_names() -> set[str]:
+    """Every root-folder display name across all supported locales — used to
+    validate a path regardless of the language it was written in."""
+    return {i18n.t(loc, key) for key in config.ROOT_FOLDERS for loc in i18n.SUPPORTED}
 
 
 def capture_note(
@@ -115,13 +132,16 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
         user_id, embedding, exclude_note_id=note_id,
         limit=config.ENRICH_SIMILAR_LIMIT,
     )
+    # Present the root folders in the user's language; the model writes the
+    # translated folder name into the path and it's stored as-is.
+    root_folders, default_root = _localized_roots(user_service.language(user_id))
     meta = enrichment.enrich(
         text,
         known_paths=note_store.list_paths(user_id),
         known_tags=note_store.list_tags(user_id),
         similar_notes=similar,
-        root_folders=config.ROOT_FOLDERS,
-        default_root_folder=config.DEFAULT_ROOT_FOLDER,
+        root_folders=root_folders,
+        default_root_folder=default_root,
     )
     note_store.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"],
@@ -208,25 +228,27 @@ def graph(user_id: int) -> dict:
 
 
 def known_paths(user_id: int) -> list[str]:
-    """The path vocabulary offered to the user/model: their existing DB paths
-    (most-used first), then any predefined default folders not already present."""
+    """The path vocabulary offered to the user: their existing DB paths (most-used
+    first), then the localized root folders not already present."""
+    root_folders, _ = _localized_roots(user_service.language(user_id))
     paths = [name for name, _ in note_store.list_paths(user_id)]
+    for name in root_folders:
+        if name not in paths:
+            paths.append(name)
     return paths
 
 
 def clean_root_path(path: str) -> str | None:
-    """Normalize a user-entered path and require it to start with a root folder.
-
-    Returns the canonical path (root folder cased as in config.ROOT_FOLDERS), or
-    None if it's empty or doesn't start with a known root folder.
-    """
+    """Normalize a user-entered path and require it to start with a root folder
+    (in any supported language). Returns the canonical path, or None if empty or
+    not under a known root folder."""
     if not path:
         return None
     parts = [p.strip() for p in str(path).replace("\\", "/").split("/")]
     parts = [p for p in parts if p and p not in (".", "..")]
     if not parts:
         return None
-    roots = {name.lower(): name for name in config.ROOT_FOLDERS}
+    roots = {name.lower(): name for name in _all_root_names()}
     canonical = roots.get(parts[0].lower())
     if canonical is None:
         return None
