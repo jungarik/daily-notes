@@ -155,6 +155,20 @@ class WebAppGraph(BaseModel):
     edges: list[WebAppGraphEdge] = []
 
 
+class WebAppSetPathRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=200)
+
+
+class WebAppMoveFolderRequest(BaseModel):
+    old_path: str = Field(min_length=1, max_length=200)
+    new_path: str = Field(min_length=1, max_length=200)
+
+
+class WebAppMoveFolderResponse(BaseModel):
+    count: int
+    new_path: str
+
+
 class WebAppNoteDetail(BaseModel):
     # Full note detail for the web-app preview (opened on tap). `links` are notes
     # this one points to; `backlinks` are notes pointing to it. Both are direct

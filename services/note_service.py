@@ -264,3 +264,28 @@ def set_path(note_id: int, path: str) -> dict | None:
     note_store.set_path(note_id, path)
     logger.info("Note %s path set to %r", note_id, path)
     return note_store.get_meta(note_id)
+
+
+def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | None]:
+    """Owner-scoped: validate + set a single note's full path. Returns
+    (status, meta): ('ok', meta) | ('invalid', None) | ('not_found', None)."""
+    cleaned = clean_root_path(raw_path)
+    if cleaned is None:
+        return ("invalid", None)
+    if note_store.get_note_for_user(user_id, note_id) is None:
+        return ("not_found", None)
+    note_store.set_path(note_id, cleaned)
+    logger.info("Note %s (user %s) path set to %r", note_id, user_id, cleaned)
+    return ("ok", note_store.get_meta(note_id))
+
+
+def move_folder(user_id: int, old_path: str, raw_new_path: str) -> tuple[str, dict | None]:
+    """Owner-scoped bulk rename: move every note whose path is exactly `old_path`
+    to a validated new path. Returns (status, data): ('ok', {count, new_path}) |
+    ('invalid', None)."""
+    cleaned = clean_root_path(raw_new_path)
+    if cleaned is None:
+        return ("invalid", None)
+    count = note_store.move_folder_paths(user_id, old_path, cleaned)
+    logger.info("Moved folder %r -> %r for user %s (%d notes)", old_path, cleaned, user_id, count)
+    return ("ok", {"count": count, "new_path": cleaned})

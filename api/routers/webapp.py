@@ -16,7 +16,10 @@ import config
 from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
-from api.schemas import WebAppNote, WebAppNoteDetail, WebAppGraph
+from api.schemas import (
+    WebAppNote, WebAppNoteDetail, WebAppGraph,
+    WebAppSetPathRequest, WebAppMoveFolderRequest, WebAppMoveFolderResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +66,28 @@ def note_detail(note_id: int,
     if detail is None:
         raise HTTPException(status_code=404, detail="note not found")
     return WebAppNoteDetail(**detail)
+
+
+@router.post("/notes/{note_id}/path", response_model=WebAppNoteDetail)
+def set_note_path(note_id: int, req: WebAppSetPathRequest,
+                  x_telegram_init_data: str | None = Header(default=None)) -> WebAppNoteDetail:
+    """Rename a single note's full vault path. Returns the updated note detail."""
+    user_id = _auth(x_telegram_init_data)
+    status, _ = note_service.move_note(user_id, note_id, req.path)
+    if status == "invalid":
+        raise HTTPException(status_code=422, detail="path must start with a root folder")
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="note not found")
+    return WebAppNoteDetail(**note_service.web_note_detail(user_id, note_id))
+
+
+@router.post("/folder/move", response_model=WebAppMoveFolderResponse)
+def move_folder(req: WebAppMoveFolderRequest,
+                x_telegram_init_data: str | None = Header(default=None)) -> WebAppMoveFolderResponse:
+    """Bulk-rename a folder: move every note whose path is exactly `old_path` to
+    the new path. Returns how many notes were moved."""
+    user_id = _auth(x_telegram_init_data)
+    status, data = note_service.move_folder(user_id, req.old_path, req.new_path)
+    if status == "invalid":
+        raise HTTPException(status_code=422, detail="path must start with a root folder")
+    return WebAppMoveFolderResponse(count=data["count"], new_path=data["new_path"])
