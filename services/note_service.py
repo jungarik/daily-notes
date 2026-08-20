@@ -163,13 +163,56 @@ def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
 
 
 def list_notes_for_user(user_id: int) -> list[dict]:
-    """The user's notes for the web-app browser: [{id, title, path}], with a text
-    snippet standing in for the title of notes that haven't been enriched yet."""
-    return [
-        {"id": n["id"], "title": _display_title(n["title"], n["text"]),
-         "path": n["path"], "links": n["links"]}
-        for n in note_store.list_notes(user_id)
-    ]
+    """The user's notes for the web-app browser/feed (newest first): [{id, title,
+    path, snippet, created_at, links}]. `title` falls back to a text snippet when
+    the note isn't enriched; `snippet` is a short text preview for the feed."""
+    out = []
+    for n in note_store.list_notes(user_id):
+        created = n.get("created_at")
+        out.append({
+            "id": n["id"],
+            "title": _display_title(n["title"], n["text"]),
+            "path": n["path"],
+            "snippet": " ".join((n["text"] or "").split())[:160],
+            "created_at": created.isoformat() if created else None,
+            "links": n["links"],
+        })
+    return out
+
+
+def feed_for_user(user_id: int) -> list[dict]:
+    """Full note details for the web-app feed (newest first) — the same shape as a
+    single note preview, so each note renders as a complete card. Links/backlinks
+    are computed from one edge query (no per-note round trips)."""
+    notes = note_store.list_notes(user_id)
+    edges = link_store.all_links(user_id)
+    ids = {i for e in edges for i in e}
+    briefs = {b["id"]: b for b in note_store.notes_brief(user_id, ids)}
+    out_map: dict[int, list[int]] = {}
+    in_map: dict[int, list[int]] = {}
+    for f, t in edges:
+        out_map.setdefault(f, []).append(t)
+        in_map.setdefault(t, []).append(f)
+
+    def chip(nid: int) -> dict:
+        b = briefs.get(nid)
+        return {"id": nid, "title": _display_title(b["title"], b["text"]) if b else str(nid)}
+
+    feed = []
+    for n in notes:
+        created = n.get("created_at")
+        feed.append({
+            "id": n["id"],
+            "title": _display_title(n["title"], n["text"]),
+            "path": n["path"],
+            "text": n["text"] or "",
+            "tags": n.get("tags") or [],
+            "type": n.get("type"),
+            "created_at": created.isoformat() if created else None,
+            "links": [chip(t) for t in out_map.get(n["id"], [])],
+            "backlinks": [chip(f) for f in in_map.get(n["id"], [])],
+        })
+    return feed
 
 
 def web_note_detail(user_id: int, note_id: int) -> dict | None:

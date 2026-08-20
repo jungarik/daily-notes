@@ -47,6 +47,16 @@ def notes(x_telegram_init_data: str | None = Header(default=None)) -> list[WebAp
     return [WebAppNote(**it) for it in items]
 
 
+@router.get("/feed", response_model=list[WebAppNoteDetail])
+def feed(x_telegram_init_data: str | None = Header(default=None)) -> list[WebAppNoteDetail]:
+    """Full note details for the notes feed (newest first) — each note as a
+    complete preview card."""
+    user_id = _auth(x_telegram_init_data)
+    items = note_service.feed_for_user(user_id)
+    logger.info("Web app feed for user=%s -> %d", user_id, len(items))
+    return [WebAppNoteDetail(**it) for it in items]
+
+
 @router.get("/graph", response_model=WebAppGraph)
 def graph(x_telegram_init_data: str | None = Header(default=None)) -> WebAppGraph:
     """The authenticated user's note connection graph (nodes + edges)."""

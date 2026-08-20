@@ -184,18 +184,19 @@ def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
     with cursor() as cur:
         cur.execute(
             """
-            SELECT n.id, n.title, n.path, n.text,
+            SELECT n.id, n.title, n.path, n.text, n.tags, n.note_type, n.created_at,
                    (SELECT count(*) FROM note_links l
                     WHERE l.from_note_id = n.id OR l.to_note_id = n.id) AS links
             FROM notes n
             WHERE n.user_id = %s
-            ORDER BY n.id DESC
+            ORDER BY n.created_at DESC NULLS LAST, n.id DESC
             LIMIT %s;
             """,
             (user_id, limit),
         )
         return [
-            {"id": r[0], "title": r[1], "path": r[2], "text": r[3], "links": r[4]}
+            {"id": r[0], "title": r[1], "path": r[2], "text": r[3],
+             "tags": r[4] or [], "type": r[5], "created_at": r[6], "links": r[7]}
             for r in cur.fetchall()
         ]
 
