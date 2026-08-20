@@ -34,24 +34,49 @@
   }
   body { display: flex; flex-direction: column; }
 
+  /* Instagram-style stats header (glass) */
   header {
     position: sticky; top: 0; z-index: 5;
-    padding: 14px 16px 10px;
-    background: var(--bg-alt);
+    display: flex; justify-content: center; gap: 48px;
+    padding: 14px 16px;
+    background: rgba(25,25,25,.72);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
     border-bottom: 1px solid var(--border);
   }
-  .tabs { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
-  .tab {
-    flex: 1; padding: 7px 10px;
-    background: transparent; border: none; border-radius: 6px;
-    color: var(--text-muted); font-family: var(--mono); font-size: 13px; font-weight: 400;
-    cursor: pointer; transition: background .12s ease, color .12s ease;
+  .stat { text-align: center; min-width: 54px; }
+  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; }
+  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
+
+  /* Floating liquid-glass bottom tab bar */
+  .tabbar {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: flex; gap: 4px; padding: 6px;
+    background: rgba(48,48,48,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 999px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+    z-index: 40;
   }
-  .tab.active { background: var(--accent-soft); color: var(--text); }
+  .tabbar .tab {
+    display: flex; align-items: center; gap: 7px;
+    padding: 10px 18px; border: none; border-radius: 999px;
+    background: transparent; color: var(--text-muted);
+    font: inherit; font-size: 13px; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .tabbar .tab.active { background: rgba(255,255,255,.16); color: var(--text); }
+  .tabbar .tab svg { width: 18px; height: 18px; }
+
+  .search-input { width: 100%; box-sizing: border-box; margin: 4px 0 10px; font: inherit; font-size: 15px; color: var(--text); background: var(--bg-alt); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .search-input:focus { outline: none; border-color: var(--accent); }
 
   .view.hidden { display: none; }
 
-  main { flex: 1; overflow-y: auto; padding: 6px 8px 40px; }
+  main { flex: 1; overflow-y: auto; padding: 6px 8px 96px; }   /* bottom room for floating tab bar */
 
   .row {
     display: flex; align-items: center; gap: 7px;
@@ -108,19 +133,6 @@
   .file.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
   .row.selected { background: var(--accent-soft); }
 
-  footer.status {
-    flex: none;
-    padding: 7px 14px;
-    background: var(--bg-alt);
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 12px;
-    letter-spacing: .3px;
-    white-space: nowrap;
-  }
-  footer.status b { color: var(--text); font-weight: 400; }
-  footer.status .sep { color: var(--text-faint); margin: 0 8px; }
-
   .ico { flex: none; opacity: .85; }
   .folder > .row .ico { color: var(--text-muted); }
   .file .ico { color: var(--text-muted); }
@@ -172,16 +184,14 @@
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   /* Connections map */
   #map { padding: 0; position: relative; }
-  #graph { display: block; width: 100%; height: calc(100vh - 120px); touch-action: none; }
+  #graph { display: block; width: 100%; height: calc(100vh - 150px); touch-action: none; }
   .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
 </style>
 </head>
 <body>
   <header>
-    <div class="tabs">
-      <button class="tab active" data-view="browser">Browser</button>
-      <button class="tab" data-view="map">Map</button>
-    </div>
+    <div class="stat"><b id="statNotes">0</b><span>Notes</span></div>
+    <div class="stat"><b id="statLinks">0</b><span>Links</span></div>
   </header>
 
   <main>
@@ -190,9 +200,27 @@
       <canvas id="graph"></canvas>
       <div class="map-hint">tap a node to open · drag to pan · pinch / scroll to zoom</div>
     </div>
+    <div id="search" class="view hidden">
+      <input id="searchInput" class="search-input" type="text" placeholder="Search notes…"
+             autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div id="searchResults"></div>
+    </div>
   </main>
 
-  <footer class="status" id="status"></footer>
+  <nav class="tabbar">
+    <button class="tab active" data-view="browser">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
+      <span>Browser</span>
+    </button>
+    <button class="tab" data-view="map">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.3"/><circle cx="18.5" cy="15" r="2.3"/><circle cx="14" cy="5.5" r="2.3"/><path d="M7.9 16.6 12.4 7.4M16.3 13.4 8.1 17.1"/></svg>
+      <span>Map</span>
+    </button>
+    <button class="tab" data-view="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search</span>
+    </button>
+  </nav>
 
   <div class="sheet-backdrop" id="backdrop"></div>
   <div class="sheet" id="sheet">
@@ -312,14 +340,11 @@ function countLinks(node) {
   return c;
 }
 
-/* ------- Status bar (scoped to the selected folder) ------- */
+/* ------- Header stats (Instagram-style; scoped to the selected folder) ------- */
 let selectedRow = null;
 function setStatus(folder, notes, links) {
-  // Show only the selected folder's own name, not the full breadcrumb path.
-  const name = String(folder).split("/").pop() || folder;
-  document.getElementById("status").innerHTML =
-    "folder: <b>" + escapeHtml(name) + "</b><span class=\"sep\">|</span>" +
-    "notes: <b>" + notes + "</b><span class=\"sep\">|</span>links: <b>" + links + "</b>";
+  document.getElementById("statNotes").textContent = notes;
+  document.getElementById("statLinks").textContent = links;
 }
 function selectFolder(node, rowEl, path) {
   if (selectedRow) selectedRow.classList.remove("selected");
@@ -564,7 +589,7 @@ async function savePath() {
     return;
   }
   hideActionSheets();
-  renderTree(await fetchNotes());   // regroup the tree with the new path
+  await reloadNotes();   // refresh notes + regroup the tree with the new path
   tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred && tg.HapticFeedback.notificationOccurred("success");
 }
 document.getElementById("menuBackdrop").addEventListener("click", hideActionSheets);
@@ -789,17 +814,34 @@ window.addEventListener("resize", () => {
   sizeCanvas(); autoFit();
 });
 
-/* ------- Tabs (Browser | Map) ------- */
-document.querySelectorAll(".tab").forEach((btn) => {
+/* ------- Bottom tab bar (Browser | Map | Search) ------- */
+document.querySelectorAll(".tabbar .tab").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tabbar .tab").forEach((b) => b.classList.toggle("active", b === btn));
     const view = btn.dataset.view;
     document.getElementById("tree").classList.toggle("hidden", view !== "browser");
     document.getElementById("map").classList.toggle("hidden", view !== "map");
+    document.getElementById("search").classList.toggle("hidden", view !== "search");
     if (view === "map") ensureGraph(); else stopGraphLoop();
+    if (view === "search") setTimeout(() => document.getElementById("searchInput").focus(), 60);
     tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
   });
 });
+
+/* ------- Search (client-side over loaded notes) ------- */
+let ALL_NOTES = [];
+async function reloadNotes() { ALL_NOTES = await fetchNotes(); renderTree(ALL_NOTES); }
+function runSearch(q) {
+  q = (q || "").trim().toLowerCase();
+  const out = document.getElementById("searchResults");
+  out.innerHTML = "";
+  if (!q) return;
+  const hits = ALL_NOTES.filter(n =>
+    ((n.title || "") + " " + (n.path || "")).toLowerCase().includes(q)).slice(0, 50);
+  if (!hits.length) { out.innerHTML = '<div class="empty">No matches.</div>'; return; }
+  for (const n of hits) out.appendChild(renderFile(n));
+}
+document.getElementById("searchInput").addEventListener("input", (e) => runSearch(e.target.value));
 
 /* ------- Utils ------- */
 function escapeHtml(s) {
@@ -809,7 +851,7 @@ function escapeHtml(s) {
 
 /* ------- Boot ------- */
 (async function () {
-  renderTree(await fetchNotes());
+  await reloadNotes();
 })();
 </script>
 </body>
