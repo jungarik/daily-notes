@@ -280,9 +280,11 @@ def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | No
 
 
 def move_folder(user_id: int, old_path: str, raw_new_path: str) -> tuple[str, dict | None]:
-    """Owner-scoped bulk rename: move every note whose path is exactly `old_path`
-    to a validated new path. Returns (status, data): ('ok', {count, new_path}) |
-    ('invalid', None)."""
+    """Owner-scoped bulk rename of a sub-folder: move every note whose path is
+    exactly `old_path` to a validated new path. Root folders can't be moved.
+    Returns (status, data): ('ok', {count, new_path}) | ('invalid', None) | ('root', None)."""
+    if "/" not in (old_path or ""):
+        return ("root", None)   # a bare root folder — not movable
     cleaned = clean_root_path(raw_new_path)
     if cleaned is None:
         return ("invalid", None)

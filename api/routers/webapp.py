@@ -88,6 +88,8 @@ def move_folder(req: WebAppMoveFolderRequest,
     the new path. Returns how many notes were moved."""
     user_id = _auth(x_telegram_init_data)
     status, data = note_service.move_folder(user_id, req.old_path, req.new_path)
+    if status == "root":
+        raise HTTPException(status_code=400, detail="root folders can't be moved")
     if status == "invalid":
         raise HTTPException(status_code=422, detail="path must start with a root folder")
     return WebAppMoveFolderResponse(count=data["count"], new_path=data["new_path"])

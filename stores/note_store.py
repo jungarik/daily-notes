@@ -167,7 +167,8 @@ def set_path(note_id: int, path: str) -> None:
 
 def move_folder_paths(user_id: int, old_path: str, new_path: str) -> int:
     """Bulk-rename: set every one of the user's notes whose path is exactly
-    `old_path` to `new_path`. Returns the number of notes moved."""
+    `old_path` to `new_path` (direct notes only, no subfolders). Returns notes
+    moved."""
     with cursor() as cur:
         cur.execute(
             "UPDATE notes SET path = %s WHERE user_id = %s AND path = %s;",

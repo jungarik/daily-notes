@@ -158,10 +158,11 @@
   .sheet .links-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .sheet .link-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 5px 10px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sheet .link-chip:active { background: var(--border); }
-  /* ⋮ action menu + change-path input */
-  .menu-actions { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-  .menu-item { text-align: left; font: inherit; font-size: 14px; color: var(--text); background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
-  .menu-item:active { background: var(--border); }
+  /* ⋮ context menu (dropdown at the dots) + change-path input */
+  .ctx-menu { position: fixed; z-index: 30; min-width: 150px; padding: 4px; background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
+  .ctx-menu.show { display: block; }
+  .ctx-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--text); background: transparent; border: none; border-radius: 6px; padding: 9px 12px; cursor: pointer; }
+  .ctx-item:active { background: var(--border); }
   #pathSheet .path-input { margin-top: 14px; width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--text); background: var(--bg, #1e1e1e); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; }
   #pathSheet .path-input:focus { outline: none; border-color: var(--accent); }
   #pathSheet .path-error { min-height: 16px; margin-top: 6px; color: #e5736b; font-size: 12px; }
@@ -204,12 +205,8 @@
   </div>
 
   <div class="sheet-backdrop" id="menuBackdrop"></div>
-  <div class="sheet" id="menuSheet">
-    <div class="grip"></div>
-    <div class="card-title" id="menuName"></div>
-    <div class="menu-actions">
-      <button class="menu-item" id="menuChangePath">📁 Change path</button>
-    </div>
+  <div class="ctx-menu" id="ctxMenu">
+    <button class="ctx-item" id="menuChangePath">📁 Change path</button>
   </div>
 
   <div class="sheet" id="pathSheet">
@@ -342,13 +339,16 @@ function renderFolder(name, node, forceOpen, path) {
   el.className = "folder" + (forceOpen ? " open" : "");
   const header = document.createElement("div");
   header.className = "row";
+  // Root folders (no "/" in their path) aren't renameable — no ⋮ menu for them.
+  const isRoot = path.indexOf("/") < 0;
   header.innerHTML =
     folderSvg +
     '<span class="name">' + escapeHtml(name) + '</span>' +
-    '<span class="dots" role="button" aria-label="menu">⋮</span>';
-  header.querySelector(".dots").addEventListener("click", (e) => {
+    (isRoot ? "" : '<span class="dots" role="button" aria-label="menu">⋮</span>');
+  const dotsEl = header.querySelector(".dots");
+  if (dotsEl) dotsEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    openMenu({ type: "folder", path, name });
+    openMenu({ type: "folder", path, name }, e.currentTarget);
   });
   const children = document.createElement("div");
   children.className = "children";
@@ -376,7 +376,7 @@ function renderFile(note) {
     '<span class="dots" role="button" aria-label="menu">⋮</span>';
   el.querySelector(".dots").addEventListener("click", (e) => {
     e.stopPropagation();
-    openMenu({ type: "note", id: note.id, path: note.path, name: title });
+    openMenu({ type: "note", id: note.id, path: note.path, name: title }, e.currentTarget);
   });
   el.addEventListener("click", () => openCard(note, el));
   return el;
@@ -508,28 +508,33 @@ function closeCard() {
 }
 document.getElementById("backdrop").addEventListener("click", closeCard);
 
-/* ------- ⋮ action menu + change-path sheet ------- */
+/* ------- ⋮ context menu + change-path sheet ------- */
 let menuTarget = null;   // { type:'folder'|'note', path, id?, name }
+function closeCtxMenu() { document.getElementById("ctxMenu").classList.remove("show"); }
 function hideActionSheets() {
-  document.getElementById("menuSheet").classList.remove("show");
+  closeCtxMenu();
   document.getElementById("pathSheet").classList.remove("show");
   document.getElementById("menuBackdrop").classList.remove("show");
 }
-function openMenu(target) {
+function openMenu(target, anchor) {
   menuTarget = target;
-  document.getElementById("menuName").textContent =
-    (target.type === "folder" ? "📁 " : "📝 ") + (target.name || "—");
-  document.getElementById("pathSheet").classList.remove("show");
-  document.getElementById("menuSheet").classList.add("show");
-  document.getElementById("menuBackdrop").classList.add("show");
+  const menu = document.getElementById("ctxMenu");
+  menu.classList.add("show");                       // show first to measure it
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+  let top = r.bottom + 4;
+  if (top + mh > window.innerHeight - 8) top = r.top - mh - 4;   // flip up if no room below
+  menu.style.left = left + "px";
+  menu.style.top = Math.max(8, top) + "px";
 }
 function openPathSheet() {
   if (!menuTarget) return;
+  closeCtxMenu();
   document.getElementById("pathTitle").textContent =
     menuTarget.type === "folder" ? "Rename folder path" : "Change note path";
   document.getElementById("pathInput").value = menuTarget.path || "";
   document.getElementById("pathError").textContent = "";
-  document.getElementById("menuSheet").classList.remove("show");
   document.getElementById("pathSheet").classList.add("show");
   document.getElementById("menuBackdrop").classList.add("show");
   setTimeout(() => document.getElementById("pathInput").focus(), 60);
@@ -567,6 +572,12 @@ document.getElementById("menuChangePath").addEventListener("click", openPathShee
 document.getElementById("pathCancel").addEventListener("click", hideActionSheets);
 document.getElementById("pathSave").addEventListener("click", savePath);
 document.getElementById("pathInput").addEventListener("keydown", (e) => { if (e.key === "Enter") savePath(); });
+// Dismiss the context menu on any outside click or when the tree scrolls.
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("ctxMenu");
+  if (menu.classList.contains("show") && !menu.contains(e.target)) closeCtxMenu();
+});
+document.querySelector("main").addEventListener("scroll", closeCtxMenu, true);
 
 /* ------- Connections map (canvas force-directed graph) ------- */
 const GRAPH = { canvas: null, ctx: null, dpr: 1, sim: null, raf: null,
