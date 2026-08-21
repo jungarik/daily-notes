@@ -100,16 +100,10 @@ def _attach_images(note_id: int, images: list[dict]) -> int:
 
 
 def _attachment_views(rows: list[dict]) -> list[dict]:
-    """Turn stored attachment rows into client-facing dicts with a short-lived
-    signed URL: [{id, kind, mime, url}]. Rows whose object can't be signed
-    (storage off) are dropped so the client only ever gets loadable URLs."""
-    out = []
-    for a in rows:
-        url = storage.presigned_url(a["storage_key"])
-        if not url:
-            continue
-        out.append({"id": a["id"], "kind": a["kind"], "mime": a["mime"], "url": url})
-    return out
+    """Client-facing attachment metadata: [{id, kind, mime}]. The storage key
+    stays server-side; the API layer turns each id into a signed proxy URL (an
+    <img> can't send auth headers, so the browser loads bytes through the API)."""
+    return [{"id": a["id"], "kind": a["kind"], "mime": a["mime"]} for a in rows]
 
 
 def atomize_note(user_id: int, note_id: int) -> list[dict]:

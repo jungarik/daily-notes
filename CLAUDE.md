@@ -77,8 +77,12 @@ multipart `POST /internal/notes/media` endpoint, uploaded to the same S3 bucket
 as voice audio (`storage.upload_attachment`, keyed under `attachments/`) and
 recorded one-to-many in `note_attachments` (`kind` leaves room for video/pdf/doc
 and folding voice audio in later). Enrichment/search still use text only; the
-web app renders a note's attachments as a swipe carousel using short-lived
-`storage.presigned_url` links. Imports are
+web app renders a note's attachments as a swipe carousel, loading each image
+through the API proxy `GET /webapp/attachments/{id}?t=<token>` (a short-lived
+HMAC token from `api/media_token.py` is the auth, since an `<img>` can't send the
+initData header) which streams the bytes via `storage.fetch_object` — the API
+reaches the bucket even when the browser can't (private endpoint), so this works
+regardless of bucket public reachability. Imports are
 absolute: `from services import X`, `from stores import Y`. `bot.py` keeps only
 Telegram specifics (keyboards, formatting, command wiring, reminder *delivery*,
 global `add_error_handler`) and calls the API for everything else — it imports

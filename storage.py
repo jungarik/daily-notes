@@ -102,6 +102,20 @@ def upload_attachment(
     return _put(f"attachments/{kind}", data, content_type, ext)
 
 
+def fetch_object(key: str) -> tuple[bytes, str | None] | None:
+    """Download an object's bytes + content-type, so the API can proxy it to a
+    client that can't reach the bucket directly. Returns (data, content_type), or
+    None if storage is off / the object is missing."""
+    if not key or not _configured():
+        return None
+    try:
+        resp = _s3().get_object(Bucket=config.S3_BUCKET, Key=key)
+        return resp["Body"].read(), resp.get("ContentType")
+    except Exception as exc:
+        logger.exception("Fetch of %s failed: %s", key, exc)
+        return None
+
+
 def presigned_url(key: str, ttl: int | None = None) -> str | None:
     """A short-lived signed GET URL for an object, so a client (the web-app
     carousel) can load it directly from the bucket without exposing credentials.

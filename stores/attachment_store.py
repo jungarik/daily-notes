@@ -35,6 +35,21 @@ def _row(r) -> dict:
             "storage_key": r[3], "mime": r[4], "position": r[5]}
 
 
+def get(attachment_id: int) -> dict | None:
+    """One attachment by id (for the media proxy): {id, note_id, kind,
+    storage_key, mime, position}, or None."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, note_id, kind, storage_key, mime, position
+            FROM note_attachments WHERE id = %s;
+            """,
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+        return _row(row) if row else None
+
+
 def list_for_note(note_id: int) -> list[dict]:
     """A note's attachments in carousel order: [{id, note_id, kind, storage_key,
     mime, position}]."""

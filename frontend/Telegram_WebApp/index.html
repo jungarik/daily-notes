@@ -608,6 +608,15 @@ function metaText(detail) {
   return m.join("   ·   ");
 }
 
+// Attachment URLs come back relative (/webapp/attachments/…); resolve them
+// against the API origin so they load even when it differs from the page.
+function mediaUrl(u) {
+  if (!u) return u;
+  if (/^https?:\/\//.test(u)) return u;
+  const base = window.__API_BASE__ ? window.__API_BASE__.replace(/\/$/, "") : "";
+  return base + u;
+}
+
 // A horizontal, swipeable image carousel (Instagram-style) with a position
 // counter + dots. Returns null when there are no attachments.
 function buildCarousel(atts) {
@@ -620,7 +629,8 @@ function buildCarousel(atts) {
     const slide = document.createElement("div");
     slide.className = "slide";
     const img = document.createElement("img");
-    img.loading = "lazy"; img.decoding = "async"; img.src = a.url; img.alt = "";
+    img.loading = "lazy"; img.decoding = "async"; img.alt = "";
+    img.src = mediaUrl(a.url);
     slide.appendChild(img);
     track.appendChild(slide);
   }

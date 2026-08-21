@@ -10,12 +10,15 @@ user_id, and return only that user's data.
 
 import logging
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 
 import config
+import storage
+from api import media_token
 from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
+from stores import attachment_store
 from api.schemas import (
     WebAppNote, WebAppNoteDetail, WebAppGraph,
     WebAppSetPathRequest, WebAppMoveFolderRequest, WebAppMoveFolderResponse,
@@ -24,6 +27,15 @@ from api.schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webapp", tags=["webapp"])
+
+
+def _with_attachment_urls(detail: dict) -> dict:
+    """Rewrite a note detail's attachments to carry a signed proxy URL the browser
+    can load (an <img> can't send the initData header, so the URL is the auth).
+    The path is relative — the web app is served from the API's own origin."""
+    for a in detail.get("attachments", []):
+        a["url"] = f"/webapp/attachments/{a['id']}?t={media_token.sign(a['id'])}"
+    return detail
 
 
 def _auth(init_data: str | None) -> int:
@@ -54,7 +66,28 @@ def feed(x_telegram_init_data: str | None = Header(default=None)) -> list[WebApp
     user_id = _auth(x_telegram_init_data)
     items = note_service.feed_for_user(user_id)
     logger.info("Web app feed for user=%s -> %d", user_id, len(items))
-    return [WebAppNoteDetail(**it) for it in items]
+    return [WebAppNoteDetail(**_with_attachment_urls(it)) for it in items]
+
+
+@router.get("/attachments/{attachment_id}")
+def attachment(attachment_id: int, t: str = "") -> Response:
+    """Proxy an attachment's bytes from object storage. Auth is the signed `t`
+    token (an <img> can't send headers), so this endpoint is deliberately not
+    initData-guarded. The API reaches the bucket even when the browser can't."""
+    if not media_token.verify(t, attachment_id):
+        raise HTTPException(status_code=403, detail="bad or expired token")
+    a = attachment_store.get(attachment_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="attachment not found")
+    obj = storage.fetch_object(a["storage_key"])
+    if obj is None:
+        raise HTTPException(status_code=404, detail="attachment unavailable")
+    data, content_type = obj
+    return Response(
+        content=data,
+        media_type=content_type or a["mime"] or "application/octet-stream",
+        headers={"Cache-Control": f"private, max-age={config.ATTACHMENT_URL_TTL_SECONDS}"},
+    )
 
 
 @router.get("/graph", response_model=WebAppGraph)
@@ -75,7 +108,7 @@ def note_detail(note_id: int,
     detail = note_service.web_note_detail(user_id, note_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="note not found")
-    return WebAppNoteDetail(**detail)
+    return WebAppNoteDetail(**_with_attachment_urls(detail))
 
 
 @router.post("/notes/{note_id}/path", response_model=WebAppNoteDetail)
@@ -88,7 +121,7 @@ def set_note_path(note_id: int, req: WebAppSetPathRequest,
         raise HTTPException(status_code=422, detail="path must start with a root folder")
     if status == "not_found":
         raise HTTPException(status_code=404, detail="note not found")
-    return WebAppNoteDetail(**note_service.web_note_detail(user_id, note_id))
+    return WebAppNoteDetail(**_with_attachment_urls(note_service.web_note_detail(user_id, note_id)))
 
 
 @router.post("/folder/move", response_model=WebAppMoveFolderResponse)
