@@ -117,6 +117,10 @@ async def capture_media(
     only, bounded per-file size. Returns the created note (note_id + text +
     reminder detected from the caption).
     """
+    logger.info(
+        "capture_media: user=%s files=%d types=%s",
+        user_id, len(files), [f.content_type for f in files],
+    )
     if not files:
         raise HTTPException(status_code=422, detail="no files")
     if len(files) > config.ATTACHMENT_MAX_COUNT:

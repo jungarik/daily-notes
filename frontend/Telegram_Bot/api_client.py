@@ -192,8 +192,10 @@ class ApiClient:
                     f"{self._base_url}/internal/notes/media",
                     data=data, files=files, headers=self._headers(),
                 )
-                resp.raise_for_status()
-                return resp.json()
+            if resp.status_code >= 400:
+                logger.error("capture_media HTTP %s: %s", resp.status_code, resp.text[:300])
+                return None
+            return resp.json()
         except Exception:
             logger.exception("API capture_media failed")
             return None

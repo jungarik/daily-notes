@@ -248,6 +248,10 @@ async def _download_photo(msg) -> tuple[str, bytes, str]:
 
 async def _save_media_note(msg, user_id, tz, locale, caption, images):
     """Capture a media note (caption + images) and reply, or report failure."""
+    logger.info(
+        "Capturing media note: user=%s images=%d bytes=%s caption=%r",
+        user_id, len(images), [len(b) for _, b, _ in images], caption[:40],
+    )
     res = await api.capture_media(user_id, caption, images)
     if not res or not res.get("note_id"):
         await msg.reply_text(t(locale, "error_generic"))
