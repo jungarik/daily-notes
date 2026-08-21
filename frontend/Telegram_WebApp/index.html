@@ -94,7 +94,9 @@
   .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
   .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
   .tab-input input { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
-  .tab-input .ts-close { border: none; background: rgba(255,255,255,.12); color: var(--text); width: 28px; height: 28px; border-radius: 999px; font-size: 13px; cursor: pointer; flex: none; }
+  .tab-input .ts-send { border: none; background: #2f6feb; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center; }
+  .tab-input .ts-send svg { width: 16px; height: 16px; }
+  .fab.hidden { display: none; }
 
   /* Notes feed — full-preview posts */
   #notes:not(.hidden) { display: flex; flex-direction: column; gap: 12px; padding: 6px 4px 0; }
@@ -303,7 +305,9 @@
       <div class="tab-input hidden" id="tabInput">
         <svg class="ts-ico" id="barIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="barInput" type="text" placeholder="Search notes…" autocomplete="off" autocapitalize="off" spellcheck="false" />
-        <button class="ts-close" id="barClose" aria-label="Close">✕</button>
+        <button class="ts-send" id="barSend" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </button>
       </div>
     </nav>
     <button class="fab" id="searchFab" aria-label="Search">
@@ -1060,8 +1064,12 @@ function activateView(view) {
   document.getElementById("tabIcons").classList.toggle("hidden", isInput);
   document.getElementById("tabInput").classList.toggle("hidden", !isInput);
   document.querySelectorAll("#tabIcons .tab").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  // The two circles: the active one stays (and doubles as the close/back button),
+  // the opposite one is hidden while an input mode is open.
   document.getElementById("chatFab").classList.toggle("active", view === "chat");
   document.getElementById("searchFab").classList.toggle("active", view === "search");
+  document.getElementById("chatFab").classList.toggle("hidden", view === "search");
+  document.getElementById("searchFab").classList.toggle("hidden", view === "chat");
 
   if (isInput) {
     const input = document.getElementById("barInput");
@@ -1079,13 +1087,20 @@ function activateView(view) {
 document.querySelectorAll("#tabIcons .tab").forEach((btn) => {
   btn.addEventListener("click", () => activateView(btn.dataset.view));
 });
-document.getElementById("chatFab").addEventListener("click", () => activateView("chat"));
-document.getElementById("searchFab").addEventListener("click", () => activateView("search"));
-document.getElementById("barClose").addEventListener("click", () => {
-  document.getElementById("barInput").value = "";
-  document.getElementById("searchResults").innerHTML = "";
-  activateView(prevView);
-});
+// Tapping a circle opens its mode; tapping it again (while active) closes back to
+// the last view — so the visible circle doubles as the close button, outside the
+// input bar.
+function toggleMode(mode) {
+  if (barMode === mode) {
+    document.getElementById("barInput").value = "";
+    document.getElementById("searchResults").innerHTML = "";
+    activateView(prevView);
+  } else {
+    activateView(mode);
+  }
+}
+document.getElementById("chatFab").addEventListener("click", () => toggleMode("chat"));
+document.getElementById("searchFab").addEventListener("click", () => toggleMode("search"));
 
 /* ------- Notes feed (full previews as Instagram-style posts, newest first) ------- */
 let feedReq = 0;   // guards against a stale feed fetch landing after a newer render
@@ -1125,6 +1140,10 @@ document.getElementById("barInput").addEventListener("input", (e) => {
 });
 document.getElementById("barInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && barMode === "chat") { e.preventDefault(); sendChat(e.target.value); }
+});
+document.getElementById("barSend").addEventListener("click", () => {
+  const v = document.getElementById("barInput").value;
+  if (barMode === "chat") sendChat(v); else runSearch(v);
 });
 
 /* ------- Chat (talk to the assistant about your notes) ------- */
