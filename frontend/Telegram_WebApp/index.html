@@ -49,17 +49,34 @@
   .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
 
   /* Floating liquid-glass bottom tab bar */
-  .tabbar {
-    position: fixed; left: 50%; transform: translateX(-50%);
+  /* Floating dock: chat circle (left) · tab pill (center) · search circle (right) */
+  .dock {
+    position: fixed; left: 0; right: 0;
     bottom: calc(30px + env(safe-area-inset-bottom, 0px));
-    display: flex; gap: 4px; padding: 6px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 0 16px; z-index: 40; pointer-events: none;
+  }
+  .dock > * { pointer-events: auto; }
+  .fab {
+    flex: none; width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; color: var(--text-muted); cursor: pointer;
     background: rgba(48,48,48,.55);
     -webkit-backdrop-filter: blur(22px) saturate(180%);
     backdrop-filter: blur(22px) saturate(180%);
     border: 1px solid rgba(255,255,255,.14);
-    border-radius: 999px;
     box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
-    z-index: 40;
+    transition: background .15s ease, color .15s ease;
+  }
+  .fab svg { width: 20px; height: 20px; }
+  .fab.active { background: rgba(255,255,255,.16); color: var(--text); }
+  .tabbar {
+    display: flex; gap: 4px; padding: 6px; border-radius: 999px;
+    background: rgba(48,48,48,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
   }
   .tabbar .tab {
     display: flex; align-items: center; gap: 7px;
@@ -71,13 +88,13 @@
   .tabbar .tab.active { background: rgba(255,255,255,.16); color: var(--text); }
   .tabbar .tab svg { width: 18px; height: 18px; }
 
-  /* Search field embedded in the floating tab bar */
+  /* Shared input (search / chat) embedded in the floating pill */
   .tab-icons { display: flex; gap: 4px; }
-  .tab-icons.hidden, .tab-search.hidden { display: none; }
-  .tab-search { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
-  .tab-search .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
-  .tab-search input { width: 200px; max-width: 56vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
-  .tab-search .ts-close { border: none; background: rgba(255,255,255,.12); color: var(--text); width: 28px; height: 28px; border-radius: 999px; font-size: 13px; cursor: pointer; flex: none; }
+  .tab-icons.hidden, .tab-input.hidden { display: none; }
+  .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
+  .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
+  .tab-input input { width: 200px; max-width: 52vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
+  .tab-input .ts-close { border: none; background: rgba(255,255,255,.12); color: var(--text); width: 28px; height: 28px; border-radius: 999px; font-size: 13px; cursor: pointer; flex: none; }
 
   /* Notes feed — full-preview posts */
   #notes:not(.hidden) { display: flex; flex-direction: column; gap: 12px; padding: 6px 4px 0; }
@@ -113,6 +130,19 @@
     font-size: 12px; color: #fff; background: rgba(0,0,0,.5);
     border-radius: 999px; pointer-events: none;
   }
+
+  /* Chat conversation */
+  #chat:not(.hidden) { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 0; }
+  .msg { max-width: 82%; padding: 9px 13px; border-radius: 16px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #2f6feb; color: #fff; border-bottom-right-radius: 5px; }
+  .msg.bot { align-self: flex-start; background: var(--bg-alt); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
+  .msg.bot.muted { color: var(--text-muted); }
+  .chat-empty { color: var(--text-muted); text-align: center; padding: 24px 12px; font-size: 14px; }
+  .typing { display: inline-flex; gap: 3px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: blink 1.2s infinite both; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
 
   main { flex: 1; overflow-y: auto; padding: 6px 8px 112px; }   /* bottom room for floating tab bar */
 
@@ -248,29 +278,37 @@
     <div id="search" class="view hidden">
       <div id="searchResults"></div>
     </div>
+    <div id="chat" class="view hidden">
+      <div id="chatLog"></div>
+    </div>
   </main>
 
-  <nav class="tabbar">
-    <div class="tab-icons" id="tabIcons">
-      <button class="tab active" data-view="notes" aria-label="Notes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="6" rx="1.6"/><rect x="4" y="14" width="16" height="6" rx="1.6"/></svg>
-      </button>
-      <button class="tab" data-view="browser" aria-label="Browser">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
-      </button>
-      <button class="tab" data-view="map" aria-label="Map">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.3"/><circle cx="18.5" cy="15" r="2.3"/><circle cx="14" cy="5.5" r="2.3"/><path d="M7.9 16.6 12.4 7.4M16.3 13.4 8.1 17.1"/></svg>
-      </button>
-      <button class="tab" data-view="search" aria-label="Search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      </button>
-    </div>
-    <div class="tab-search hidden" id="tabSearch">
-      <svg class="ts-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="searchInput" type="text" placeholder="Search notes…" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <button class="ts-close" id="searchClose" aria-label="Close search">✕</button>
-    </div>
-  </nav>
+  <div class="dock" id="dock">
+    <button class="fab" id="chatFab" aria-label="Chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/></svg>
+    </button>
+    <nav class="tabbar">
+      <div class="tab-icons" id="tabIcons">
+        <button class="tab active" data-view="notes" aria-label="Notes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="6" rx="1.6"/><rect x="4" y="14" width="16" height="6" rx="1.6"/></svg>
+        </button>
+        <button class="tab" data-view="browser" aria-label="Browser">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
+        </button>
+        <button class="tab" data-view="map" aria-label="Map">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.3"/><circle cx="18.5" cy="15" r="2.3"/><circle cx="14" cy="5.5" r="2.3"/><path d="M7.9 16.6 12.4 7.4M16.3 13.4 8.1 17.1"/></svg>
+        </button>
+      </div>
+      <div class="tab-input hidden" id="tabInput">
+        <svg class="ts-ico" id="barIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="barInput" type="text" placeholder="Search notes…" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <button class="ts-close" id="barClose" aria-label="Close">✕</button>
+      </div>
+    </nav>
+    <button class="fab" id="searchFab" aria-label="Search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    </button>
+  </div>
 
   <div class="sheet-backdrop" id="backdrop"></div>
   <div class="sheet" id="sheet">
@@ -971,10 +1009,14 @@ window.addEventListener("resize", () => {
   sizeCanvas(); autoFit();
 });
 
-/* ------- Views + bottom tab bar (Notes | Browser | Map | Search) ------- */
+/* ------- Views + floating dock (Notes | Browser | Map · Chat / Search) ------- */
 let ALL_NOTES = [];   // newest-first, from /webapp/notes (browser tree + search)
 let FEED = null;      // full note details for the post feed, lazy-loaded once
-let prevView = "notes";
+let prevView = "notes";   // last non-input view we return to on close
+let barMode = null;       // 'search' | 'chat' while the pill shows its input
+
+const SEARCH_ICON = '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>';
+const CHAT_ICON = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/>';
 
 async function reloadNotes() {
   ALL_NOTES = await fetchNotes();
@@ -984,25 +1026,43 @@ async function reloadNotes() {
 }
 
 function activateView(view) {
-  if (view !== "search") prevView = view;
+  const isInput = (view === "search" || view === "chat");
+  if (!isInput) prevView = view;
+  barMode = isInput ? view : null;
+
   document.getElementById("notes").classList.toggle("hidden", view !== "notes");
   document.getElementById("tree").classList.toggle("hidden", view !== "browser");
   document.getElementById("map").classList.toggle("hidden", view !== "map");
   document.getElementById("search").classList.toggle("hidden", view !== "search");
-  // tab bar: icons vs embedded search field
-  document.getElementById("tabIcons").classList.toggle("hidden", view === "search");
-  document.getElementById("tabSearch").classList.toggle("hidden", view !== "search");
+  document.getElementById("chat").classList.toggle("hidden", view !== "chat");
+
+  // pill shows nav icons, or the shared input when in search/chat mode
+  document.getElementById("tabIcons").classList.toggle("hidden", isInput);
+  document.getElementById("tabInput").classList.toggle("hidden", !isInput);
   document.querySelectorAll("#tabIcons .tab").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  document.getElementById("chatFab").classList.toggle("active", view === "chat");
+  document.getElementById("searchFab").classList.toggle("active", view === "search");
+
+  if (isInput) {
+    const input = document.getElementById("barInput");
+    input.value = "";
+    input.placeholder = view === "chat" ? "Ask about your notes…" : "Search notes…";
+    document.getElementById("barIcon").innerHTML = view === "chat" ? CHAT_ICON : SEARCH_ICON;
+    setTimeout(() => input.focus(), 60);
+    if (view === "chat") renderChat();
+  }
+
   if (view === "map") ensureGraph(); else stopGraphLoop();
-  if (view === "notes") renderNotesFeed();   // async; fine to fire-and-forget
-  if (view === "search") setTimeout(() => document.getElementById("searchInput").focus(), 60);
+  if (view === "notes") renderNotesFeed();   // async; fire-and-forget
   tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
 }
 document.querySelectorAll("#tabIcons .tab").forEach((btn) => {
   btn.addEventListener("click", () => activateView(btn.dataset.view));
 });
-document.getElementById("searchClose").addEventListener("click", () => {
-  document.getElementById("searchInput").value = "";
+document.getElementById("chatFab").addEventListener("click", () => activateView("chat"));
+document.getElementById("searchFab").addEventListener("click", () => activateView("search"));
+document.getElementById("barClose").addEventListener("click", () => {
+  document.getElementById("barInput").value = "";
   document.getElementById("searchResults").innerHTML = "";
   activateView(prevView);
 });
@@ -1037,7 +1097,77 @@ function runSearch(q) {
   if (!hits.length) { out.innerHTML = '<div class="empty">No matches.</div>'; return; }
   for (const n of hits) out.appendChild(renderFile(n));
 }
-document.getElementById("searchInput").addEventListener("input", (e) => runSearch(e.target.value));
+
+// The pill input is shared: typing filters notes in search mode; Enter sends a
+// message in chat mode.
+document.getElementById("barInput").addEventListener("input", (e) => {
+  if (barMode === "search") runSearch(e.target.value);
+});
+document.getElementById("barInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && barMode === "chat") { e.preventDefault(); sendChat(e.target.value); }
+});
+
+/* ------- Chat (talk to the assistant about your notes) ------- */
+// Conversation is in-memory for the session. The reply comes from the chat
+// backend seam (fetchChatReply); until the agent endpoint exists it degrades to
+// a friendly "not connected yet" note.
+const CHAT = [];   // [{ role: 'user' | 'bot', text, pending?, muted? }]
+let chatBusy = false;
+
+function renderChat() {
+  const log = document.getElementById("chatLog");
+  log.innerHTML = "";
+  if (!CHAT.length) {
+    log.innerHTML = '<div class="chat-empty">Ask anything about your notes.<br>The assistant can search and summarize them.</div>';
+    return;
+  }
+  for (const m of CHAT) {
+    const el = document.createElement("div");
+    el.className = "msg " + (m.role === "user" ? "user" : "bot") + (m.muted ? " muted" : "");
+    if (m.pending) el.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+    else el.textContent = m.text;
+    log.appendChild(el);
+  }
+  const main = document.querySelector("main");
+  requestAnimationFrame(() => { main.scrollTop = main.scrollHeight; });
+}
+
+async function sendChat(text) {
+  text = (text || "").trim();
+  if (!text || chatBusy) return;
+  chatBusy = true;
+  document.getElementById("barInput").value = "";
+  CHAT.push({ role: "user", text });
+  const thinking = { role: "bot", pending: true };
+  CHAT.push(thinking);
+  renderChat();
+
+  const reply = await fetchChatReply(text);
+  CHAT.splice(CHAT.indexOf(thinking), 1);
+  CHAT.push(reply
+    ? { role: "bot", text: reply }
+    : { role: "bot", text: "The assistant isn't connected yet — coming soon.", muted: true });
+  renderChat();
+  chatBusy = false;
+}
+
+async function fetchChatReply(text) {
+  const base = window.__API_BASE__;
+  if (!base) return null;   // demo / no backend yet
+  try {
+    const res = await fetch(base.replace(/\/$/, "") + "/webapp/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": INIT_DATA },
+      body: JSON.stringify({ message: text }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return data.reply || data.answer || null;
+  } catch (e) {
+    console.warn("Chat backend unavailable:", e);
+    return null;
+  }
+}
 
 /* ------- Utils ------- */
 function escapeHtml(s) {
