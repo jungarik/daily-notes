@@ -102,6 +102,21 @@ def upload_attachment(
     return _put(f"attachments/{kind}", data, content_type, ext)
 
 
+def delete_object(key: str) -> bool:
+    """Delete an object from the bucket (best-effort). Returns True on success.
+    Used to clean up a note's media/audio when the note is deleted, so nothing is
+    orphaned in storage."""
+    if not key or not _configured():
+        return False
+    try:
+        _s3().delete_object(Bucket=config.S3_BUCKET, Key=key)
+        logger.info("Deleted s3://%s/%s", config.S3_BUCKET, key)
+        return True
+    except Exception as exc:
+        logger.exception("Delete of %s failed: %s", key, exc)
+        return False
+
+
 def fetch_object(key: str) -> tuple[bytes, str | None] | None:
     """Download an object's bytes + content-type, so the API can proxy it to a
     client that can't reach the bucket directly. Returns (data, content_type), or

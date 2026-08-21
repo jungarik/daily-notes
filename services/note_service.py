@@ -149,11 +149,24 @@ def polish_note(note_id: int) -> str | None:
 
 def delete_bare_note(note_id: int) -> bool:
     """Delete a note only if it has no metadata and no links (guarded, to protect
-    enriched/linked notes from an accidental Cancel). Returns True if deleted."""
+    enriched/linked notes from an accidental Cancel). Returns True if deleted.
+
+    On a successful delete, also purge the note's media/audio from object storage
+    so nothing is orphaned there (the DB rows cascade; the bucket objects don't)."""
+    # Gather storage keys BEFORE deleting — the attachment rows cascade away.
+    keys = [a["storage_key"] for a in attachment_store.list_for_note(note_id)]
+    audio_key = note_store.get_audio_key(note_id)
+    if audio_key:
+        keys.append(audio_key)
+
     deleted = note_store.delete_if_bare(note_id)
+    if deleted:
+        for key in keys:
+            storage.delete_object(key)
     logger.info(
-        "Delete note %s: %s", note_id,
+        "Delete note %s: %s (%d storage object(s) purged)", note_id,
         "deleted" if deleted else "blocked (has metadata, links, or an active reminder)",
+        len(keys) if deleted else 0,
     )
     return deleted
 

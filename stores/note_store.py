@@ -66,6 +66,15 @@ def set_text(note_id: int, text: str) -> None:
         cur.execute("UPDATE notes SET text = %s WHERE id = %s;", (text, note_id))
 
 
+def get_audio_key(note_id: int) -> str | None:
+    """Return a note's stored voice-audio object key, or None (text/media notes
+    have none). Used to clean up storage when the note is deleted."""
+    with cursor() as cur:
+        cur.execute("SELECT audio_key FROM notes WHERE id = %s;", (note_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def get_text(note_id: int) -> str | None:
     """Return a note's text, or None."""
     with cursor() as cur:
