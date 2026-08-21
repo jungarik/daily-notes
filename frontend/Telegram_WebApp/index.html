@@ -241,9 +241,10 @@
   .link-chip:active { background: var(--border); }
 
   /* Notes feed — each note as a full-preview post */
-  .post { position: relative; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 14px; padding: 14px 14px 16px; }
-  .post .post-dots { position: absolute; top: 10px; right: 12px; color: var(--text-faint); cursor: pointer; padding: 0 4px; }
-  .post .card-title { padding-right: 20px; }
+  .post { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 14px; padding: 14px 14px 16px; }
+  .post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .post-head .card-title { flex: 1; min-width: 0; }
+  .post .post-dots { flex: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; line-height: 1.2; }
   /* ⋮ context menu (dropdown at the dots) + change-path input */
   .ctx-menu { position: fixed; z-index: 30; min-width: 150px; padding: 4px; background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
   .ctx-menu.show { display: block; }
@@ -661,23 +662,32 @@ function buildCarousel(atts) {
 function buildPost(detail) {
   const post = document.createElement("div");
   post.className = "post";
+
+  // Images sit on top, like an Instagram post; the note's header (title, path,
+  // tags) and the ⋮ menu go underneath.
+  const car = buildCarousel(detail.attachments);
+  if (car) post.appendChild(car);
+
+  const head = document.createElement("div");
+  head.className = "post-head";
+  const title = document.createElement("div");
+  title.className = "card-title"; title.textContent = (detail.title || "untitled") + ".md";
+  head.appendChild(title);
   const dots = document.createElement("span");
   dots.className = "post-dots"; dots.setAttribute("role", "button"); dots.textContent = "⋮";
   dots.addEventListener("click", (e) => {
     e.stopPropagation();
     openMenu({ type: "note", id: detail.id, path: detail.path, name: detail.title || "untitled" }, e.currentTarget);
   });
-  post.appendChild(dots);
-  const title = document.createElement("div");
-  title.className = "card-title"; title.textContent = (detail.title || "untitled") + ".md";
-  post.appendChild(title);
+  head.appendChild(dots);
+  post.appendChild(head);
+
   const path = document.createElement("div");
   path.className = "card-path"; path.textContent = "📁 " + (detail.path || "Inbox");
   post.appendChild(path);
   const mt = metaText(detail);
   if (mt) { const meta = document.createElement("div"); meta.className = "card-meta"; meta.textContent = mt; post.appendChild(meta); }
-  const car = buildCarousel(detail.attachments);
-  if (car) post.appendChild(car);
+
   const body = document.createElement("div"); body.className = "card-body";
   const text = (detail.text || "").trim();
   const hasImages = detail.attachments && detail.attachments.length;
