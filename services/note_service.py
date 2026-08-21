@@ -19,6 +19,7 @@ from services import user_service
 from stores import note_store
 from stores import chunk_store
 from stores import link_store
+from stores import attachment_store
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,16 @@ def capture_note(
     source_type: str = "text",
     audio_bytes: bytes | None = None,
     mime: str | None = None,
+    images: list[dict] | None = None,
 ) -> int:
-    """Persist a note (upload audio if any, chunk + embed). Returns the note id.
+    """Persist a note (upload audio/images if any, chunk + embed). Returns the
+    note id.
 
     The sender's username is stored on the user, not the note, so it isn't passed
-    here.
+    here. `images` is an optional list of {bytes, mime, ext} — each is uploaded to
+    object storage and recorded as a note attachment in order. Enrichment and
+    search only ever use `text`, so image-only notes still capture (with empty
+    text); attachments are purely for display.
     """
     audio_key = None
     if audio_bytes is not None:
@@ -60,11 +66,50 @@ def capture_note(
         source_type=source_type, audio_key=audio_key, audio_mime=mime,
     )
     chunk_store.save_chunks(note_id, chunks)
+    n_attached = _attach_images(note_id, images or [])
     logger.info(
-        "Captured note %s (user %s, %s, %d chunk(s))",
-        note_id, user_id, source_type, len(chunks),
+        "Captured note %s (user %s, %s, %d chunk(s), %d image(s))",
+        note_id, user_id, source_type, len(chunks), n_attached,
     )
     return note_id
+
+
+def _attach_images(note_id: int, images: list[dict]) -> int:
+    """Upload each image to object storage and record it as an attachment (in the
+    given order). Skips any that fail to upload (storage off / error) so the note
+    itself is never lost. Returns how many attachments were stored."""
+    stored = 0
+    for pos, img in enumerate(images):
+        data = img.get("bytes")
+        if not data:
+            continue
+        key = storage.upload_attachment(
+            data, kind="image",
+            content_type=img.get("mime") or "application/octet-stream",
+            ext=img.get("ext") or "bin",
+        )
+        if not key:
+            logger.warning("Skipped image %d for note %s (storage unavailable)", pos, note_id)
+            continue
+        attachment_store.add_attachment(
+            note_id, key, kind="image",
+            mime=img.get("mime"), size_bytes=len(data), position=pos,
+        )
+        stored += 1
+    return stored
+
+
+def _attachment_views(rows: list[dict]) -> list[dict]:
+    """Turn stored attachment rows into client-facing dicts with a short-lived
+    signed URL: [{id, kind, mime, url}]. Rows whose object can't be signed
+    (storage off) are dropped so the client only ever gets loadable URLs."""
+    out = []
+    for a in rows:
+        url = storage.presigned_url(a["storage_key"])
+        if not url:
+            continue
+        out.append({"id": a["id"], "kind": a["kind"], "mime": a["mime"], "url": url})
+    return out
 
 
 def atomize_note(user_id: int, note_id: int) -> list[dict]:
@@ -188,6 +233,8 @@ def feed_for_user(user_id: int) -> list[dict]:
     edges = link_store.all_links(user_id)
     ids = {i for e in edges for i in e}
     briefs = {b["id"]: b for b in note_store.notes_brief(user_id, ids)}
+    # One query for every note's attachments (no per-note round trip).
+    attachments = attachment_store.for_notes([n["id"] for n in notes])
     out_map: dict[int, list[int]] = {}
     in_map: dict[int, list[int]] = {}
     for f, t in edges:
@@ -211,6 +258,7 @@ def feed_for_user(user_id: int) -> list[dict]:
             "created_at": created.isoformat() if created else None,
             "links": [chip(t) for t in out_map.get(n["id"], [])],
             "backlinks": [chip(f) for f in in_map.get(n["id"], [])],
+            "attachments": _attachment_views(attachments.get(n["id"], [])),
         })
     return feed
 
@@ -241,6 +289,7 @@ def web_note_detail(user_id: int, note_id: int) -> dict | None:
         "created_at": created.isoformat() if created else None,
         "links": links,
         "backlinks": backlinks,
+        "attachments": _attachment_views(attachment_store.list_for_note(note_id)),
     }
 
 

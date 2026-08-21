@@ -71,7 +71,14 @@ gateway) → `services/` orchestration (`note_service`: capture / enrich,
 RAG answer, `user_service`: identity + settings resolution, `links`: candidates
 + toggle) → `services/` domain helpers (`semantic`, `enrichment`,
 `transcription`, `timeparser`) → `stores/` (`note_store`, `chunk_store`,
-`reminder_store`, `link_store`, `user_store`) → `db`/`config`. Imports are
+`reminder_store`, `link_store`, `user_store`, `attachment_store`) → `db`/`config`.
+Media files (images; up to `ATTACHMENT_MAX_COUNT` per note) are captured via the
+multipart `POST /internal/notes/media` endpoint, uploaded to the same S3 bucket
+as voice audio (`storage.upload_attachment`, keyed under `attachments/`) and
+recorded one-to-many in `note_attachments` (`kind` leaves room for video/pdf/doc
+and folding voice audio in later). Enrichment/search still use text only; the
+web app renders a note's attachments as a swipe carousel using short-lived
+`storage.presigned_url` links. Imports are
 absolute: `from services import X`, `from stores import Y`. `bot.py` keeps only
 Telegram specifics (keyboards, formatting, command wiring, reminder *delivery*,
 global `add_error_handler`) and calls the API for everything else — it imports

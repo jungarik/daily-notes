@@ -138,6 +138,15 @@ class WebAppLink(BaseModel):
     title: str
 
 
+class WebAppAttachment(BaseModel):
+    # One media file on a note, for the web-app carousel. `url` is a short-lived
+    # signed link the browser loads directly from object storage.
+    id: int
+    kind: str = "image"
+    mime: str | None = None
+    url: str
+
+
 class WebAppGraphNode(BaseModel):
     id: int
     title: str
@@ -182,6 +191,7 @@ class WebAppNoteDetail(BaseModel):
     created_at: str | None = None
     links: list[WebAppLink] = []
     backlinks: list[WebAppLink] = []
+    attachments: list[WebAppAttachment] = []
 
 
 class WebAppNote(BaseModel):

@@ -70,18 +70,50 @@ def _s3():
     return _client
 
 
-def upload_audio(data: bytes, content_type: str = "audio/ogg", ext: str = "oga") -> str | None:
-    """Upload audio bytes and return the object key, or None if storage is off/failed."""
+def _put(prefix: str, data: bytes, content_type: str, ext: str) -> str | None:
+    """Upload bytes under `prefix/` with a random key; return the object key, or
+    None if storage is off / the upload failed."""
     if not _configured():
-        logger.warning("S3 not configured; skipping audio upload")
+        logger.warning("S3 not configured; skipping %s upload", prefix)
         return None
-    key = f"voice/{uuid.uuid4().hex}.{ext}"
+    key = f"{prefix}/{uuid.uuid4().hex}.{ext}"
     try:
         _s3().put_object(
             Bucket=config.S3_BUCKET, Key=key, Body=data, ContentType=content_type
         )
-        logger.info("Uploaded voice audio to s3://%s/%s", config.S3_BUCKET, key)
+        logger.info("Uploaded to s3://%s/%s", config.S3_BUCKET, key)
         return key
     except Exception as exc:
-        logger.exception("Audio upload failed: %s", exc)
+        logger.exception("Upload to %s failed: %s", prefix, exc)
+        return None
+
+
+def upload_audio(data: bytes, content_type: str = "audio/ogg", ext: str = "oga") -> str | None:
+    """Upload voice audio bytes and return the object key, or None if off/failed."""
+    return _put("voice", data, content_type, ext)
+
+
+def upload_attachment(
+    data: bytes, kind: str = "image", content_type: str = "application/octet-stream",
+    ext: str = "bin",
+) -> str | None:
+    """Upload a note attachment (image/…) and return its object key, or None if
+    storage is off / the upload failed. Keyed under attachments/{kind}/."""
+    return _put(f"attachments/{kind}", data, content_type, ext)
+
+
+def presigned_url(key: str, ttl: int | None = None) -> str | None:
+    """A short-lived signed GET URL for an object, so a client (the web-app
+    carousel) can load it directly from the bucket without exposing credentials.
+    Returns None if storage is off or signing fails."""
+    if not key or not _configured():
+        return None
+    try:
+        return _s3().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": config.S3_BUCKET, "Key": key},
+            ExpiresIn=int(ttl or config.ATTACHMENT_URL_TTL_SECONDS),
+        )
+    except Exception as exc:
+        logger.exception("Presigning %s failed: %s", key, exc)
         return None

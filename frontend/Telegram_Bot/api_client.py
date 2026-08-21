@@ -176,6 +176,28 @@ class ApiClient:
             logger.exception("API capture_voice failed")
             return None
 
+    async def capture_media(
+        self, user_id: int, text: str, images: list[tuple[str, bytes, str]],
+    ) -> dict | None:
+        """Capture a note with image attachments (+ optional caption). `images` is
+        a list of (filename, bytes, mime). Returns {note_id, text, reminder}, or
+        None on failure."""
+        if not self.configured:
+            return None
+        try:
+            data = {"user_id": str(user_id), "text": text or ""}
+            files = [("files", (name, blob, mime)) for name, blob, mime in images]
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/internal/notes/media",
+                    data=data, files=files, headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API capture_media failed")
+            return None
+
     async def atomize_note(self, note_id: int, user_id: int) -> list[dict]:
         """Split a note into atomic notes. Returns [{note_id, text}] for the
         created atoms, or [] when the note was already a single idea / on error."""

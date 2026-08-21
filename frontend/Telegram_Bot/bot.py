@@ -60,6 +60,12 @@ _uid_cache: dict[int, int] = {}
 # original enriched message to refresh once the user replies with a path.
 pending_new_path: dict[int, dict] = {}
 
+# Telegram delivers an album (media group) as several separate photo updates that
+# share a media_group_id. We buffer them and flush once, a short debounce after
+# the last one arrives, into a single note with all images.
+pending_albums: dict[str, dict] = {}
+ALBUM_DEBOUNCE_SECONDS = 1.5
+
 
 async def resolve_uid(update: Update) -> int | None:
     """Resolve the internal user_id for a Telegram update (cached). None if the
@@ -220,6 +226,88 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=_capture_keyboard(note_id, locale),
     )
     await _offer_reminder(msg, res.get("reminder"), tz, locale)
+
+
+async def _download_photo(msg) -> tuple[str, bytes, str]:
+    """Download a photo message's largest size. Returns (filename, bytes, mime).
+
+    Handles both compressed photos (message.photo) and images sent as an
+    uncompressed document (message.document with an image/* MIME)."""
+    if msg.photo:
+        photo = msg.photo[-1]            # last entry is the highest resolution
+        tg_file = await photo.get_file()
+        blob = bytes(await tg_file.download_as_bytearray())
+        return (f"{photo.file_unique_id}.jpg", blob, "image/jpeg")
+    doc = msg.document
+    tg_file = await doc.get_file()
+    blob = bytes(await tg_file.download_as_bytearray())
+    mime = doc.mime_type or "image/jpeg"
+    name = doc.file_name or f"{doc.file_unique_id}.jpg"
+    return (name, blob, mime)
+
+
+async def _save_media_note(msg, user_id, tz, locale, caption, images):
+    """Capture a media note (caption + images) and reply, or report failure."""
+    res = await api.capture_media(user_id, caption, images)
+    if not res or not res.get("note_id"):
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    note_id = res["note_id"]
+    await msg.reply_text(
+        t(locale, "media_saved", count=len(images)),
+        reply_markup=_capture_keyboard(note_id, locale),
+    )
+    await _offer_reminder(msg, res.get("reminder"), tz, locale)
+
+
+async def _flush_album(group_id: str):
+    """After the debounce, capture a buffered album as one note with all images."""
+    await asyncio.sleep(ALBUM_DEBOUNCE_SECONDS)
+    album = pending_albums.pop(group_id, None)
+    if not album:
+        return
+    await _save_media_note(
+        album["msg"], album["user_id"], album["tz"], album["locale"],
+        album["caption"], album["images"],
+    )
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Capture a photo (or image document) as a note. A caption becomes the note
+    text (and can carry a reminder). Albums are buffered and saved as one note."""
+    msg = update.message
+    user_id, tz, locale, _ = await load_ctx(update)
+    if user_id is None:
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+
+    try:
+        image = await _download_photo(msg)
+    except Exception:
+        logger.exception("Photo download failed")
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    caption = (msg.caption or "").strip()
+
+    group_id = msg.media_group_id
+    if not group_id:                     # a single photo — capture immediately
+        await _save_media_note(msg, user_id, tz, locale, caption, [image])
+        return
+
+    # Part of an album: buffer, then (re)arm the debounced flush. The caption
+    # rides on one item of the group; keep the first non-empty one we see.
+    album = pending_albums.get(group_id)
+    if album is None:
+        album = pending_albums[group_id] = {
+            "msg": msg, "user_id": user_id, "tz": tz, "locale": locale,
+            "caption": caption, "images": [], "task": None,
+        }
+    album["images"].append(image)
+    if caption and not album["caption"]:
+        album["caption"] = caption
+    if album["task"]:
+        album["task"].cancel()
+    album["task"] = asyncio.create_task(_flush_album(group_id))
 
 
 async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -711,6 +799,8 @@ def main():
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))
     app.add_handler(CallbackQueryHandler(on_link, pattern=r"^l:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(
+        filters.PHOTO | filters.Document.IMAGE, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(on_error)
     logger.info("Bot running. Press Ctrl+C to stop.")

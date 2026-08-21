@@ -39,6 +39,23 @@ S3_REGION = os.environ.get("S3_REGION") or None
 # Addressing for custom endpoints: "path" (default), "virtual", or "auto".
 S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", "path")
 
+# --- Note attachments (media files) ---
+# Max number of files that can be attached to a single note.
+ATTACHMENT_MAX_COUNT = int(os.environ.get("ATTACHMENT_MAX_COUNT", "10"))
+# Max size per attached file, in bytes (default 20 MB).
+ATTACHMENT_MAX_BYTES = int(os.environ.get("ATTACHMENT_MAX_BYTES", str(20 * 1024 * 1024)))
+# Allowed image MIME types (only images are supported for now).
+ATTACHMENT_IMAGE_MIME = {
+    m.strip().lower()
+    for m in os.environ.get(
+        "ATTACHMENT_IMAGE_MIME",
+        "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif",
+    ).split(",")
+    if m.strip()
+}
+# How long a presigned attachment URL stays valid (seconds; default 1 hour).
+ATTACHMENT_URL_TTL_SECONDS = int(os.environ.get("ATTACHMENT_URL_TTL_SECONDS", "3600"))
+
 # --- Reminders ---
 REMINDER_TZ = os.environ.get("REMINDER_TZ", "Europe/Kyiv")
 DEFAULT_TZ = ZoneInfo(REMINDER_TZ)

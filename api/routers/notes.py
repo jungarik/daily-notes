@@ -7,10 +7,12 @@ touched by a client directly.
 """
 
 import logging
+import mimetypes
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
 
+import config
 from services import note_service
 from services import reminders
 from services import links
@@ -89,6 +91,65 @@ async def capture_voice(
     )
     reminder = _detect_reminder_info(note_id, user_id, text)
     return CaptureResponse(note_id=note_id, text=text, reminder=reminder)
+
+
+def _ext_for(mime: str, filename: str | None) -> str:
+    """Pick a file extension from the MIME type (falling back to the uploaded
+    filename's suffix), for the storage object key."""
+    guessed = mimetypes.guess_extension(mime or "")
+    if guessed:
+        return guessed.lstrip(".")
+    if filename and "." in filename:
+        return filename.rsplit(".", 1)[-1].lower()
+    return "bin"
+
+
+@router.post("/media", response_model=CaptureResponse)
+async def capture_media(
+    user_id: int = Form(...),
+    text: str = Form(""),
+    files: list[UploadFile] = File(...),
+) -> CaptureResponse:
+    """Capture a note with up to N image attachments and an optional caption.
+
+    Enrichment/search use only the caption text, so an image-only note (empty
+    text) is fine. Guardrails at the edge: bounded file count, image MIME types
+    only, bounded per-file size. Returns the created note (note_id + text +
+    reminder detected from the caption).
+    """
+    if not files:
+        raise HTTPException(status_code=422, detail="no files")
+    if len(files) > config.ATTACHMENT_MAX_COUNT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"too many files (max {config.ATTACHMENT_MAX_COUNT})",
+        )
+
+    images: list[dict] = []
+    for f in files:
+        mime = (f.content_type or "").lower()
+        if mime not in config.ATTACHMENT_IMAGE_MIME:
+            raise HTTPException(status_code=415, detail=f"unsupported media type: {mime or 'unknown'}")
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > config.ATTACHMENT_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file too large (max {config.ATTACHMENT_MAX_BYTES} bytes)",
+            )
+        images.append({"bytes": data, "mime": mime, "ext": _ext_for(mime, f.filename)})
+
+    if not images:
+        raise HTTPException(status_code=422, detail="no usable files")
+
+    caption = (text or "").strip()
+    note_id = note_service.capture_note(
+        user_id, caption, source_type="media", images=images,
+    )
+    # A caption can carry a reminder just like a text note.
+    reminder = _detect_reminder_info(note_id, user_id, caption) if caption else None
+    return CaptureResponse(note_id=note_id, text=caption, reminder=reminder)
 
 
 @router.post("/{note_id}/atomize", response_model=AtomizeResponse)
