@@ -94,6 +94,10 @@
   .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
   .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
   .tab-input input { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
+  /* Input mode: let the pill stretch toward the borders and the field fill it. */
+  .dock.input .tabbar { flex: 1; }
+  .dock.input .tab-input { width: 100%; }
+  .dock.input .tab-input input { flex: 1; width: auto; max-width: none; }
   .tab-input .ts-send { border: none; background: #2f6feb; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center; }
   .tab-input .ts-send svg { width: 16px; height: 16px; }
   .fab.hidden { display: none; }
@@ -1033,6 +1037,7 @@ function activateView(view) {
   // pill shows nav icons, or the shared input when in search/chat mode
   document.getElementById("tabIcons").classList.toggle("hidden", isInput);
   document.getElementById("tabInput").classList.toggle("hidden", !isInput);
+  document.getElementById("dock").classList.toggle("input", isInput);   // widen the pill
   document.querySelectorAll("#tabIcons .tab").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   // The two circles: the active one stays (and doubles as the close/back button),
   // the opposite one is hidden while an input mode is open.
