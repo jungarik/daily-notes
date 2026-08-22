@@ -248,8 +248,6 @@
   .post-head .card-title { flex: 1; min-width: 0; }
   .card-title .card-date { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; white-space: nowrap; }
   .post .post-dots { flex: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; line-height: 1.2; }
-  .post.collapsed .post-more { display: none; }
-  .post-toggle { margin-top: 8px; background: none; border: none; color: #2f6feb; font: inherit; font-size: 13px; cursor: pointer; padding: 2px 0; }
   /* In the preview sheet the card fills the sheet (no nested card chrome). */
   .sheet .post { background: transparent; border: none; border-radius: 0; padding: 0; }
   /* ⋮ context menu (dropdown at the dots) + change-path input */
@@ -651,19 +649,15 @@ function buildCarousel(atts) {
 }
 
 // THE note card — one template shared by the feed and the browser's preview
-// sheet. Collapsed by default: shows images, title (date at the end), path and
-// tags; the note text and linked notes hide behind a Show more/less toggle. Pass
-// { expanded:true } (the preview sheet) to start open.
-function buildPost(detail, opts) {
-  const expanded = !!(opts && opts.expanded);
+// sheet: images on top, then the header (title with the date at its end, and the
+// ⋮ menu), path, tags, full text and linked notes.
+function buildPost(detail) {
   const post = document.createElement("div");
-  post.className = "post" + (expanded ? "" : " collapsed");
+  post.className = "post";
 
-  // Images sit on top, like an Instagram post.
   const car = buildCarousel(detail.attachments);
   if (car) post.appendChild(car);
 
-  // Header: title with the date at its end, and the ⋮ menu.
   const head = document.createElement("div");
   head.className = "post-head";
   const title = document.createElement("div");
@@ -688,33 +682,14 @@ function buildPost(detail, opts) {
 
   const text = (detail.text || "").trim();
   const hasImages = detail.attachments && detail.attachments.length;
-  const hasLinks = linkedItems(detail).length > 0;
+  const body = document.createElement("div"); body.className = "card-body";
+  if (text) body.textContent = text;
+  else if (!hasImages) { body.textContent = "(empty note)"; body.classList.add("muted"); }
+  if (text || !hasImages) post.appendChild(body);   // no empty text line under an image-only note
 
-  // Collapsible section: full text + linked notes.
-  const more = document.createElement("div");
-  more.className = "post-more";
-  if (text) { const body = document.createElement("div"); body.className = "card-body"; body.textContent = text; more.appendChild(body); }
   const links = document.createElement("div"); links.className = "card-links";
   fillLinks(links, detail);
-  more.appendChild(links);
-  post.appendChild(more);
-
-  // A note with neither text nor images shows a muted placeholder (never hidden).
-  if (!text && !hasImages) {
-    const empty = document.createElement("div");
-    empty.className = "card-body muted"; empty.textContent = "(empty note)";
-    post.appendChild(empty);
-  }
-
-  // Only offer the toggle when there's something to reveal.
-  if (text || hasLinks) {
-    const toggle = document.createElement("button");
-    toggle.className = "post-toggle";
-    const label = () => { toggle.textContent = post.classList.contains("collapsed") ? "Show more ⌄" : "Show less ⌃"; };
-    label();
-    toggle.addEventListener("click", (e) => { e.stopPropagation(); post.classList.toggle("collapsed"); label(); });
-    post.appendChild(toggle);
-  }
+  post.appendChild(links);
   return post;
 }
 
@@ -736,9 +711,9 @@ async function openCard(note, el) {
     mount.innerHTML = '<div class="empty">Preview unavailable.</div>';
     return;
   }
-  // Same card template as the feed — opened expanded in the dedicated preview.
+  // Same card template as the feed.
   mount.innerHTML = "";
-  mount.appendChild(buildPost(detail, { expanded: true }));
+  mount.appendChild(buildPost(detail));
 }
 function closeCard() {
   document.getElementById("sheet").classList.remove("show");
