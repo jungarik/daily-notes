@@ -246,7 +246,12 @@
   .post { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 14px; padding: 14px 14px 16px; }
   .post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   .post-head .card-title { flex: 1; min-width: 0; }
+  .card-title .card-date { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; white-space: nowrap; }
   .post .post-dots { flex: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; line-height: 1.2; }
+  .post.collapsed .post-more { display: none; }
+  .post-toggle { margin-top: 8px; background: none; border: none; color: #2f6feb; font: inherit; font-size: 13px; cursor: pointer; padding: 2px 0; }
+  /* In the preview sheet the card fills the sheet (no nested card chrome). */
+  .sheet .post { background: transparent; border: none; border-radius: 0; padding: 0; }
   /* ⋮ context menu (dropdown at the dots) + change-path input */
   .ctx-menu { position: fixed; z-index: 30; min-width: 150px; padding: 4px; background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
   .ctx-menu.show { display: block; }
@@ -318,12 +323,7 @@
   <div class="sheet-backdrop" id="backdrop"></div>
   <div class="sheet" id="sheet">
     <div class="grip"></div>
-    <div class="card-title" id="cardTitle"></div>
-    <div class="card-path" id="cardPath"></div>
-    <div class="card-meta" id="cardMeta"></div>
-    <div class="card-media" id="cardMedia"></div>
-    <div class="card-body" id="cardBody"></div>
-    <div class="card-links" id="cardLinks"></div>
+    <div id="sheetCard"></div>
   </div>
 
   <div class="sheet-backdrop" id="menuBackdrop"></div>
@@ -568,12 +568,6 @@ function fmtDate(iso) {
   return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-function setBody(text, muted) {
-  const body = document.getElementById("cardBody");
-  body.textContent = text;
-  body.classList.toggle("muted", !!muted);
-}
-
 // Direction (links vs backlinks) is kept in the API for the map; here we show a
 // single de-duplicated "Linked notes" list.
 function linkedItems(detail) {
@@ -603,14 +597,9 @@ function fillLinks(wrap, detail) {
   }
   wrap.appendChild(row);
 }
-function renderLinks(detail) { fillLinks(document.getElementById("cardLinks"), detail); }
-
-function metaText(detail) {
-  const m = [];
-  if (detail.tags && detail.tags.length) m.push("🏷 " + detail.tags.join(", "));
-  const d = fmtDate(detail.created_at);
-  if (d) m.push(d);
-  return m.join("   ·   ");
+function dateText(detail) { return fmtDate(detail.created_at); }
+function tagsText(detail) {
+  return (detail.tags && detail.tags.length) ? "🏷 " + detail.tags.join(", ") : "";
 }
 
 // Attachment URLs come back relative (/webapp/attachments/…); resolve them
@@ -661,21 +650,26 @@ function buildCarousel(atts) {
   return wrap;
 }
 
-// Build a full note-preview card (used by the Notes feed). Same content as the
-// bottom-sheet preview: title, path, meta, image carousel, full text, links.
-function buildPost(detail) {
+// THE note card — one template shared by the feed and the browser's preview
+// sheet. Collapsed by default: shows images, title (date at the end), path and
+// tags; the note text and linked notes hide behind a Show more/less toggle. Pass
+// { expanded:true } (the preview sheet) to start open.
+function buildPost(detail, opts) {
+  const expanded = !!(opts && opts.expanded);
   const post = document.createElement("div");
-  post.className = "post";
+  post.className = "post" + (expanded ? "" : " collapsed");
 
-  // Images sit on top, like an Instagram post; the note's header (title, path,
-  // tags) and the ⋮ menu go underneath.
+  // Images sit on top, like an Instagram post.
   const car = buildCarousel(detail.attachments);
   if (car) post.appendChild(car);
 
+  // Header: title with the date at its end, and the ⋮ menu.
   const head = document.createElement("div");
   head.className = "post-head";
   const title = document.createElement("div");
   title.className = "card-title"; title.textContent = (detail.title || "untitled") + ".md";
+  const dt = dateText(detail);
+  if (dt) { const d = document.createElement("span"); d.className = "card-date"; d.textContent = dt; title.appendChild(d); }
   head.appendChild(title);
   const dots = document.createElement("span");
   dots.className = "post-dots"; dots.setAttribute("role", "button"); dots.textContent = "⋮";
@@ -689,18 +683,38 @@ function buildPost(detail) {
   const path = document.createElement("div");
   path.className = "card-path"; path.textContent = "📁 " + (detail.path || "Inbox");
   post.appendChild(path);
-  const mt = metaText(detail);
-  if (mt) { const meta = document.createElement("div"); meta.className = "card-meta"; meta.textContent = mt; post.appendChild(meta); }
+  const tg2 = tagsText(detail);
+  if (tg2) { const meta = document.createElement("div"); meta.className = "card-meta"; meta.textContent = tg2; post.appendChild(meta); }
 
-  const body = document.createElement("div"); body.className = "card-body";
   const text = (detail.text || "").trim();
   const hasImages = detail.attachments && detail.attachments.length;
-  if (text) body.textContent = text;
-  else if (!hasImages) { body.textContent = "(empty note)"; body.classList.add("muted"); }
-  if (text || !hasImages) post.appendChild(body);   // no empty text line under an image-only note
+  const hasLinks = linkedItems(detail).length > 0;
+
+  // Collapsible section: full text + linked notes.
+  const more = document.createElement("div");
+  more.className = "post-more";
+  if (text) { const body = document.createElement("div"); body.className = "card-body"; body.textContent = text; more.appendChild(body); }
   const links = document.createElement("div"); links.className = "card-links";
   fillLinks(links, detail);
-  post.appendChild(links);
+  more.appendChild(links);
+  post.appendChild(more);
+
+  // A note with neither text nor images shows a muted placeholder (never hidden).
+  if (!text && !hasImages) {
+    const empty = document.createElement("div");
+    empty.className = "card-body muted"; empty.textContent = "(empty note)";
+    post.appendChild(empty);
+  }
+
+  // Only offer the toggle when there's something to reveal.
+  if (text || hasLinks) {
+    const toggle = document.createElement("button");
+    toggle.className = "post-toggle";
+    const label = () => { toggle.textContent = post.classList.contains("collapsed") ? "Show more ⌄" : "Show less ⌃"; };
+    label();
+    toggle.addEventListener("click", (e) => { e.stopPropagation(); post.classList.toggle("collapsed"); label(); });
+    post.appendChild(toggle);
+  }
   return post;
 }
 
@@ -708,12 +722,8 @@ async function openCard(note, el) {
   if (activeEl) activeEl.classList.remove("active");
   activeEl = null;
   if (el) { el.classList.add("active"); activeEl = el; }   // el is null for link navigation
-  document.getElementById("cardTitle").textContent = ((note.title || "untitled")) + ".md";
-  document.getElementById("cardPath").textContent = "📁 " + (note.path || "Inbox");
-  document.getElementById("cardMeta").textContent = "";
-  document.getElementById("cardMedia").innerHTML = "";
-  document.getElementById("cardLinks").innerHTML = "";
-  setBody("Loading…", true);
+  const mount = document.getElementById("sheetCard");
+  mount.innerHTML = '<div class="empty">Loading…</div>';
   document.getElementById("sheet").classList.add("show");
   document.getElementById("backdrop").classList.add("show");
   tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
@@ -723,27 +733,12 @@ async function openCard(note, el) {
   if (req !== cardReq) return;   // a newer card was opened meanwhile
 
   if (!detail) {
-    setBody("Preview unavailable.", true);
+    mount.innerHTML = '<div class="empty">Preview unavailable.</div>';
     return;
   }
-  // Authoritative header from the loaded note (matters for link navigation,
-  // where the passed note only carries id + title).
-  document.getElementById("cardTitle").textContent = ((detail.title || note.title || "untitled")) + ".md";
-  document.getElementById("cardPath").textContent = "📁 " + (detail.path || "Inbox");
-
-  document.getElementById("cardMeta").textContent = metaText(detail);
-
-  const media = document.getElementById("cardMedia");
-  media.innerHTML = "";
-  const car = buildCarousel(detail.attachments);
-  if (car) media.appendChild(car);
-
-  const text = (detail.text || "").trim();
-  if (text) setBody(text, false);
-  else setBody(detail.attachments && detail.attachments.length ? "" : "(empty note)",
-              !(detail.attachments && detail.attachments.length));
-
-  renderLinks(detail);
+  // Same card template as the feed — opened expanded in the dedicated preview.
+  mount.innerHTML = "";
+  mount.appendChild(buildPost(detail, { expanded: true }));
 }
 function closeCard() {
   document.getElementById("sheet").classList.remove("show");
