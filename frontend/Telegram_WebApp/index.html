@@ -266,6 +266,21 @@
   #pathSheet .path-btn { font: inherit; font-size: 14px; border-radius: 10px; padding: 10px 18px; cursor: pointer; border: 1px solid var(--border); }
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Header filter button (top-right) */
+  .hdr-filter { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; }
+  .hdr-filter svg { width: 18px; height: 18px; }
+  .hdr-filter.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+
+  /* Filter sheet: indented folder tree with tri-state checkboxes */
+  #filterSheet .filter-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #filterSheet .filter-quick { display: flex; gap: 6px; }
+  .filter-link { background: none; border: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; padding: 4px 6px; }
+  .filter-tree { margin-top: 10px; max-height: 46vh; overflow-y: auto; }
+  .filter-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer; }
+  .filter-row input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); margin: 0; }
+  .filter-name { flex: 1; min-width: 0; color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filter-count { flex: none; color: var(--text-faint); font-size: 12px; }
   /* Connections map */
   #map { padding: 0; position: relative; }
   #graph { display: block; width: 100%; height: calc(100vh - 150px); touch-action: none; }
@@ -276,6 +291,9 @@
   <header>
     <div class="stat"><b id="statNotes">0</b><span>Notes</span></div>
     <div class="stat"><b id="statLinks">0</b><span>Links</span></div>
+    <button class="hdr-filter" id="filterBtn" aria-label="Filter folders">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>
+    </button>
   </header>
 
   <main>
@@ -342,6 +360,21 @@
     <div class="path-actions">
       <button class="path-btn ghost" id="pathCancel">Cancel</button>
       <button class="path-btn primary" id="pathSave">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="filterSheet">
+    <div class="grip"></div>
+    <div class="filter-head">
+      <div class="card-title">Filter folders</div>
+      <div class="filter-quick">
+        <button class="filter-link" id="filterAll">All</button>
+        <button class="filter-link" id="filterNone">Clear</button>
+      </div>
+    </div>
+    <div class="filter-tree" id="filterTree"></div>
+    <div class="path-actions">
+      <button class="path-btn primary" id="filterDone">Done</button>
     </div>
   </div>
 
@@ -732,6 +765,7 @@ function closeCtxMenu() { document.getElementById("ctxMenu").classList.remove("s
 function hideActionSheets() {
   closeCtxMenu();
   document.getElementById("pathSheet").classList.remove("show");
+  document.getElementById("filterSheet").classList.remove("show");
   document.getElementById("menuBackdrop").classList.remove("show");
 }
 function openMenu(target, anchor) {
@@ -1012,6 +1046,11 @@ let ALL_NOTES = [];   // newest-first, from /webapp/notes (browser tree + search
 let FEED = null;      // full note details for the post feed, lazy-loaded once
 let prevView = "notes";   // last non-input view we return to on close
 let barMode = null;       // 'search' | 'chat' while the pill shows its input
+let filterSel = null;     // Set of included folder keys, or null = show all
+let FILTER_KEYS = [];     // all distinct folder keys, computed when the sheet opens
+
+// A note's folder key for the filter (its path, or a bucket for unsorted notes).
+function notePathKey(d) { return d.path || "(unsorted)"; }
 
 const SEARCH_ICON = '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>';
 const CHAT_ICON = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/>';
@@ -1093,8 +1132,92 @@ async function renderNotesFeed() {
     mount.innerHTML = '<div class="empty">No notes yet.<br>Send one to the bot to get started.</div>';
     return;
   }
-  for (const d of FEED) mount.appendChild(buildPost(d));
+  const items = filterSel ? FEED.filter((d) => filterSel.has(notePathKey(d))) : FEED;
+  if (!items.length) {
+    mount.innerHTML = '<div class="empty">No notes match the folder filter.</div>';
+    return;
+  }
+  for (const d of items) mount.appendChild(buildPost(d));
 }
+
+/* ------- Folder filter (feed) — indented tri-state checkbox tree ------- */
+// Keys under a folder node: the node's own path plus anything nested beneath it.
+function descendantKeys(path) {
+  return FILTER_KEYS.filter((k) => k === path || k.startsWith(path + "/"));
+}
+function noteCountUnder(path) {
+  return FEED.filter((d) => { const k = notePathKey(d); return k === path || k.startsWith(path + "/"); }).length;
+}
+
+function renderFilterTree() {
+  const mount = document.getElementById("filterTree");
+  mount.innerHTML = "";
+  if (!FILTER_KEYS.length) { mount.innerHTML = '<div class="empty">No folders yet.</div>'; return; }
+  const sel = filterSel || new Set(FILTER_KEYS);
+
+  // Build a nested folder tree from the flat keys.
+  const root = { children: new Map() };
+  for (const key of FILTER_KEYS) {
+    let node = root, acc = "";
+    for (const seg of key.split("/")) {
+      acc = acc ? acc + "/" + seg : seg;
+      if (!node.children.has(seg)) node.children.set(seg, { name: seg, path: acc, children: new Map() });
+      node = node.children.get(seg);
+    }
+  }
+
+  (function walk(node, depth) {
+    for (const child of [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      const dkeys = descendantKeys(child.path);
+      const selN = dkeys.filter((k) => sel.has(k)).length;
+      const row = document.createElement("label");
+      row.className = "filter-row";
+      row.style.paddingLeft = (4 + depth * 18) + "px";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selN === dkeys.length;
+      cb.indeterminate = selN > 0 && selN < dkeys.length;   // partial = square/dash
+      cb.addEventListener("change", () => toggleFilterNode(dkeys, cb.checked));
+      const name = document.createElement("span");
+      name.className = "filter-name"; name.textContent = child.name;
+      const count = document.createElement("span");
+      count.className = "filter-count"; count.textContent = noteCountUnder(child.path);
+      row.appendChild(cb); row.appendChild(name); row.appendChild(count);
+      mount.appendChild(row);
+      walk(child, depth + 1);
+    }
+  })(root, 0);
+}
+
+function toggleFilterNode(dkeys, checked) {
+  if (!filterSel) filterSel = new Set(FILTER_KEYS);   // materialize "all" before narrowing
+  if (checked) dkeys.forEach((k) => filterSel.add(k));
+  else dkeys.forEach((k) => filterSel.delete(k));
+  if (filterSel.size >= FILTER_KEYS.length) filterSel = null;   // everything = no filter
+  renderFilterTree();
+  renderNotesFeed();
+  updateFilterBtn();
+}
+
+function updateFilterBtn() {
+  document.getElementById("filterBtn").classList.toggle("active", !!filterSel);
+}
+
+function openFilter() {
+  if (FEED === null) return;   // feed not loaded yet
+  FILTER_KEYS = [...new Set(FEED.map(notePathKey))].filter(Boolean).sort();
+  renderFilterTree();
+  document.getElementById("filterSheet").classList.add("show");
+  document.getElementById("menuBackdrop").classList.add("show");
+}
+document.getElementById("filterBtn").addEventListener("click", openFilter);
+document.getElementById("filterDone").addEventListener("click", hideActionSheets);
+document.getElementById("filterAll").addEventListener("click", () => {
+  filterSel = null; renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+});
+document.getElementById("filterNone").addEventListener("click", () => {
+  filterSel = new Set(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+});
 
 /* ------- Search (client-side over loaded notes) ------- */
 function runSearch(q) {

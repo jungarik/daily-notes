@@ -6,10 +6,11 @@ maintainability matter more than shipping fast.
 
 ## What it is
 
-A backend for capturing thoughts (text/voice), enriching them into structured
-notes (type/title/path/tags/priority), reminders, semantic search + RAG answers,
-and human-curated links between notes (Zettelkasten-style). Notes are meant to be
-exportable to an Obsidian-style vault.
+A backend for capturing thoughts (text / voice / photos), enriching them into
+structured notes (type/title/path/tags/priority), reminders, semantic search +
+RAG answers, and human-curated links between notes (Zettelkasten-style). Notes
+are meant to be exportable to an Obsidian-style vault. A Telegram Mini App (web
+app) is a first-class read/curate client on top of the same API.
 
 ## Architecture — multi-client backend
 
@@ -54,10 +55,16 @@ Consequences (follow these):
   surface a user-friendly message. Add a global error handler for each client
   (e.g. PTB `add_error_handler`).
 - **Input validation / guardrails ("watchdogs")**: validate/normalise inputs at
-  the edge; bound sizes (text length, attachment size, LLM token budgets);
+  the edge; bound sizes (text length, attachment count/size, LLM token budgets);
   timeouts and retries on external calls (OpenAI, S3, Telegram); protect against
-  runaway loops/costs.
+  runaway loops/costs. Env values are normalised too — e.g. `config._clean_url`
+  strips a stray leading `$`/quotes/whitespace from `S3_ENDPOINT_URL` so a
+  paste/interpolation slip can't silently break every upload.
 - **Data safety**: migrations are append-only; take a snapshot before heavy ones.
+  Deleting a note also purges its bucket objects (attachments + voice audio) via
+  `storage.delete_object` — DB rows cascade, but object storage does not, so
+  `note_service.delete_bare_note` collects the keys *before* deleting and removes
+  them after a successful delete.
 
 ## Layout (current)
 
@@ -86,9 +93,12 @@ regardless of bucket public reachability. Imports are
 absolute: `from services import X`, `from stores import Y`. `bot.py` keeps only
 Telegram specifics (keyboards, formatting, command wiring, reminder *delivery*,
 global `add_error_handler`) and calls the API for everything else — it imports
-no `services`/`stores`/`db`. The API routers are thin: they validate at the edge
-(`api/schemas.py`) and compose `services/` calls; only the API touches the
-database.
+no `services`/`stores`/`db`. It captures text (`/internal/notes`), voice
+(`/internal/notes/voice`), and photos (`/internal/notes/media`): a single photo
+saves immediately; an album (several updates sharing a `media_group_id`) is
+buffered with a short debounce and saved as one note with all images. The API
+routers are thin: they validate at the edge (`api/schemas.py`) and compose
+`services/` calls; only the API touches the database.
 
 The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`
@@ -96,6 +106,38 @@ on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json` �
 `python -m api.run`, a dual-stack launcher — binds `::` with IPV6_V6ONLY=0 so
 it serves both private IPv6 and the public IPv4 edge) while the bot uses
 `railway.bot.json` → `python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
+
+## Web app (Telegram Mini App)
+
+`frontend/Telegram_WebApp/index.html` is a single-file vanilla HTML/CSS/JS Mini
+App served by the API itself at `/app` (via `NoCacheStaticFiles`, so it's
+same-origin with the API — relative URLs like the image proxy just work). It is a
+separate client from the bot and authenticates with Telegram's signed `initData`
+(`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py`) rather than
+the `/internal` token; its endpoints live under `/webapp/*` in
+`api/routers/webapp.py` and resolve the Telegram user to an internal `user_id`
+before returning only that user's data: `GET /webapp/feed` (full note cards,
+newest first), `GET /webapp/notes` + `/notes/{id}` (browser tree + preview),
+`POST /webapp/notes/{id}/path` and `/webapp/folder/move` (rename a note's or a
+whole folder's path — root folders can't be moved), `GET /webapp/graph`
+(connections map), and `GET /webapp/attachments/{id}?t=<token>` (the signed image
+proxy). `POST /webapp/chat` is a **seam that isn't backed yet** — the app posts
+to it and degrades gracefully; wiring an agent behind it is the next planned step.
+
+UI: a floating glass **dock** with a center pill (Notes / Browser / Map icons)
+flanked by two circle buttons — chat (left) and search (right). Tapping a circle
+swaps the pill's icons for a shared input bar (with a Send button); the visible
+circle doubles as the close/back control, and the pill widens toward the borders
+in input mode. Views: **Notes** (a feed of note cards), **Browser** (folder
+tree), **Map** (canvas force-directed graph), **Search** (client-side filter over
+loaded notes), **Chat** (conversation view over the `/webapp/chat` seam). One
+card template (`buildPost`) is shared by the feed and the bottom-sheet preview
+(opened from the browser/search/graph): image carousel on top, then title (date
+at the end of the title line), path, tags, full text, and a de-duplicated
+"Linked notes" list (depth-1 neighbours; tapping one navigates without recursion).
+Path/localised-root names are written by the LLM into the note path and stored
+localised (not translated at display time). The `⋮` menu on a card/folder opens
+a context menu to change its path.
 
 ## Design docs
 
