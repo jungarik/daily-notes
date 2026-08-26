@@ -286,6 +286,32 @@
   #map { padding: 0; position: relative; }
   #graph { display: block; width: 100%; height: calc(100vh - 150px); touch-action: none; }
   .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
+
+  /* Map: ego reset chip (top) + focused-node card (bottom, above the dock) */
+  .ego-reset {
+    position: absolute; top: 10px; left: 12px; z-index: 6;
+    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
+    padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(48,48,48,.7);
+    -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+  }
+  .ego-reset.hidden, .focus-card.hidden { display: none; }
+  .focus-card {
+    position: absolute; left: 12px; right: 12px; bottom: 104px; z-index: 6;
+    padding: 12px 14px 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(40,40,40,.86);
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+    box-shadow: 0 12px 36px rgba(0,0,0,.5);
+  }
+  .focus-close { position: absolute; top: 8px; right: 10px; border: none; background: rgba(255,255,255,.12); color: var(--text); width: 26px; height: 26px; border-radius: 50%; font-size: 12px; cursor: pointer; }
+  .focus-title { font-size: 15px; font-weight: 600; color: var(--text); padding-right: 28px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-path { font-size: 12px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-meta { font-size: 12px; color: var(--text-faint); margin-top: 4px; min-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-actions { display: flex; gap: 8px; margin-top: 11px; }
+  .focus-btn { flex: 1; font: inherit; font-size: 13px; padding: 9px 6px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); background: rgba(255,255,255,.06); color: var(--text); }
+  .focus-btn:active { background: rgba(255,255,255,.14); }
+  .row.flash { animation: rowflash 1.4s ease; }
+  @keyframes rowflash { 0%, 100% { background: transparent; } 25% { background: rgba(47,111,235,.35); } }
 </style>
 </head>
 <body>
@@ -303,7 +329,19 @@
     <div id="tree" class="view hidden"></div>
     <div id="map" class="view hidden">
       <canvas id="graph"></canvas>
-      <div class="map-hint">tap a node to open · drag to pan · pinch / scroll to zoom</div>
+      <div class="map-hint">tap a node · drag to pan · pinch / scroll to zoom</div>
+      <button class="ego-reset hidden" id="egoReset">✕ Full graph</button>
+      <div class="focus-card hidden" id="focusCard">
+        <button class="focus-close" id="focusClose" aria-label="Close">✕</button>
+        <div class="focus-title" id="focusTitle"></div>
+        <div class="focus-path" id="focusPath"></div>
+        <div class="focus-meta" id="focusMeta"></div>
+        <div class="focus-actions">
+          <button class="focus-btn" id="focusNeighbors">Neighbors</button>
+          <button class="focus-btn" id="focusOpen">Open note</button>
+          <button class="focus-btn" id="focusOutline">Outline</button>
+        </div>
+      </div>
     </div>
     <div id="search" class="view hidden">
       <div id="searchResults"></div>
@@ -551,6 +589,7 @@ function renderFolder(name, node, forceOpen, path) {
 function renderFile(note) {
   const el = document.createElement("div");
   el.className = "row file";
+  el.dataset.id = note.id;   // lets the Map's Outline action locate this row
   const title = (note.title && note.title.trim()) || "untitled";
   el.innerHTML = fileSvg + '<span class="name">' + escapeHtml(title) +
     '<span class="ext">.md</span></span>' +
@@ -835,7 +874,8 @@ document.querySelector("main").addEventListener("scroll", closeCtxMenu, true);
 
 /* ------- Connections map (canvas force-directed graph) ------- */
 const GRAPH = { canvas: null, ctx: null, dpr: 1, sim: null, raf: null,
-  running: false, loaded: false, selected: null, view: { scale: 1, tx: 0, ty: 0 } };
+  running: false, loaded: false, selected: null, ego: null, focusReq: 0,
+  view: { scale: 1, tx: 0, ty: 0 } };
 
 function rootFolder(path) { const s = (path || "Inbox").split("/")[0].trim(); return s || "Inbox"; }
 function folderColor(name) {
@@ -946,12 +986,16 @@ function drawGraph() {
 function drawLabels() {
   const { ctx, sim, view, selected } = GRAPH;
   ctx.font = "11px -apple-system,Segoe UI,Roboto,sans-serif"; ctx.textBaseline = "top";
-  const showAll = sim.nodes.length <= 14, placed = [];
+  // Semantic zoom: reveal more labels the closer you zoom in.
+  const s = view.scale;
+  let minDeg = s >= 2.2 ? 0 : s >= 1.3 ? 1 : s >= 0.7 ? 2 : 3;
+  if (GRAPH.ego != null || sim.nodes.length <= 14) minDeg = 0;   // small/ego graphs: label all
+  const placed = [];
   let count = 0;
   for (const n of [...sim.nodes].sort((x, y) => (y.degree || 0) - (x.degree || 0))) {
     if (count >= 36) break;
     const isSel = selected === n.id;
-    if (!showAll && !isSel && (n.degree || 0) < 2) continue;
+    if (!isSel && (n.degree || 0) < minDeg) continue;
     const sx = n.x * view.scale + view.tx, sy = n.y * view.scale + view.ty;
     const label = truncateLabel(ctx, n.title, 120), tw = ctx.measureText(label).width;
     const bx = sx - tw / 2, by = sy + nodeRadius(n) * view.scale + 2, bw = tw, bh = 13;
@@ -992,8 +1036,79 @@ function graphTap(clientX, clientY) {
     const r = nodeRadius(n) + 8, dx = n.x - gx, dy = n.y - gy, d = dx * dx + dy * dy;
     if (d < r * r && d < bestd) { best = n; bestd = d; }
   }
-  if (best) { GRAPH.selected = best.id; openCard({ id: best.id, title: best.title }, null); }
+  if (best) focusNode(best); else clearFocus();
 }
+
+/* ------- Focused node card → neighbors (ego) / full note / outline ------- */
+function neighborCount(id) {
+  const edges = (GRAPH.data && GRAPH.data.edges) || [];
+  let n = 0;
+  for (const e of edges) if (e.source === id || e.target === id) n++;
+  return n;
+}
+function centerOnNode(node) {
+  const c = GRAPH.canvas, v = GRAPH.view;
+  if (!c) return;
+  v.tx = c.clientWidth / 2 - node.x * v.scale;
+  v.ty = c.clientHeight / 2 - node.y * v.scale;
+}
+function focusNode(node) {
+  GRAPH.selected = node.id;
+  GRAPH.focusNodeId = node.id;
+  centerOnNode(node);
+  document.getElementById("focusTitle").textContent = node.title || "untitled";
+  document.getElementById("focusPath").textContent = "📁 " + (node.path || "Inbox");
+  document.getElementById("focusMeta").textContent = neighborCount(node.id) + " linked note(s)";
+  document.getElementById("focusCard").classList.remove("hidden");
+  tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
+  // Enrich the card with tags / a snippet once the note detail loads.
+  const req = ++GRAPH.focusReq;
+  fetchNote(node.id).then((d) => {
+    if (req !== GRAPH.focusReq || !d) return;
+    const bits = [];
+    if (d.tags && d.tags.length) bits.push("🏷 " + d.tags.join(", "));
+    const snip = (d.text || "").trim().replace(/\s+/g, " ");
+    if (snip) bits.push(snip.slice(0, 80) + (snip.length > 80 ? "…" : ""));
+    if (bits.length) document.getElementById("focusMeta").textContent = bits.join("  ·  ");
+  });
+}
+function clearFocus() {
+  GRAPH.selected = null; GRAPH.focusNodeId = null; GRAPH.focusReq++;
+  document.getElementById("focusCard").classList.add("hidden");
+}
+function enterEgo() {
+  if (GRAPH.focusNodeId == null) return;
+  GRAPH.ego = GRAPH.focusNodeId;
+  rebuildGraphSim();
+  document.getElementById("egoReset").classList.remove("hidden");
+}
+function exitEgo() {
+  if (GRAPH.ego == null) { document.getElementById("egoReset").classList.add("hidden"); return; }
+  GRAPH.ego = null;
+  document.getElementById("egoReset").classList.add("hidden");
+  rebuildGraphSim();
+}
+function outlineToNote(noteId) {
+  activateView("browser");
+  requestAnimationFrame(() => {
+    const row = document.querySelector('#tree [data-id="' + noteId + '"]');
+    if (!row) return;
+    let p = row.parentElement;
+    while (p && p.id !== "tree") { if (p.classList.contains("folder")) p.classList.add("open"); p = p.parentElement; }
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.add("flash");
+    setTimeout(() => row.classList.remove("flash"), 1500);
+  });
+}
+document.getElementById("focusClose").addEventListener("click", clearFocus);
+document.getElementById("focusNeighbors").addEventListener("click", enterEgo);
+document.getElementById("focusOpen").addEventListener("click", () => {
+  if (GRAPH.focusNodeId != null) openCard({ id: GRAPH.focusNodeId, title: document.getElementById("focusTitle").textContent }, null);
+});
+document.getElementById("focusOutline").addEventListener("click", () => {
+  if (GRAPH.focusNodeId != null) outlineToNote(GRAPH.focusNodeId);
+});
+document.getElementById("egoReset").addEventListener("click", exitEgo);
 function setupGraphInput() {
   const c = GRAPH.canvas; if (!c || c._wired) return; c._wired = true;
   const pointers = new Map(); let last = null, moved = 0, pinch = 0;
@@ -1025,7 +1140,9 @@ function setupGraphInput() {
 
 // The Map shares the Notes folder filter: keep only nodes whose note is in a
 // selected folder, and edges whose both endpoints survive.
-function graphFilterSig() { return filterSel ? [...filterSel].sort().join("|") : "ALL"; }
+function graphFilterSig() {
+  return (filterSel ? [...filterSel].sort().join("|") : "ALL") + "|ego:" + (GRAPH.ego == null ? "" : GRAPH.ego);
+}
 function applyGraphFilter(data) {
   if (!filterSel) return data;
   const nodes = (data.nodes || []).filter((n) => filterSel.has(n.path || "(unsorted)"));
@@ -1033,9 +1150,24 @@ function applyGraphFilter(data) {
   const edges = (data.edges || []).filter((e) => ids.has(e.source) && ids.has(e.target));
   return { nodes, edges };
 }
+// The data currently displayed: the folder-filtered graph, narrowed to a depth-1
+// ego subgraph (focused node + its neighbours) when ego mode is on.
+function currentGraphData() {
+  const full = applyGraphFilter(GRAPH.data || { nodes: [], edges: [] });
+  if (GRAPH.ego == null) return full;
+  const keep = new Set([GRAPH.ego]);
+  for (const e of full.edges) {
+    if (e.source === GRAPH.ego) keep.add(e.target);
+    if (e.target === GRAPH.ego) keep.add(e.source);
+  }
+  return {
+    nodes: full.nodes.filter((n) => keep.has(n.id)),
+    edges: full.edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
+  };
+}
 function rebuildGraphSim() {
   GRAPH.filterSig = graphFilterSig();
-  const data = applyGraphFilter(GRAPH.data || { nodes: [], edges: [] });
+  const data = currentGraphData();
   if (!data.nodes.length) {
     stopGraphLoop(); GRAPH.sim = null;
     graphEmptyMessage(filterSel ? "No notes match the folder filter."
@@ -1119,7 +1251,8 @@ function activateView(view) {
     if (view === "chat") renderChat();
   }
 
-  if (view === "map") ensureGraph(); else stopGraphLoop();
+  if (view === "map") { ensureGraph(); }
+  else { stopGraphLoop(); clearFocus(); if (GRAPH.ego != null) { GRAPH.ego = null; document.getElementById("egoReset").classList.add("hidden"); } }
   if (view === "notes") renderNotesFeed();   // async; fire-and-forget
   tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
 }
