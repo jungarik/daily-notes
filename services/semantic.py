@@ -94,7 +94,13 @@ def answer(
     hits = search(user_id, query, remind_start, remind_end, limit)
     if not hits:
         return None
+    return answer_from_hits(hits, query, language=language, tz=tz)
 
+
+def answer_from_hits(hits: list[dict], query: str, language: str = "en", tz=None) -> str:
+    """Compose a natural answer from already-retrieved chunks. Split out so callers
+    (e.g. the agent's search tool) can reuse the retrieved hits — for citations —
+    without embedding the query twice."""
     system = (
         "You are the user's personal notes assistant. Answer the user's question "
         "using ONLY the notes provided below — do not invent facts. Choose the "

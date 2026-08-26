@@ -34,11 +34,22 @@ class Ctx:
         if note_id in self._cited:
             return
         self._cited.add(note_id)
-        self.citations.append({"note_id": note_id, "title": title or "untitled"})
+        self.citations.append({"note_id": note_id, "title": title or "note"})
 
 
 def _json(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+def _label(title, text) -> str:
+    """A human label for a citation chip: the note's title, else a text snippet."""
+    t = (title or "").strip()
+    if t:
+        return t
+    snip = " ".join((text or "").split())
+    if not snip:
+        return "note"
+    return snip[:40] + "…" if len(snip) > 40 else snip
 
 
 # ---- read tools -----------------------------------------------------------
@@ -47,7 +58,14 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
     query = (args.get("query") or "").strip()
     if not query:
         return "Error: query is required."
-    ans = search_service.answer(ctx.user_id, query, ctx.now, language=ctx.locale, tz=ctx.tz)
+    ans, source_ids = search_service.answer_with_sources(
+        ctx.user_id, query, ctx.now, language=ctx.locale, tz=ctx.tz)
+    # Cite the distinct notes this answer drew on, in relevance order.
+    briefs = {b["id"]: b for b in note_store.notes_brief(ctx.user_id, source_ids[:4])}
+    for nid in source_ids[:4]:
+        b = briefs.get(nid)
+        if b:
+            ctx.cite(nid, _label(b.get("title"), b.get("text")))
     return ans or "No relevant notes found."
 
 
@@ -56,7 +74,7 @@ def _get_note(ctx: Ctx, args: dict) -> str:
     n = note_store.get_note_for_user(ctx.user_id, int(nid)) if nid is not None else None
     if not n:
         return "Error: note not found."
-    ctx.cite(n["id"], n.get("title") or "")
+    ctx.cite(n["id"], _label(n.get("title"), n.get("text")))
     return _json({"id": n["id"], "title": n["title"], "path": n["path"],
                   "tags": n["tags"], "text": n["text"]})
 
