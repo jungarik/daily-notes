@@ -120,24 +120,44 @@ before returning only that user's data: `GET /webapp/feed` (full note cards,
 newest first), `GET /webapp/notes` + `/notes/{id}` (browser tree + preview),
 `POST /webapp/notes/{id}/path` and `/webapp/folder/move` (rename a note's or a
 whole folder's path — root folders can't be moved), `GET /webapp/graph`
-(connections map), and `GET /webapp/attachments/{id}?t=<token>` (the signed image
+(connections map), `GET /webapp/reminders/count` (active + future reminders, for
+the header stat), and `GET /webapp/attachments/{id}?t=<token>` (the signed image
 proxy). `POST /webapp/chat` is a **seam that isn't backed yet** — the app posts
 to it and degrades gracefully; wiring an agent behind it is the next planned step.
 
-UI: a floating glass **dock** with a center pill (Notes / Browser / Map icons)
+UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
+and, on the Notes and Map tabs, a funnel **folder-filter** button. A floating
+glass **dock** holds a center pill (Notes / Map / Browser icons, in that order)
 flanked by two circle buttons — chat (left) and search (right). Tapping a circle
-swaps the pill's icons for a shared input bar (with a Send button); the visible
-circle doubles as the close/back control, and the pill widens toward the borders
-in input mode. Views: **Notes** (a feed of note cards), **Browser** (folder
-tree), **Map** (canvas force-directed graph), **Search** (client-side filter over
-loaded notes), **Chat** (conversation view over the `/webapp/chat` seam). One
-card template (`buildPost`) is shared by the feed and the bottom-sheet preview
-(opened from the browser/search/graph): image carousel on top, then title (date
-at the end of the title line), path, tags, full text, and a de-duplicated
-"Linked notes" list (depth-1 neighbours; tapping one navigates without recursion).
-Path/localised-root names are written by the LLM into the note path and stored
-localised (not translated at display time). The `⋮` menu on a card/folder opens
-a context menu to change its path.
+swaps the pill's icons for a shared input bar (with a Send button) and the pill
+widens toward the borders; the active circle's glyph becomes a ✕ and doubles as
+the close/back control (the opposite circle hides). Views: **Notes** (a feed of
+note cards), **Browser** (folder tree), **Map** (canvas force-directed graph),
+**Search** (client-side filter over loaded notes), **Chat** (conversation view
+over the `/webapp/chat` seam). One card template (`buildPost`) is shared by the
+feed and the bottom-sheet preview (opened from the browser/search/graph): image
+carousel on top, then title (date at the end of the title line), path, tags, full
+text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
+navigates without recursion). Path/localised-root names are written by the LLM
+into the note path and stored localised (not translated at display time). The `⋮`
+menu on a card/folder opens a context menu to change its path.
+
+The **folder filter** is a tri-state checkbox tree (built client-side from the
+loaded notes' paths): a parent is checked when all its descendants are, or
+indeterminate when only some. The selection is persisted in `localStorage`
+(survives tab switches and reopens) and applies to both the Notes feed and the
+Map graph (nodes/edges outside the selected folders are dropped).
+
+The **Map** uses a semantic-zoom + focus model. Nodes render as adaptive
+rounded-rectangle cards that reveal more with zoom (title only when far → +
+folder → + link count when near), the focused/selected node always expanded;
+overlapping lower-priority cards are culled and a faint folder-coloured dot marks
+every node. Tapping a node opens a **focused card** (title, path, link count,
+tags/snippet fetched lazily) offering three branches: **Neighbors** (rebuild as a
+depth-1 **ego graph** with a "Full graph" reset), **Open note** (the shared
+preview sheet), and **Outline** (jump to the Browser tab, expand the note's
+ancestor folders, scroll its row into view and flash it). Leaving the Map clears
+the focus/ego state.
 
 ## Design docs
 

@@ -70,6 +70,10 @@
   }
   .fab svg { width: 20px; height: 20px; }
   .fab.active { background: rgba(255,255,255,.16); color: var(--text); }
+  /* Active circle shows a ✕ (exit) in place of its glyph — pure CSS toggle. */
+  .fab .ic-close { display: none; }
+  .fab.active .ic-glyph { display: none; }
+  .fab.active .ic-close { display: block; }
   .tabbar {
     display: flex; gap: 4px; padding: 6px; border-radius: 999px;
     background: rgba(48,48,48,.55);
@@ -353,7 +357,8 @@
 
   <div class="dock" id="dock">
     <button class="fab" id="chatFab" aria-label="Chat">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/></svg>
+      <svg class="ic-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/></svg>
+      <svg class="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <nav class="tabbar">
       <div class="tab-icons" id="tabIcons">
@@ -376,7 +381,8 @@
       </div>
     </nav>
     <button class="fab" id="searchFab" aria-label="Search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <svg class="ic-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <svg class="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
   </div>
 
@@ -1209,11 +1215,6 @@ function notePathKey(d) { return d.path || "(unsorted)"; }
 
 const SEARCH_ICON = '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>';
 const CHAT_ICON = '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z"/>';
-const CLOSE_ICON = '<path d="M6 6l12 12M18 6L6 18"/>';
-// The circle's SVG wrapper — swap the inner paths to change what it shows.
-function fabSvg(inner) {
-  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
-}
 
 async function reloadNotes() {
   ALL_NOTES = await fetchNotes();
@@ -1244,9 +1245,7 @@ function activateView(view) {
   document.getElementById("searchFab").classList.toggle("active", view === "search");
   document.getElementById("chatFab").classList.toggle("hidden", view === "search");
   document.getElementById("searchFab").classList.toggle("hidden", view === "chat");
-  // The active mode's circle shows a ✕ (tap to exit); otherwise its own glyph.
-  document.getElementById("chatFab").innerHTML = fabSvg(view === "chat" ? CLOSE_ICON : CHAT_ICON);
-  document.getElementById("searchFab").innerHTML = fabSvg(view === "search" ? CLOSE_ICON : SEARCH_ICON);
+  // The active circle shows a ✕ (exit) via the .active CSS toggle — no JS needed.
   // The folder filter applies to the Notes feed and the Map (links) graph.
   document.getElementById("filterBtn").classList.toggle("hidden", view !== "notes" && view !== "map");
 
