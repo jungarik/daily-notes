@@ -37,8 +37,8 @@
   /* Instagram-style stats header (glass) */
   header {
     position: sticky; top: 0; z-index: 5;
-    display: flex; justify-content: center; gap: 48px;
-    padding: 14px 16px;
+    display: flex; justify-content: center; gap: 30px;
+    padding: 14px 52px;
     background: rgba(25,25,25,.72);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     backdrop-filter: blur(18px) saturate(160%);
@@ -271,6 +271,7 @@
   .hdr-filter { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; }
   .hdr-filter svg { width: 18px; height: 18px; }
   .hdr-filter.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .hdr-filter.hidden { display: none; }
 
   /* Filter sheet: indented folder tree with tri-state checkboxes */
   #filterSheet .filter-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -291,6 +292,7 @@
   <header>
     <div class="stat"><b id="statNotes">0</b><span>Notes</span></div>
     <div class="stat"><b id="statLinks">0</b><span>Links</span></div>
+    <div class="stat"><b id="statReminders">0</b><span>Reminders</span></div>
     <button class="hdr-filter" id="filterBtn" aria-label="Filter folders">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>
     </button>
@@ -1084,6 +1086,8 @@ function activateView(view) {
   document.getElementById("searchFab").classList.toggle("active", view === "search");
   document.getElementById("chatFab").classList.toggle("hidden", view === "search");
   document.getElementById("searchFab").classList.toggle("hidden", view === "chat");
+  // The folder filter only applies to the Notes feed.
+  document.getElementById("filterBtn").classList.toggle("hidden", view !== "notes");
 
   if (isInput) {
     const input = document.getElementById("barInput");
@@ -1312,9 +1316,24 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ------- Reminders header stat ------- */
+async function refreshReminderCount() {
+  const base = window.__API_BASE__;
+  if (!base) return;   // demo: leave at 0
+  try {
+    const res = await fetch(base.replace(/\/$/, "") + "/webapp/reminders/count", {
+      headers: { "X-Telegram-Init-Data": INIT_DATA },
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    document.getElementById("statReminders").textContent = data.count || 0;
+  } catch (e) { console.warn("Reminder count unavailable:", e); }
+}
+
 /* ------- Boot ------- */
 (async function () {
   await reloadNotes();
+  refreshReminderCount();
 })();
 </script>
 </body>

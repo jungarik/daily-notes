@@ -18,6 +18,7 @@ from api import media_token
 from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
+from services import reminders
 from stores import attachment_store
 from api.schemas import (
     WebAppNote, WebAppNoteDetail, WebAppGraph,
@@ -88,6 +89,14 @@ def attachment(attachment_id: int, t: str = "") -> Response:
         media_type=content_type or a["mime"] or "application/octet-stream",
         headers={"Cache-Control": f"private, max-age={config.ATTACHMENT_URL_TTL_SECONDS}"},
     )
+
+
+@router.get("/reminders/count")
+def reminders_count(x_telegram_init_data: str | None = Header(default=None)) -> dict:
+    """Count of the user's active + future reminders (scheduled/postponed), for
+    the web-app header stat."""
+    user_id = _auth(x_telegram_init_data)
+    return {"count": reminders.active_count(user_id)}
 
 
 @router.get("/graph", response_model=WebAppGraph)
