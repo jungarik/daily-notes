@@ -322,11 +322,11 @@
         <button class="tab active" data-view="notes" aria-label="Notes">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="6" rx="1.6"/><rect x="4" y="14" width="16" height="6" rx="1.6"/></svg>
         </button>
-        <button class="tab" data-view="browser" aria-label="Browser">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
-        </button>
         <button class="tab" data-view="map" aria-label="Map">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="18" r="2.3"/><circle cx="18.5" cy="15" r="2.3"/><circle cx="14" cy="5.5" r="2.3"/><path d="M7.9 16.6 12.4 7.4M16.3 13.4 8.1 17.1"/></svg>
+        </button>
+        <button class="tab" data-view="browser" aria-label="Browser">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
         </button>
       </div>
       <div class="tab-input hidden" id="tabInput">
@@ -1023,19 +1023,40 @@ function setupGraphInput() {
   c.addEventListener("wheel", (e) => { e.preventDefault(); const rect = c.getBoundingClientRect(); zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
 }
 
+// The Map shares the Notes folder filter: keep only nodes whose note is in a
+// selected folder, and edges whose both endpoints survive.
+function graphFilterSig() { return filterSel ? [...filterSel].sort().join("|") : "ALL"; }
+function applyGraphFilter(data) {
+  if (!filterSel) return data;
+  const nodes = (data.nodes || []).filter((n) => filterSel.has(n.path || "(unsorted)"));
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = (data.edges || []).filter((e) => ids.has(e.source) && ids.has(e.target));
+  return { nodes, edges };
+}
+function rebuildGraphSim() {
+  GRAPH.filterSig = graphFilterSig();
+  const data = applyGraphFilter(GRAPH.data || { nodes: [], edges: [] });
+  if (!data.nodes.length) {
+    stopGraphLoop(); GRAPH.sim = null;
+    graphEmptyMessage(filterSel ? "No notes match the folder filter."
+                                : "No connections yet — link notes in the bot.");
+    return;
+  }
+  GRAPH.sim = buildSim(data, GRAPH.canvas.clientWidth, GRAPH.canvas.clientHeight);
+  for (let i = 0; i < 80; i++) stepSim(GRAPH.sim);   // warm up before first paint
+  autoFit();
+  startGraphLoop();
+}
+
 async function ensureGraph() {
   GRAPH.canvas = document.getElementById("graph");
   GRAPH.ctx = GRAPH.canvas.getContext("2d");
   sizeCanvas();
   setupGraphInput();
-  if (GRAPH.loaded) { startGraphLoop(); return; }
-  GRAPH.loaded = true;
-  const data = await fetchGraph();
-  if (!data.nodes || !data.nodes.length) { graphEmptyMessage("No connections yet — link notes in the bot."); return; }
-  GRAPH.sim = buildSim(data, GRAPH.canvas.clientWidth, GRAPH.canvas.clientHeight);
-  for (let i = 0; i < 80; i++) stepSim(GRAPH.sim);   // warm up before first paint
-  autoFit();
-  startGraphLoop();
+  if (!GRAPH.loaded) { GRAPH.loaded = true; GRAPH.data = await fetchGraph(); }
+  // Rebuild if never built or the folder filter changed since the last build.
+  if (!GRAPH.sim || GRAPH.filterSig !== graphFilterSig()) rebuildGraphSim();
+  else startGraphLoop();
 }
 
 window.addEventListener("resize", () => {
@@ -1198,6 +1219,7 @@ function toggleFilterNode(dkeys, checked) {
   if (checked) dkeys.forEach((k) => filterSel.add(k));
   else dkeys.forEach((k) => filterSel.delete(k));
   if (filterSel.size >= FILTER_KEYS.length) filterSel = null;   // everything = no filter
+  persistFilter();
   renderFilterTree();
   renderNotesFeed();
   updateFilterBtn();
@@ -1205,6 +1227,22 @@ function toggleFilterNode(dkeys, checked) {
 
 function updateFilterBtn() {
   document.getElementById("filterBtn").classList.toggle("active", !!filterSel);
+}
+
+// The selection persists (across tab switches and app reopens) so the chosen
+// folders remain the same. Stored per-viewer; failures degrade to in-memory only.
+const FILTER_STORE_KEY = "feedFolderFilter";
+function persistFilter() {
+  try {
+    if (filterSel) localStorage.setItem(FILTER_STORE_KEY, JSON.stringify([...filterSel]));
+    else localStorage.removeItem(FILTER_STORE_KEY);
+  } catch (e) { /* storage unavailable — keep in memory only */ }
+}
+function loadFilter() {
+  try {
+    const raw = localStorage.getItem(FILTER_STORE_KEY);
+    filterSel = raw ? new Set(JSON.parse(raw)) : null;
+  } catch (e) { filterSel = null; }
 }
 
 function openFilter() {
@@ -1217,10 +1255,10 @@ function openFilter() {
 document.getElementById("filterBtn").addEventListener("click", openFilter);
 document.getElementById("filterDone").addEventListener("click", hideActionSheets);
 document.getElementById("filterAll").addEventListener("click", () => {
-  filterSel = null; renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+  filterSel = null; persistFilter(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
 });
 document.getElementById("filterNone").addEventListener("click", () => {
-  filterSel = new Set(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+  filterSel = new Set(); persistFilter(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
 });
 
 /* ------- Search (client-side over loaded notes) ------- */
@@ -1332,6 +1370,8 @@ async function refreshReminderCount() {
 
 /* ------- Boot ------- */
 (async function () {
+  loadFilter();            // restore the saved folder filter before first render
+  updateFilterBtn();
   await reloadNotes();
   refreshReminderCount();
 })();
