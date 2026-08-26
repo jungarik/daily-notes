@@ -9,6 +9,7 @@ user_id, and return only that user's data.
 """
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Header, HTTPException, Response
 
@@ -19,10 +20,12 @@ from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
 from services import reminders
+from services import agent
 from stores import attachment_store
 from api.schemas import (
     WebAppNote, WebAppNoteDetail, WebAppGraph,
     WebAppSetPathRequest, WebAppMoveFolderRequest, WebAppMoveFolderResponse,
+    ChatRequest, ChatConfirmRequest, ChatResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,6 +100,29 @@ def reminders_count(x_telegram_init_data: str | None = Header(default=None)) -> 
     the web-app header stat."""
     user_id = _auth(x_telegram_init_data)
     return {"count": reminders.active_count(user_id)}
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest, x_telegram_init_data: str | None = Header(default=None)) -> ChatResponse:
+    """Run one agent turn over the user's notes. Returns either an answer (with
+    citations) or a write awaiting confirmation."""
+    user_id = _auth(x_telegram_init_data)
+    tz, locale = user_service.settings(user_id)
+    result = agent.start_turn(user_id, req.message, req.thread_id, datetime.now(tz), tz, locale)
+    logger.info("chat turn user=%s thread=%s -> %s", user_id, result["thread_id"], result["status"])
+    return ChatResponse(**result)
+
+
+@router.post("/chat/confirm", response_model=ChatResponse)
+def chat_confirm(req: ChatConfirmRequest,
+                 x_telegram_init_data: str | None = Header(default=None)) -> ChatResponse:
+    """Approve or decline the write the agent paused on, then continue the turn."""
+    user_id = _auth(x_telegram_init_data)
+    tz, locale = user_service.settings(user_id)
+    result = agent.confirm(user_id, req.thread_id, req.approve, datetime.now(tz), tz, locale)
+    logger.info("chat confirm user=%s thread=%s approve=%s -> %s",
+                user_id, req.thread_id, req.approve, result["status"])
+    return ChatResponse(**result)
 
 
 @router.get("/graph", response_model=WebAppGraph)

@@ -71,6 +71,12 @@ ENRICH_SIMILAR_LIMIT = int(os.environ.get("ENRICH_SIMILAR_LIMIT", "8"))
 # Max cosine distance for a neighbour to count as "closely related" (0 = identical).
 # Beyond this, the enricher is told not to force-fit an existing path.
 ENRICH_SIMILAR_MAX_DISTANCE = float(os.environ.get("ENRICH_SIMILAR_MAX_DISTANCE", "0.6"))
+
+# --- Agentic chat (Web App chat tab) ---
+# Model that runs the tool-calling agent loop.
+AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
+# Max tool-call iterations per user turn (a runaway-loop / cost watchdog).
+AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.
 REMINDER_FEW_COUNT = int(os.environ.get("REMINDER_FEW_COUNT", "5"))

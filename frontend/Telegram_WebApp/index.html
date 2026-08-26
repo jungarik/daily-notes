@@ -148,6 +148,14 @@
   .msg.bot { align-self: flex-start; background: var(--bg-alt); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
   .msg.bot.muted { color: var(--text-muted); }
   .chat-empty { color: var(--text-muted); text-align: center; padding: 24px 12px; font-size: 14px; }
+  .msg .cite-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .msg .cite-chip { border: 1px solid var(--border); background: rgba(255,255,255,.06); color: var(--text); font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 999px; cursor: pointer; }
+  .msg.confirm { background: var(--bg-alt); border: 1px solid var(--border); }
+  .confirm-text { font-size: 14px; color: var(--text); }
+  .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .confirm-btn { flex: 1; font: inherit; font-size: 13px; padding: 8px; border-radius: 9px; cursor: pointer; border: 1px solid var(--border); }
+  .confirm-btn.yes { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+  .confirm-btn.no { background: transparent; color: var(--text-muted); }
   .typing { display: inline-flex; gap: 3px; }
   .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: blink 1.2s infinite both; }
   .typing i:nth-child(2) { animation-delay: .2s; }
@@ -1433,29 +1441,71 @@ document.getElementById("barSend").addEventListener("click", () => {
   if (barMode === "chat") sendChat(v); else runSearch(v);
 });
 
-/* ------- Chat (talk to the assistant about your notes) ------- */
-// Conversation is in-memory for the session. The reply comes from the chat
-// backend seam (fetchChatReply); until the agent endpoint exists it degrades to
-// a friendly "not connected yet" note.
-const CHAT = [];   // [{ role: 'user' | 'bot', text, pending?, muted? }]
+/* ------- Chat (agentic — talk to the assistant about your notes) ------- */
+// The agent runs server-side over the user's notes; the thread is continued via
+// chatThreadId. A turn can come back as an answer (with citations) or a write
+// awaiting confirmation (rendered as a Confirm/Cancel card).
+const CHAT = [];   // [{ role, text?, pending?, muted?, citations?, action? }]
 let chatBusy = false;
+let chatThreadId = null;
 
 function renderChat() {
   const log = document.getElementById("chatLog");
   log.innerHTML = "";
   if (!CHAT.length) {
-    log.innerHTML = '<div class="chat-empty">Ask anything about your notes.<br>The assistant can search and summarize them.</div>';
+    log.innerHTML = '<div class="chat-empty">Ask anything about your notes.<br>The assistant can search, summarize, and act on them.</div>';
     return;
   }
   for (const m of CHAT) {
     const el = document.createElement("div");
     el.className = "msg " + (m.role === "user" ? "user" : "bot") + (m.muted ? " muted" : "");
-    if (m.pending) el.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
-    else el.textContent = m.text;
+    if (m.pending) { el.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>'; }
+    else if (m.action) { el.classList.add("confirm"); buildConfirm(el, m); }
+    else {
+      el.textContent = m.text || "";
+      if (m.citations && m.citations.length) el.appendChild(buildCitations(m.citations));
+    }
     log.appendChild(el);
   }
   const main = document.querySelector("main");
   requestAnimationFrame(() => { main.scrollTop = main.scrollHeight; });
+}
+
+function buildCitations(cites) {
+  const row = document.createElement("div");
+  row.className = "cite-row";
+  for (const c of cites) {
+    const b = document.createElement("button");
+    b.className = "cite-chip"; b.textContent = "📄 " + (c.title || "note");
+    b.addEventListener("click", () => openCard({ id: c.note_id, title: c.title }, null));
+    row.appendChild(b);
+  }
+  return row;
+}
+
+function buildConfirm(el, m) {
+  const q = document.createElement("div");
+  q.className = "confirm-text"; q.textContent = m.action.summary;
+  const row = document.createElement("div"); row.className = "confirm-actions";
+  const yes = document.createElement("button"); yes.className = "confirm-btn yes"; yes.textContent = "Confirm";
+  const no = document.createElement("button"); no.className = "confirm-btn no"; no.textContent = "Cancel";
+  const done = (approve) => { if (m.resolved) return; m.resolved = true; row.remove(); confirmChat(approve); };
+  yes.addEventListener("click", () => done(true));
+  no.addEventListener("click", () => done(false));
+  row.appendChild(yes); row.appendChild(no);
+  el.appendChild(q); el.appendChild(row);
+}
+
+function applyChatResult(data) {
+  if (data && data.thread_id) chatThreadId = data.thread_id;
+  if (data && data.status === "confirm" && data.action) {
+    CHAT.push({ role: "bot", action: data.action });
+  } else if (data && data.reply) {
+    CHAT.push({ role: "bot", text: data.reply, citations: data.citations || [] });
+  } else {
+    CHAT.push({ role: "bot", text: "The assistant is unavailable right now.", muted: true });
+  }
+  renderChat();
 }
 
 async function sendChat(text) {
@@ -1467,28 +1517,34 @@ async function sendChat(text) {
   const thinking = { role: "bot", pending: true };
   CHAT.push(thinking);
   renderChat();
-
-  const reply = await fetchChatReply(text);
+  const data = await chatPost("/webapp/chat", { message: text, thread_id: chatThreadId });
   CHAT.splice(CHAT.indexOf(thinking), 1);
-  CHAT.push(reply
-    ? { role: "bot", text: reply }
-    : { role: "bot", text: "The assistant isn't connected yet — coming soon.", muted: true });
-  renderChat();
+  applyChatResult(data);
   chatBusy = false;
 }
 
-async function fetchChatReply(text) {
+async function confirmChat(approve) {
+  if (chatThreadId == null) return;
+  chatBusy = true;
+  const thinking = { role: "bot", pending: true };
+  CHAT.push(thinking); renderChat();
+  const data = await chatPost("/webapp/chat/confirm", { thread_id: chatThreadId, approve });
+  CHAT.splice(CHAT.indexOf(thinking), 1);
+  applyChatResult(data);
+  chatBusy = false;
+}
+
+async function chatPost(path, body) {
   const base = window.__API_BASE__;
-  if (!base) return null;   // demo / no backend yet
+  if (!base) return null;
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/chat", {
+    const res = await fetch(base.replace(/\/$/, "") + path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": INIT_DATA },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    return data.reply || data.answer || null;
+    return await res.json();
   } catch (e) {
     console.warn("Chat backend unavailable:", e);
     return null;

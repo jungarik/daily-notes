@@ -194,6 +194,36 @@ class WebAppNoteDetail(BaseModel):
     attachments: list[WebAppAttachment] = []
 
 
+class ChatCitation(BaseModel):
+    note_id: int
+    title: str
+
+
+class ChatAction(BaseModel):
+    # A write the agent wants to perform, awaiting the user's confirmation.
+    name: str
+    args: dict = {}
+    summary: str
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    thread_id: int | None = None
+
+
+class ChatConfirmRequest(BaseModel):
+    thread_id: int
+    approve: bool
+
+
+class ChatResponse(BaseModel):
+    thread_id: int
+    status: str                       # "answer" | "confirm"
+    reply: str | None = None          # set when status == "answer"
+    action: ChatAction | None = None  # set when status == "confirm"
+    citations: list[ChatCitation] = []
+
+
 class WebAppNote(BaseModel):
     # One note as shown in the web-app browser. `title` falls back to a text
     # snippet server-side when the note hasn't been enriched yet. `links` is how

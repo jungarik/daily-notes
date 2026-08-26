@@ -122,8 +122,8 @@ newest first), `GET /webapp/notes` + `/notes/{id}` (browser tree + preview),
 whole folder's path — root folders can't be moved), `GET /webapp/graph`
 (connections map), `GET /webapp/reminders/count` (active + future reminders, for
 the header stat), and `GET /webapp/attachments/{id}?t=<token>` (the signed image
-proxy). `POST /webapp/chat` is a **seam that isn't backed yet** — the app posts
-to it and degrades gracefully; wiring an agent behind it is the next planned step.
+proxy). `POST /webapp/chat` + `/webapp/chat/confirm` back the **agentic chat tab**
+(see below).
 
 UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
 and, on the Notes and Map tabs, a funnel **folder-filter** button. A floating
@@ -159,10 +159,28 @@ preview sheet), and **Outline** (jump to the Browser tab, expand the note's
 ancestor folders, scroll its row into view and flash it). Leaving the Map clears
 the focus/ego state.
 
+## Agentic chat
+
+The chat tab is an **agent** (client-agnostic, in `services/agent/`) that plans,
+calls tools over the user's own data, and answers with citations — see
+`devdoc/agentic-chat.md`. A bounded single-tool-call ReAct loop (`agent/loop.py`,
+`AGENT_MAX_STEPS`) drives a **tool registry** (`agent/tools.py`) where each tool
+wraps an existing service: read tools (`search_notes` → `search_service.answer`,
+`get_note`, `neighbors`, `list_reminders`, `list_paths`) and write tools
+(`create_reminder`, `set_note_path`) that require confirmation. Conversation state
+lives in `chat_threads` (`stores/chat_store.py`, migration `0019`) as the running
+provider message list plus a `pending` paused write. A write pauses the loop and
+returns `{status:"confirm", action}`; `POST /webapp/chat/confirm {approve}`
+resumes — executing or declining the write, then continuing to the answer.
+Extend by adding a tool (or, later, a sub-agent) — never by editing the loop.
+
 ## Design docs
 
 `devdoc/` holds implementation specs for planned/agreed features (design agreed
 but not yet built) as Markdown. Before implementing a feature, check `devdoc/`
 for an existing spec and follow it; when a spec is fully implemented, update or
 remove it. Current specs: `devdoc/plugin-capture-tokens.md` (personal access
-tokens + public `/capture` for plugin clients — Chrome/Codex/Claude).
+tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
+`devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
+tools + write-with-confirmation shipped; streaming and sub-agent handoffs
+deferred).
