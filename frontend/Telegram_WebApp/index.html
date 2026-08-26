@@ -1107,8 +1107,8 @@ function activateView(view) {
   document.getElementById("searchFab").classList.toggle("active", view === "search");
   document.getElementById("chatFab").classList.toggle("hidden", view === "search");
   document.getElementById("searchFab").classList.toggle("hidden", view === "chat");
-  // The folder filter only applies to the Notes feed.
-  document.getElementById("filterBtn").classList.toggle("hidden", view !== "notes");
+  // The folder filter applies to the Notes feed and the Map (links) graph.
+  document.getElementById("filterBtn").classList.toggle("hidden", view !== "notes" && view !== "map");
 
   if (isInput) {
     const input = document.getElementById("barInput");
@@ -1221,12 +1221,19 @@ function toggleFilterNode(dkeys, checked) {
   if (filterSel.size >= FILTER_KEYS.length) filterSel = null;   // everything = no filter
   persistFilter();
   renderFilterTree();
-  renderNotesFeed();
+  refreshFilteredViews();
   updateFilterBtn();
 }
 
 function updateFilterBtn() {
   document.getElementById("filterBtn").classList.toggle("active", !!filterSel);
+}
+
+// Re-apply the filter to whichever note view is showing: always the feed, and
+// the Map graph too when it's the active tab (rebuilds only if the filter moved).
+function refreshFilteredViews() {
+  renderNotesFeed();
+  if (!document.getElementById("map").classList.contains("hidden")) ensureGraph();
 }
 
 // The selection persists (across tab switches and app reopens) so the chosen
@@ -1255,10 +1262,10 @@ function openFilter() {
 document.getElementById("filterBtn").addEventListener("click", openFilter);
 document.getElementById("filterDone").addEventListener("click", hideActionSheets);
 document.getElementById("filterAll").addEventListener("click", () => {
-  filterSel = null; persistFilter(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+  filterSel = null; persistFilter(); renderFilterTree(); refreshFilteredViews(); updateFilterBtn();
 });
 document.getElementById("filterNone").addEventListener("click", () => {
-  filterSel = new Set(); persistFilter(); renderFilterTree(); renderNotesFeed(); updateFilterBtn();
+  filterSel = new Set(); persistFilter(); renderFilterTree(); refreshFilteredViews(); updateFilterBtn();
 });
 
 /* ------- Search (client-side over loaded notes) ------- */
