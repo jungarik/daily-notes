@@ -12,7 +12,7 @@ import config
 from services import semantic
 from services import atomize
 from services import polish as polish_svc
-import storage
+from stores import file_store
 from services import enrichment
 import i18n
 from services import user_service
@@ -58,7 +58,7 @@ def capture_note(
     """
     audio_key = None
     if audio_bytes is not None:
-        audio_key = storage.upload_audio(audio_bytes, content_type=mime or "audio/ogg")
+        audio_key = file_store.upload_audio(audio_bytes, content_type=mime or "audio/ogg")
 
     chunks = semantic.build_chunks(text)
     note_id = note_store.save_note(
@@ -83,7 +83,7 @@ def _attach_images(note_id: int, images: list[dict]) -> int:
         data = img.get("bytes")
         if not data:
             continue
-        key = storage.upload_attachment(
+        key = file_store.upload_attachment(
             data, kind="image",
             content_type=img.get("mime") or "application/octet-stream",
             ext=img.get("ext") or "bin",
@@ -162,7 +162,7 @@ def delete_bare_note(note_id: int) -> bool:
     deleted = note_store.delete_if_bare(note_id)
     if deleted:
         for key in keys:
-            storage.delete_object(key)
+            file_store.delete_object(key)
     logger.info(
         "Delete note %s: %s (%d storage object(s) purged)", note_id,
         "deleted" if deleted else "blocked (has metadata, links, or an active reminder)",

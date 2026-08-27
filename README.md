@@ -41,7 +41,7 @@ Client adapters live under `frontend/` (the Telegram bot in
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
-| `storage.py`      | upload voice audio to S3-compatible object storage         |
+| `stores/file_store.py` | upload voice audio to S3-compatible object storage         |
 | `i18n.py`, `locales.json` | localization                                       |
 | `migrate.py`, `migrations/` | schema migrations (run by the API on startup)    |
 | **`services/`**   | domain logic (below)                                       |

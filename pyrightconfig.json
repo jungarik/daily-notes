@@ -8,5 +8,5 @@
   "reportAttributeAccessIssue": "none",
   "reportCallIssue": "none",
   "reportArgumentType": "none",
-  "reportOptionalSubscript": "none",
+  "reportOptionalSubscript": "none"
 }

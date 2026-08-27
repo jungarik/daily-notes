@@ -14,7 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Header, HTTPException, Response
 
 import config
-import storage
+from stores import file_store
 from api import media_token
 from api.telegram_auth import validate_init_data
 from services import user_service
@@ -83,7 +83,7 @@ def attachment(attachment_id: int, t: str = "") -> Response:
     a = attachment_store.get(attachment_id)
     if a is None:
         raise HTTPException(status_code=404, detail="attachment not found")
-    obj = storage.fetch_object(a["storage_key"])
+    obj = file_store.fetch_object(a["storage_key"])
     if obj is None:
         raise HTTPException(status_code=404, detail="attachment unavailable")
     data, content_type = obj
