@@ -8,6 +8,6 @@ Public entry points (used by the API layer):
 - `confirm(user_id, thread_id, approve, ctx)` — resume a paused write.
 """
 
-from services.agent.service import start_turn, confirm
+from agents.chat.service import start_turn, confirm
 
 __all__ = ["start_turn", "confirm"]

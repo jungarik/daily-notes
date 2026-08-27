@@ -20,7 +20,7 @@ from api.telegram_auth import validate_init_data
 from services import user_service
 from services import note_service
 from services import reminders
-from services import agent
+from agents import chat
 from stores import attachment_store
 from api.schemas import (
     WebAppNote, WebAppNoteDetail, WebAppGraph,
@@ -108,7 +108,7 @@ def chat(req: ChatRequest, x_telegram_init_data: str | None = Header(default=Non
     citations) or a write awaiting confirmation."""
     user_id = _auth(x_telegram_init_data)
     tz, locale = user_service.settings(user_id)
-    result = agent.start_turn(user_id, req.message, req.thread_id, datetime.now(tz), tz, locale)
+    result = chat.start_turn(user_id, req.message, req.thread_id, datetime.now(tz), tz, locale)
     logger.info("chat turn user=%s thread=%s -> %s", user_id, result["thread_id"], result["status"])
     return ChatResponse(**result)
 
@@ -119,7 +119,7 @@ def chat_confirm(req: ChatConfirmRequest,
     """Approve or decline the write the agent paused on, then continue the turn."""
     user_id = _auth(x_telegram_init_data)
     tz, locale = user_service.settings(user_id)
-    result = agent.confirm(user_id, req.thread_id, req.approve, datetime.now(tz), tz, locale)
+    result = chat.confirm(user_id, req.thread_id, req.approve, datetime.now(tz), tz, locale)
     logger.info("chat confirm user=%s thread=%s approve=%s -> %s",
                 user_id, req.thread_id, req.approve, result["status"])
     return ChatResponse(**result)

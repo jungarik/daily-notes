@@ -16,7 +16,7 @@ import logging
 
 import config
 import openai_client
-from services.agent.tools import TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
+from agents.chat.tools import TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
 
 logger = logging.getLogger(__name__)
 

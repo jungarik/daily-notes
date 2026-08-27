@@ -68,8 +68,10 @@ Consequences (follow these):
 
 ## Layout (current)
 
-Packages: **`services/`** (domain) and **`stores/`** (persistence); infra stays
-at the repo root (`config`, `db`, `openai_client`, `storage`, `i18n`, `migrate`).
+Packages: **`services/`** (domain) and **`stores/`** (persistence); **`agents/`**
+holds client-agnostic agent packages (currently `agents/chat` — the agentic chat
+tab); infra stays at the repo root (`config`, `db`, `openai_client`, `storage`,
+`i18n`, `migrate`).
 
 `frontend/Telegram_Bot/bot.py` (thin Telegram adapter) →
 `frontend/Telegram_Bot/api_client.py` → **`api/`** (FastAPI
@@ -161,18 +163,27 @@ the focus/ego state.
 
 ## Agentic chat
 
-The chat tab is an **agent** (client-agnostic, in `services/agent/`) that plans,
+The chat tab is an **agent** (client-agnostic, in `agents/chat/`) that plans,
 calls tools over the user's own data, and answers with citations — see
-`devdoc/agentic-chat.md`. A bounded single-tool-call ReAct loop (`agent/loop.py`,
-`AGENT_MAX_STEPS`) drives a **tool registry** (`agent/tools.py`) where each tool
-wraps an existing service: read tools (`search_notes` → `search_service.answer`,
-`get_note`, `neighbors`, `list_reminders`, `list_paths`) and write tools
-(`create_reminder`, `set_note_path`) that require confirmation. Conversation state
-lives in `chat_threads` (`stores/chat_store.py`, migration `0019`) as the running
-provider message list plus a `pending` paused write. A write pauses the loop and
-returns `{status:"confirm", action}`; `POST /webapp/chat/confirm {approve}`
-resumes — executing or declining the write, then continuing to the answer.
-Extend by adding a tool (or, later, a sub-agent) — never by editing the loop.
+`devdoc/agentic-chat.md`. A bounded single-tool-call ReAct loop (`agents/chat/loop.py`,
+`AGENT_MAX_STEPS`) drives a **tool registry** (`agents/chat/tools.py`) where each tool
+wraps an existing service: read tools (`search_notes`, `get_note`, `neighbors`,
+`list_reminders`, `list_paths`) and write tools (`create_reminder`,
+`set_note_path`) that require confirmation. Conversation state lives in
+`chat_threads` (`stores/chat_store.py`, migration `0019`) as the running provider
+message list plus a `pending` paused write. A write pauses the loop and returns
+`{status:"confirm", action}`; `POST /webapp/chat/confirm {approve}` resumes —
+executing or declining the write, then continuing to the answer.
+
+**Citations.** Answers are grounded in the notes they drew on: `search_notes`
+calls `search_service.answer_with_sources` — which retrieves once and returns the
+answer text *plus* the source note ids (`semantic.answer` was split into
+`search` + `answer_from_hits` so retrieval isn't run twice) — and the tool cites
+the distinct source notes (with a title, or a text snippet for un-enriched notes)
+via `Ctx.cite`. `get_note` cites the note it opened. The API returns these as
+`citations:[{note_id,title}]`; the chat UI renders them as chips that open the
+note card. Extend by adding a tool (or, later, a sub-agent) — never by editing
+the loop.
 
 ## Design docs
 

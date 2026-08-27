@@ -11,18 +11,18 @@ extensible by *adding a tool or a sub-agent*, never by editing the loop.
 
 ## Where it lives (layering)
 
-Client-agnostic domain code in **`services/agent/`**. Clients reach it through the
+Client-agnostic domain code in **`agents/chat/`**. Clients reach it through the
 API only:
 
 - Web app → `POST /webapp/chat` and `POST /webapp/chat/confirm` (initData auth).
-- Bot (future) → an `/internal/chat` endpoint over the same `services/agent`.
+- Bot (future) → an `/internal/chat` endpoint over the same `agents/chat`.
 
 Everything keys on the internal `user_id`; tools are per-user scoped and
 permission-checked. No client touches the DB or the LLM directly.
 
 ## Building blocks (planning · tool use · state · memory · handoffs)
 
-### Loop (planning) — `services/agent/loop.py`
+### Loop (planning) — `agents/chat/loop.py`
 A bounded ReAct loop: the model proposes **one** tool call (we set
 `parallel_tool_calls=False` so each step is a single call, which keeps the
 confirmation protocol simple) → we execute it → feed the result back → repeat
@@ -31,7 +31,7 @@ per-call timeout, and the model/token budget from config. The planner is a plain
 tool-calling loop today ("agentic RAG"); it's isolated so it can be upgraded to
 explicit plan-then-execute later without touching tools or transport.
 
-### Tools (tool use) — `services/agent/tools.py`
+### Tools (tool use) — `agents/chat/tools.py`
 Each tool is `{name, description, JSON schema, handler(ctx, args)}` and **wraps an
 existing service** (no duplicated logic). `ctx` carries `user_id`, `now`, `tz`,
 `locale`. A single `TOOL_SPECS` (OpenAI function schemas) + `execute_tool()`

@@ -7,8 +7,8 @@ API layer passes the caller's clock/locale; no client touches the DB or the LLM.
 
 import logging
 
-from services.agent.tools import Ctx
-from services.agent.loop import run_loop, resume_write
+from agents.chat.tools import Ctx
+from agents.chat.loop import run_loop, resume_write
 from stores import chat_store
 
 logger = logging.getLogger(__name__)
