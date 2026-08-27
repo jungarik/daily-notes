@@ -59,7 +59,8 @@ def _detect_reminder_info(note_id: int, user_id: int, text: str) -> ReminderInfo
 @router.post("", response_model=CaptureResponse)
 def capture(req: CaptureRequest) -> CaptureResponse:
     """Capture a text note (chunk + embed + persist) and, if it's time-bearing,
-    create its reminder — the fast capture path, in one round trip."""
+    create its reminder — the fast capture path, in one round trip. Enrichment is
+    deferred (the client's 🧠 Enrich button)."""
     note_id = note_service.capture_note(req.user_id, req.text)
     reminder = _detect_reminder_info(note_id, req.user_id, req.text)
     return CaptureResponse(note_id=note_id, text=req.text, reminder=reminder)

@@ -33,6 +33,12 @@ def _localized_roots(locale: str) -> tuple[dict[str, str], str]:
     return roots, default
 
 
+def localized_roots(user_id: int) -> tuple[dict[str, str], str]:
+    """Public accessor: the root folders + default folder in the user's language
+    (for the enrichment agent, which composes its own prompt)."""
+    return _localized_roots(user_service.language(user_id))
+
+
 def _all_root_names() -> set[str]:
     """Every root-folder display name across all supported locales — used to
     validate a path regardless of the language it was written in."""

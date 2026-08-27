@@ -69,9 +69,10 @@ Consequences (follow these):
 ## Layout (current)
 
 Packages: **`services/`** (domain) and **`stores/`** (persistence); **`agents/`**
-holds client-agnostic agent packages (currently `agents/chat` — the agentic chat
-tab); infra stays at the repo root (`config`, `db`, `openai_client`, `i18n`,
-`migrate`).
+holds client-agnostic agent packages (`agents/chat` — the agentic chat tab;
+`agents/enrich` — capture-time note enrichment), each with the same
+tools/loop/service shape; infra stays at the repo root (`config`, `db`,
+`openai_client`, `i18n`, `migrate`).
 
 `frontend/Telegram_Bot/bot.py` (thin Telegram adapter) →
 `frontend/Telegram_Bot/api_client.py` → **`api/`** (FastAPI
@@ -99,7 +100,11 @@ global `add_error_handler`) and calls the API for everything else — it imports
 no `services`/`stores`/`db`. It captures text (`/internal/notes`), voice
 (`/internal/notes/voice`), and photos (`/internal/notes/media`): a single photo
 saves immediately; an album (several updates sharing a `media_group_id`) is
-buffered with a short debounce and saved as one note with all images. The API
+buffered with a short debounce and saved as one note with all images. Bot capture
+stays **deferred** — the note saves fast and the user enriches on demand with the
+🧠 Enrich button (one-shot `services/enrichment`). The capture-time enrichment
+agent (`agents/enrich`) is reserved for the **web app** (a future web-app capture
+path); it is not wired into the bot's `/internal/notes*` endpoints. The API
 routers are thin: they validate at the edge (`api/schemas.py`) and compose
 `services/` calls; only the API touches the database.
 
@@ -195,4 +200,5 @@ remove it. Current specs: `devdoc/plugin-capture-tokens.md` (personal access
 tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
 `devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
 tools + write-with-confirmation shipped; streaming and sub-agent handoffs
-deferred).
+deferred); `devdoc/agentic-enrich.md` (the capture-time enrichment agent —
+shipped, with the one-shot enricher as fallback).

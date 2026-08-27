@@ -77,6 +77,12 @@ ENRICH_SIMILAR_MAX_DISTANCE = float(os.environ.get("ENRICH_SIMILAR_MAX_DISTANCE"
 AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 # Max tool-call iterations per user turn (a runaway-loop / cost watchdog).
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
+
+# --- Enrichment agent (runs at capture time) ---
+# Model + step budget for the tool-using enrichment agent. Defaults to the same
+# model as the one-shot enricher.
+ENRICH_AGENT_MODEL = os.environ.get("ENRICH_AGENT_MODEL", ENRICH_LLM_MODEL)
+ENRICH_AGENT_MAX_STEPS = int(os.environ.get("ENRICH_AGENT_MAX_STEPS", "4"))
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.
 REMINDER_FEW_COUNT = int(os.environ.get("REMINDER_FEW_COUNT", "5"))
