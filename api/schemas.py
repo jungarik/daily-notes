@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
-    user_id: int
     query: str = Field(min_length=1, max_length=1000)
 
 
@@ -37,10 +36,6 @@ class SetPathRequest(BaseModel):
     path: str = Field(min_length=1, max_length=200)
 
 
-class EnrichRequest(BaseModel):
-    user_id: int
-
-
 class NoteMeta(BaseModel):
     type: str | None = None
     title: str | None = None
@@ -54,7 +49,6 @@ class ReminderActionResponse(BaseModel):
 
 
 class SnoozeRequest(BaseModel):
-    user_id: int
     mode: str  # "tomorrow" or a whole number of minutes, e.g. "10"
 
 
@@ -76,7 +70,6 @@ class UserSettingsResponse(BaseModel):
 
 
 class SetTimezoneRequest(BaseModel):
-    user_id: int
     timezone: str = Field(min_length=1, max_length=100)
 
 
@@ -85,7 +78,6 @@ class SetTimezoneResponse(BaseModel):
 
 
 class SetLanguageRequest(BaseModel):
-    user_id: int
     language: str = Field(min_length=1, max_length=20)
 
 
@@ -101,7 +93,6 @@ class ReminderInfo(BaseModel):
 
 
 class CaptureRequest(BaseModel):
-    user_id: int
     text: str = Field(min_length=1, max_length=20000)
 
 

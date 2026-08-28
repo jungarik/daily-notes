@@ -4,7 +4,7 @@ Status: **agent built; not yet wired to a client.** The tool-using enrichment
 agent (with the one-shot enricher as fallback) is complete and reserved for the
 **web app's** future capture path. The Telegram bot deliberately keeps its
 previous behaviour — fast capture + on-demand 🧠 Enrich (one-shot) — so its
-`/internal/notes*` endpoints do **not** call this agent.
+`/api/notes*` endpoints do **not** call this agent.
 
 ## Goal
 
@@ -52,7 +52,7 @@ there is always a result. Never raises — a note is never lost to enrichment.
 When the web app gains a capture path, that endpoint should call
 `agents.enrich.enrich(user_id, note_id, text)` right after `note_service.capture_note`,
 guarded so enrichment failure never fails the save, and surface the returned
-metadata to the Mini App. The bot's `/internal/notes*` endpoints are intentionally
+metadata to the Mini App. The bot's `/api/notes*` endpoints are intentionally
 left alone (fast capture + deferred one-shot Enrich button), so immediate
 enrichment applies only to the web app. Enrichment is text-only (no media
 captions).

@@ -14,8 +14,8 @@ extensible by *adding a tool or a sub-agent*, never by editing the loop.
 Client-agnostic domain code in **`agents/chat/`**. Clients reach it through the
 API only:
 
-- Web app → `POST /webapp/chat` and `POST /webapp/chat/confirm` (initData auth).
-- Bot (future) → an `/internal/chat` endpoint over the same `agents/chat`.
+- Web app → `POST /api/chat` and `POST /api/chat/confirm` (initData auth).
+- Bot (future) → the same `/api/chat` endpoint over `agents/chat`.
 
 Everything keys on the internal `user_id`; tools are per-user scoped and
 permission-checked. No client touches the DB or the LLM directly.
@@ -78,7 +78,7 @@ in.
    `pending = {tool_call_id, name, args, summary}` and returns
    `{status: "confirm", action: {name, args, summary}, thread_id}`.
 2. The client shows a Confirm / Cancel prompt.
-3. `POST /webapp/chat/confirm {thread_id, approve}` resumes: on approve we execute
+3. `POST /api/chat/confirm {thread_id, approve}` resumes: on approve we execute
    the write and append its result as the pending `tool_call`'s tool message; on
    decline we append a "user declined" tool message. Either way the loop continues
    from there and returns the final answer.
@@ -87,7 +87,7 @@ Only one write may be pending at a time (guaranteed by `parallel_tool_calls=Fals
 
 ## Transport & response shape
 
-`POST /webapp/chat {message, thread_id?}` →
+`POST /api/chat {message, thread_id?}` →
 `{thread_id, status: "answer"|"confirm", reply?, action?, citations?}`.
 `citations` are `[{note_id, title}]` the agent referenced, so the client renders
 chips that open the existing note card. Streaming (SSE of tokens/steps) is a later

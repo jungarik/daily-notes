@@ -23,10 +23,10 @@ from fastapi.staticfiles import StaticFiles
 
 import config
 from migrate import run_migrations
-from api.routers import system, internal, users, notes, reminders, search, webapp
+from api.routers import system, internal, users, notes, reminders, search, chat
 
 # The Telegram Mini App (static single-page) lives in the repo; the API serves it
-# so it shares the API's public domain (same origin → no CORS for /webapp/*).
+# so it shares the API's public domain (same origin → no CORS for /api/*).
 WEBAPP_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "Telegram_WebApp"
 
 logging.basicConfig(
@@ -86,9 +86,9 @@ def create_app() -> FastAPI:
     app.include_router(notes.router)
     app.include_router(reminders.router)
     app.include_router(search.router)
-    app.include_router(webapp.router)
+    app.include_router(chat.router)
 
-    # Serve the Mini App at /app/ (index.html). Same origin as /webapp/notes.
+    # Serve the Mini App at /app/ (index.html). Same origin as /api/notes.
     if WEBAPP_DIR.is_dir():
         app.mount("/app", NoCacheStaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp_static")
         logger.info("Serving web app from %s at /app/", WEBAPP_DIR)

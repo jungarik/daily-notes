@@ -21,8 +21,12 @@ service on the project's private network; clients call it over
 `http://<service>.railway.internal:<port>`. The bot is **fully cut over**: it
 calls the API for every domain operation (identity, capture, enrichment, links,
 search, reminders + the dispatcher) through `api_client.py` and imports no
-`services`/`stores` and no `db`. The API's `/internal` namespace exposes the
-whole surface the bot needs.
+`services`/`stores` and no `db`. There is **one `/api` surface** shared by both
+clients: each user-scoped endpoint accepts either the browser's Telegram
+`initData` (identity derived server-side) or the bot's internal token +
+`X-User-Id` header (`api/deps.current_user`). Privileged, cross-user plumbing
+(identity `resolve`, the reminder dispatcher) stays token-only
+(`require_internal_token`).
 
 Consequences (follow these):
 
@@ -37,11 +41,12 @@ Consequences (follow these):
   service is the *only* backend gateway for a client: the bot (and web/iOS) call
   the API, never `db`/stores directly. Because the domain keys on an internal
   `user_id`, a thin client first exchanges its external identity for a `user_id`
-  (`POST /internal/users/resolve` with a Telegram `chat_id`), caches it, then
-  passes `user_id` to every other endpoint. `chat_id` is the *only*
-  Telegram-specific field the API knows about; everything else is client-agnostic.
-  The bot caches the `chat_id → user_id` mapping to avoid a resolve round trip on
-  every update.
+  (`POST /api/users/resolve` with a Telegram `chat_id`), caches it, then sends it
+  in the `X-User-Id` header on every other call. A browser never sends `user_id` —
+  it's derived from `initData`, so a public caller can't impersonate another user.
+  `chat_id` is the *only* Telegram-specific field the API knows about; everything
+  else is client-agnostic. The bot caches the `chat_id → user_id` mapping to avoid
+  a resolve round trip on every update.
 - `chat_id` and other Telegram specifics stay at the adapter edge; internally use
   `user_id` (already done).
 
@@ -84,12 +89,12 @@ RAG answer, `user_service`: identity + settings resolution, `links`: candidates
 `reminder_store`, `link_store`, `user_store`, `attachment_store`, `file_store`
 — S3-compatible object storage) → `db`/`config`.
 Media files (images; up to `ATTACHMENT_MAX_COUNT` per note) are captured via the
-multipart `POST /internal/notes/media` endpoint, uploaded to the same S3 bucket
+multipart `POST /api/notes/media` endpoint, uploaded to the same S3 bucket
 as voice audio (`file_store.upload_attachment`, keyed under `attachments/`) and
 recorded one-to-many in `note_attachments` (`kind` leaves room for video/pdf/doc
 and folding voice audio in later). Enrichment/search still use text only; the
 web app renders a note's attachments as a swipe carousel, loading each image
-through the API proxy `GET /webapp/attachments/{id}?t=<token>` (a short-lived
+through the API proxy `GET /api/notes/attachments/{id}?t=<token>` (a short-lived
 HMAC token from `api/media_token.py` is the auth, since an `<img>` can't send the
 initData header) which streams the bytes via `file_store.fetch_object` — the API
 reaches the bucket even when the browser can't (private endpoint), so this works
@@ -97,14 +102,14 @@ regardless of bucket public reachability. Imports are
 absolute: `from services import X`, `from stores import Y`. `bot.py` keeps only
 Telegram specifics (keyboards, formatting, command wiring, reminder *delivery*,
 global `add_error_handler`) and calls the API for everything else — it imports
-no `services`/`stores`/`db`. It captures text (`/internal/notes`), voice
-(`/internal/notes/voice`), and photos (`/internal/notes/media`): a single photo
+no `services`/`stores`/`db`. It captures text (`/api/notes`), voice
+(`/api/notes/voice`), and photos (`/api/notes/media`): a single photo
 saves immediately; an album (several updates sharing a `media_group_id`) is
 buffered with a short debounce and saved as one note with all images. Bot capture
 stays **deferred** — the note saves fast and the user enriches on demand with the
 🧠 Enrich button (one-shot `services/enrichment`). The capture-time enrichment
 agent (`agents/enrich`) is reserved for the **web app** (a future web-app capture
-path); it is not wired into the bot's `/internal/notes*` endpoints. The API
+path); it is not wired into the bot's `/api/notes*` endpoints. The API
 routers are thin: they validate at the edge (`api/schemas.py`) and compose
 `services/` calls; only the API touches the database.
 
@@ -121,16 +126,16 @@ it serves both private IPv6 and the public IPv4 edge) while the bot uses
 App served by the API itself at `/app` (via `NoCacheStaticFiles`, so it's
 same-origin with the API — relative URLs like the image proxy just work). It is a
 separate client from the bot and authenticates with Telegram's signed `initData`
-(`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py`) rather than
-the `/internal` token; its endpoints live under `/webapp/*` in
-`api/routers/webapp.py` and resolve the Telegram user to an internal `user_id`
-before returning only that user's data: `GET /webapp/feed` (full note cards,
-newest first), `GET /webapp/notes` + `/notes/{id}` (browser tree + preview),
-`POST /webapp/notes/{id}/path` and `/webapp/folder/move` (rename a note's or a
-whole folder's path — root folders can't be moved), `GET /webapp/graph`
-(connections map), `GET /webapp/reminders/count` (active + future reminders, for
-the header stat), and `GET /webapp/attachments/{id}?t=<token>` (the signed image
-proxy). `POST /webapp/chat` + `/webapp/chat/confirm` back the **agentic chat tab**
+(`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py` via
+`current_user`); it calls the same `/api` endpoints as the bot, which resolve the
+Telegram user to an internal `user_id` and return only that user's data:
+`GET /api/notes/feed` (full note cards,
+newest first), `GET /api/notes` + `/notes/{id}` (browser tree + preview),
+`POST /api/notes/{id}/path` and `/api/notes/folder/move` (rename a note's or a
+whole folder's path — root folders can't be moved), `GET /api/notes/graph`
+(connections map), `GET /api/reminders/count` (active + future reminders, for
+the header stat), and `GET /api/notes/attachments/{id}?t=<token>` (the signed image
+proxy). `POST /api/chat` + `/api/chat/confirm` back the **agentic chat tab**
 (see below).
 
 UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
@@ -142,7 +147,7 @@ widens toward the borders; the active circle's glyph becomes a ✕ and doubles a
 the close/back control (the opposite circle hides). Views: **Notes** (a feed of
 note cards), **Browser** (folder tree), **Map** (canvas force-directed graph),
 **Search** (client-side filter over loaded notes), **Chat** (conversation view
-over the `/webapp/chat` seam). One card template (`buildPost`) is shared by the
+over the `/api/chat` seam). One card template (`buildPost`) is shared by the
 feed and the bottom-sheet preview (opened from the browser/search/graph): image
 carousel on top, then title (date at the end of the title line), path, tags, full
 text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
@@ -178,7 +183,7 @@ wraps an existing service: read tools (`search_notes`, `get_note`, `neighbors`,
 `set_note_path`) that require confirmation. Conversation state lives in
 `chat_threads` (`stores/chat_store.py`, migration `0019`) as the running provider
 message list plus a `pending` paused write. A write pauses the loop and returns
-`{status:"confirm", action}`; `POST /webapp/chat/confirm {approve}` resumes —
+`{status:"confirm", action}`; `POST /api/chat/confirm {approve}` resumes —
 executing or declining the write, then continuing to the answer.
 
 **Citations.** Answers are grounded in the notes they drew on: `search_notes`

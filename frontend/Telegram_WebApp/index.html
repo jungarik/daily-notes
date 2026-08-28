@@ -451,7 +451,7 @@ if (tg) {
 /* ------- Data source -------
    Swap point for the real backend. When the API is publicly reachable, set
    window.__API_BASE__ (e.g. the deployed API URL) and this will call
-   GET {API_BASE}/webapp/notes with the Telegram initData for auth, expecting
+   GET {API_BASE}/api/notes with the Telegram initData for auth, expecting
    [{ id, title, path }]. Until then it falls back to SAMPLE_NOTES so the UI
    renders on its own. */
 // Served from the API's own domain, so same-origin works; the explicit https
@@ -482,7 +482,7 @@ async function fetchNotes() {
   const base = window.__API_BASE__;
   if (!base) return SAMPLE_NOTES;
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/notes", {
+    const res = await fetch(base.replace(/\/$/, "") + "/api/notes", {
       headers: { "X-Telegram-Init-Data": INIT_DATA },
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -507,7 +507,7 @@ async function fetchFeed() {
   const base = window.__API_BASE__;
   if (!base) return DEMO_FEED();
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/feed", {
+    const res = await fetch(base.replace(/\/$/, "") + "/api/notes/feed", {
       headers: { "X-Telegram-Init-Data": INIT_DATA },
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -641,7 +641,7 @@ async function fetchNote(id) {
   const base = window.__API_BASE__;
   if (!base) return null;
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/notes/" + encodeURIComponent(id), {
+    const res = await fetch(base.replace(/\/$/, "") + "/api/notes/" + encodeURIComponent(id), {
       headers: { "X-Telegram-Init-Data": INIT_DATA },
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -692,7 +692,7 @@ function tagsText(detail) {
   return (detail.tags && detail.tags.length) ? "🏷 " + detail.tags.join(", ") : "";
 }
 
-// Attachment URLs come back relative (/webapp/attachments/…); resolve them
+// Attachment URLs come back relative (/api/notes/attachments/…); resolve them
 // against the API origin so they load even when it differs from the page.
 function mediaUrl(u) {
   if (!u) return u;
@@ -863,8 +863,8 @@ async function savePath() {
   const err = document.getElementById("pathError");
   if (!val) { err.textContent = "Enter a path."; return; }
   const res = menuTarget.type === "note"
-    ? await apiPost("/webapp/notes/" + encodeURIComponent(menuTarget.id) + "/path", { path: val })
-    : await apiPost("/webapp/folder/move", { old_path: menuTarget.path, new_path: val });
+    ? await apiPost("/api/notes/" + encodeURIComponent(menuTarget.id) + "/path", { path: val })
+    : await apiPost("/api/notes/folder/move", { old_path: menuTarget.path, new_path: val });
   if (!res || !res.ok) {
     err.textContent = (res && res.status === 422)
       ? "Path must start with a root folder." : "Couldn't save. Try again.";
@@ -921,7 +921,7 @@ async function fetchGraph() {
   const base = window.__API_BASE__;
   if (!base) return DEMO_GRAPH();
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/graph", { headers: { "X-Telegram-Init-Data": INIT_DATA } });
+    const res = await fetch(base.replace(/\/$/, "") + "/api/notes/graph", { headers: { "X-Telegram-Init-Data": INIT_DATA } });
     if (!res.ok) throw new Error("HTTP " + res.status);
     return await res.json();
   } catch (e) { console.warn("Graph API unavailable:", e); return DEMO_GRAPH(); }
@@ -1211,7 +1211,7 @@ window.addEventListener("resize", () => {
 });
 
 /* ------- Views + floating dock (Notes | Browser | Map · Chat / Search) ------- */
-let ALL_NOTES = [];   // newest-first, from /webapp/notes (browser tree + search)
+let ALL_NOTES = [];   // newest-first, from /api/notes (browser tree + search)
 let FEED = null;      // full note details for the post feed, lazy-loaded once
 let prevView = "notes";   // last non-input view we return to on close
 let barMode = null;       // 'search' | 'chat' while the pill shows its input
@@ -1517,7 +1517,7 @@ async function sendChat(text) {
   const thinking = { role: "bot", pending: true };
   CHAT.push(thinking);
   renderChat();
-  const data = await chatPost("/webapp/chat", { message: text, thread_id: chatThreadId });
+  const data = await chatPost("/api/chat", { message: text, thread_id: chatThreadId });
   CHAT.splice(CHAT.indexOf(thinking), 1);
   applyChatResult(data);
   chatBusy = false;
@@ -1528,7 +1528,7 @@ async function confirmChat(approve) {
   chatBusy = true;
   const thinking = { role: "bot", pending: true };
   CHAT.push(thinking); renderChat();
-  const data = await chatPost("/webapp/chat/confirm", { thread_id: chatThreadId, approve });
+  const data = await chatPost("/api/chat/confirm", { thread_id: chatThreadId, approve });
   CHAT.splice(CHAT.indexOf(thinking), 1);
   applyChatResult(data);
   chatBusy = false;
@@ -1562,7 +1562,7 @@ async function refreshReminderCount() {
   const base = window.__API_BASE__;
   if (!base) return;   // demo: leave at 0
   try {
-    const res = await fetch(base.replace(/\/$/, "") + "/webapp/reminders/count", {
+    const res = await fetch(base.replace(/\/$/, "") + "/api/reminders/count", {
       headers: { "X-Telegram-Init-Data": INIT_DATA },
     });
     if (!res.ok) throw new Error("HTTP " + res.status);

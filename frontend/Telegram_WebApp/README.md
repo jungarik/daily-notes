@@ -38,8 +38,8 @@ Leave it unset and the button simply stays off (the bot logs that it's disabled)
 
 ## Making it show real notes
 
-The backend endpoint now exists: **`GET /webapp/notes`** (public, in
-`api/routers/webapp.py`) returns the caller's notes as
+The backend endpoint now exists: **`GET /api/notes`** (public, in
+the `/api/notes*` routes) returns the caller's notes as
 `[{ "id": int, "title": str, "path": str|null }]` (title falls back to a text
 snippet for notes not yet enriched). It authenticates with Telegram **initData**
 — the app sends it in the `X-Telegram-Init-Data` header, and the API verifies the
@@ -51,7 +51,7 @@ To go live:
 
 1. **Give the API a public URL.** The API service has no public domain by default
    (private network only). Generate one (e.g. a Railway public domain) so the
-   browser can reach `/webapp/*`. `/internal/*` stays token-guarded and `/health`
+   browser can reach `/api/*`. `/api/* (token-guarded)` stays token-guarded and `/health`
    stays open, so exposing the app is safe.
 2. **Set `BOT_TOKEN` on the API service** (same token as the bot) — it's needed to
    verify initData. Optionally set `WEBAPP_INITDATA_MAX_AGE_SECONDS` (default
@@ -59,7 +59,7 @@ To go live:
 3. **Point the app at the API:** set `window.__API_BASE__` to the API's public
    base URL — inject a tiny `<script>window.__API_BASE__="https://your-api"</script>`
    before `index.html`'s main script at deploy time, or hardcode it. The app
-   already calls `{API_BASE}/webapp/notes` with the initData header and falls back
+   already calls `{API_BASE}/api/notes` with the initData header and falls back
    to sample data on any error.
 
 ## Roadmap

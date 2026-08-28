@@ -158,8 +158,8 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info = pending_new_path.pop(msg.reply_to_message.message_id, None)
     if not info:
         return
-    _, _, locale, _ = await load_ctx(update)
-    meta, err = await api.set_note_path(info["note_id"], msg.text.strip())
+    user_id, _, locale, _ = await load_ctx(update)
+    meta, err = await api.set_note_path(info["note_id"], msg.text.strip(), user_id)
     if err:
         await msg.reply_text(t(locale, "path_invalid", roots=", ".join(t(locale, k) for k in config.ROOT_FOLDERS)))
         return
@@ -372,8 +372,8 @@ async def on_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     an enriched or linked note is refused."""
     query = update.callback_query
     note_id = int(query.data.split(":")[1])
-    _, _, locale, _ = await load_ctx(update)
-    ok, deleted = await api.delete_note(note_id)
+    user_id, _, locale, _ = await load_ctx(update)
+    ok, deleted = await api.delete_note(note_id, user_id)
     if deleted:
         await query.answer()
         try:
@@ -391,9 +391,9 @@ async def on_polish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     invention), then show the result (chunks are re-embedded server-side)."""
     query = update.callback_query
     await query.answer()      # the LLM call isn't instant; dismiss the spinner
-    _, _, locale, _ = await load_ctx(update)
+    user_id, _, locale, _ = await load_ctx(update)
     note_id = int(query.data.split(":")[1])
-    text = await api.polish_note(note_id)
+    text = await api.polish_note(note_id, user_id)
     if not text:
         await query.message.reply_text(t(locale, "error_generic"))
         return
@@ -434,7 +434,7 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
             return
         path = paths[idx]
-        meta, _ = await api.set_note_path(note_id, path)
+        meta, _ = await api.set_note_path(note_id, path, user_id)
         await query.answer(t(locale, "path_set", path=path))
         if meta:
             base = (query.message.text or "").rsplit("\n\n", 1)[0]
@@ -533,7 +533,7 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "tog":
         await query.answer()
         from_id, cand_id = int(parts[2]), int(parts[3])
-        linked = await api.toggle_link(from_id, cand_id)
+        linked = await api.toggle_link(from_id, cand_id, user_id)
         await query.edit_message_reply_markup(
             _toggle_keyboard(query.message.reply_markup, query.data, linked)
         )

@@ -5,7 +5,7 @@ the Telegram bot uses (`note_service`, `search_service`, `reminders`, `links`,
 …). It lives in this one repo (monorepo) so it shares that code and one build;
 Railway runs it as its **own service** with a different start command.
 
-It is the bot's **only** backend gateway: the bot calls `/internal/*` for every
+It is the bot's **only** backend gateway: the bot calls `/api/*` for every
 domain operation and touches neither `services`/`stores` nor the database.
 
 ## Layout
@@ -17,20 +17,20 @@ api/
   schemas.py         # pydantic request/response models (edge validation)
   routers/
     system.py        # GET /  ·  GET /health  ·  GET /health/db      (open)
-    internal.py      # GET /internal/ping                             (token-guarded)
-    users.py         # POST /internal/users/resolve · GET /internal/users/settings
-                     #   · POST /internal/users/timezone · POST /internal/users/language
-    notes.py         # POST /internal/notes (capture) · POST /internal/notes/voice
-                     #   · POST /internal/notes/{id}/enrich · POST /internal/notes/{id}/path
-                     #   · GET  /internal/notes/paths · GET /internal/notes/{id}/link-candidates
-                     #   · POST /internal/notes/{from}/links/{to}/toggle
-    reminders.py     # GET /internal/reminders · GET /internal/reminders/count
-                     #   · POST /internal/reminders/claim-due
-                     #   · POST /internal/reminders/{id}/{cancel,done,snooze,retry}
-    search.py        # POST /internal/search
+    internal.py      # GET /api/ping                             (token-guarded)
+    users.py         # POST /api/users/resolve · GET /api/users/settings
+                     #   · POST /api/users/timezone · POST /api/users/language
+    notes.py         # POST /api/notes (capture) · POST /api/notes/voice
+                     #   · POST /api/notes/{id}/enrich · POST /api/notes/{id}/path
+                     #   · GET  /api/notes/paths · GET /api/notes/{id}/link-candidates
+                     #   · POST /api/notes/{from}/links/{to}/toggle
+    reminders.py     # GET /api/reminders · GET /api/reminders/count
+                     #   · POST /api/reminders/claim-due
+                     #   · POST /api/reminders/{id}/{cancel,done,snooze,retry}
+    search.py        # POST /api/search
 ```
 
-All `/internal/*` routes are token-guarded. The bot-side caller is
+All `/api/*` routes are token-guarded. The bot-side caller is
 `api_client.ApiClient` (async httpx); its method names mirror these endpoints.
 
 The API is the **single gateway** for a thin client: the client never touches the
@@ -41,26 +41,26 @@ calls the domain endpoints with it.
 Bot flow:
 
 ```
-chat_id ──POST /internal/users/resolve──▶ user_id      (cached per chat)
-user_id ──GET  /internal/users/settings──▶ tz / locale / active reminders
-user_id + text ──POST /internal/notes──▶ note_id (+ reminder if time-bearing)
-user_id + query ──POST /internal/search──▶ answer
+chat_id ──POST /api/users/resolve──▶ user_id      (cached per chat)
+user_id ──GET  /api/users/settings──▶ tz / locale / active reminders
+user_id + text ──POST /api/notes──▶ note_id (+ reminder if time-bearing)
+user_id + query ──POST /api/search──▶ answer
 ```
 
-- `POST /internal/users/resolve` — `{chat_id}` → `{user_id}` (creates on first
+- `POST /api/users/resolve` — `{chat_id}` → `{user_id}` (creates on first
   sight). `chat_id` is the only Telegram-specific field in the whole API; every
   other endpoint is client-agnostic.
-- `POST /internal/search` — `{user_id, query}` → `{answer}`; the agenda-aware RAG
+- `POST /api/search` — `{user_id, query}` → `{answer}`; the agenda-aware RAG
   call (`search_service.answer`). Per-user attributes (timezone, language) are
   resolved **server-side** from `user_id` (`user_service.settings`).
 
 The bot is fully cut over: `api_client.ApiClient` (async httpx, wired to
 `API_BASE_URL` / `API_INTERNAL_TOKEN`) is the bot's sole path to the backend, and
-its method names mirror the `/internal/*` endpoints. The `chat_id → user_id`
+its method names mirror the `/api/*` endpoints. The `chat_id → user_id`
 mapping is stable, so the bot caches it to avoid a resolve round-trip per update.
 
 Reminder delivery stays in the bot (it owns the Telegram transport): the
-dispatcher calls `POST /internal/reminders/claim-due` to atomically claim due
+dispatcher calls `POST /api/reminders/claim-due` to atomically claim due
 rows, sends each message, then calls `.../{id}/done` on success or
 `.../{id}/retry` to hand a failed send back for the next poll.
 
@@ -122,7 +122,7 @@ ordering stops mattering — only the API touches the database.
 
 - **No public domain.** The service is reachable only on the project's private
   network. That network is the primary access control.
-- **`API_INTERNAL_TOKEN`** is defence in depth: if set, `/internal/*` requires a
+- **`API_INTERNAL_TOKEN`** is defence in depth: if set, `/api/*` requires a
   matching `X-Internal-Token` header. `/health` stays open (no token) for manual
   checks and for the bot's `ApiClient.health()`.
 - **No Railway deploy healthcheck.** `railway.api.json` has no `healthcheckPath`;
