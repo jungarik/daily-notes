@@ -12,40 +12,26 @@ Railway:  uvicorn api.main:app --host :: --port $PORT
           (bind to `::` — Railway private networking is IPv6-only)
 """
 
-import pathlib
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 import config
 from migrate import run_migrations
 from api.routers import system, internal, users, notes, reminders, search, chat
 
-# The Telegram Mini App (static single-page) lives in the repo; the API serves it
-# so it shares the API's public domain (same origin → no CORS for /api/*).
-WEBAPP_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "Telegram_WebApp"
+# The Telegram Mini App (frontend/webapp, React) is deployed as its own static
+# host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
+# pure /api gateway and no longer serves any frontend itself.
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
-
-class NoCacheStaticFiles(StaticFiles):
-    """Serve the Mini App with `Cache-Control: no-cache` so clients (Telegram
-    webview / browsers) always revalidate against the server. StaticFiles still
-    sends ETag/Last-Modified, so unchanged files return a cheap 304 while a new
-    deploy is picked up immediately — no manual reload."""
-
-    async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
-        return response
 
 
 @asynccontextmanager
@@ -70,13 +56,14 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if config.API_DOCS_ENABLED else None,
     )
 
-    # Public Mini App endpoints are called cross-origin from the user's browser,
-    # so they need CORS. They authenticate per-request via signed initData, not
-    # cookies, so a wildcard origin is safe (no credentials).
+    # The Mini App is a separate static host that calls /api cross-origin, so
+    # CORS is required. Endpoints authenticate per-request via signed initData,
+    # not cookies, so a wildcard origin is safe (no credentials). In production,
+    # set WEBAPP_ALLOWED_ORIGINS to the Mini App's origin to be explicit.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.WEBAPP_ALLOWED_ORIGINS,
-        allow_methods=["GET", "OPTIONS"],
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -87,13 +74,6 @@ def create_app() -> FastAPI:
     app.include_router(reminders.router)
     app.include_router(search.router)
     app.include_router(chat.router)
-
-    # Serve the Mini App at /app/ (index.html). Same origin as /api/notes.
-    if WEBAPP_DIR.is_dir():
-        app.mount("/app", NoCacheStaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp_static")
-        logger.info("Serving web app from %s at /app/", WEBAPP_DIR)
-    else:
-        logger.warning("Web app directory not found: %s", WEBAPP_DIR)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):

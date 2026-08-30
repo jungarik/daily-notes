@@ -115,16 +115,30 @@ routers are thin: they validate at the edge (`api/schemas.py`) and compose
 
 The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`
-on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json` →
-`python -m api.run`, a dual-stack launcher — binds `::` with IPV6_V6ONLY=0 so
-it serves both private IPv6 and the public IPv4 edge) while the bot uses
-`railway.bot.json` → `python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
+on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json`)
+and its start command is `python -m api.run`, a dual-stack launcher — binds `::`
+with IPV6_V6ONLY=0 so it serves both private IPv6 and the public IPv4 edge. The
+API image is built from **`Dockerfile.api`** (single-stage Python — the API is a
+pure `/api` gateway and serves no frontend). The Mini App is a **separate static
+Railway service** built from **`Dockerfile.webapp`** (Vite build → a Caddy static
+server, `frontend/webapp/Caddyfile`, SPA fallback to `index.html`), configured by
+`railway.webapp.json`; it calls the API cross-origin (hence CORS +
+`WEBAPP_ALLOWED_ORIGINS` on the API). The bot uses `railway.bot.json` → Nixpacks →
+`python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
 
 ## Web app (Telegram Mini App)
 
-`frontend/Telegram_WebApp/index.html` is a single-file vanilla HTML/CSS/JS Mini
-App served by the API itself at `/app` (via `NoCacheStaticFiles`, so it's
-same-origin with the API — relative URLs like the image proxy just work). It is a
+`frontend/webapp/` is a **React + Vite** Mini App, deployed as its own static
+host (Caddy) that calls the API cross-origin. It sets `VITE_API_BASE` (the API's
+public origin, baked into the build) and builds with `base: "/"`. It is split by
+section — one component per UI section (`Header`, `Dock`, `Feed`, `Browser`,
+`MapView`, `Search`, `Chat`, `NoteSheet`, `ContextMenu`, `FolderFilter`) over a
+small `AppContext` store (`store/AppContext.jsx`), with `lib/` for API access
+(`api.js`), Telegram init (`telegram.js`) and formatting (`format.js`), and
+`graph/engine.js` holding the imperative canvas graph engine used by `MapView`.
+The shared note card lives in `components/NoteCard.jsx` (feed + preview sheet).
+(The former vanilla single-file app `frontend/Telegram_WebApp/` has been removed.)
+It is a
 separate client from the bot and authenticates with Telegram's signed `initData`
 (`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py` via
 `current_user`); it calls the same `/api` endpoints as the bot, which resolve the
