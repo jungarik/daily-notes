@@ -30,7 +30,7 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
-// Attachment URLs come back relative (/api/notes/attachments/…); resolve them
+// Attachment URLs come back relative (/api/notecard/attachments/…); resolve them
 // against the API origin.
 export function mediaUrl(u) {
   if (!u) return u;
@@ -39,8 +39,10 @@ export function mediaUrl(u) {
 }
 
 // --- domain helpers (each degrades to a sensible default) ---
+// Endpoints are being migrated to per-section surfaces (/api/<section>). Migrated
+// so far: feed → /api/feed (attachment proxy → /api/notecard).
 export const fetchNotes = () => apiGet("/api/notes").catch(() => []);
-export const fetchFeed = () => apiGet("/api/notes/feed").catch(() => []);
+export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notes/" + encodeURIComponent(id)).catch(() => null);
 export const fetchGraph = () => apiGet("/api/notes/graph").catch(() => ({ nodes: [], edges: [] }));
 export const fetchReminderCount = () => apiGet("/api/reminders/count").then((d) => d.count || 0).catch(() => 0);

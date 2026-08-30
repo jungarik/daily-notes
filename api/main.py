@@ -22,6 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 from migrate import run_migrations
 from api.routers import system, internal, users, notes, reminders, search, chat
+# Section verticals (each: endpoints.py → helper.py → store.py). Being migrated
+# off the shared services/stores routers above, one section at a time.
+from api.feed.endpoints import router as feed_router
+from api.notecard.endpoints import router as notecard_router
 
 # The Telegram Mini App (browser/webapp, React) is deployed as its own static
 # host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
@@ -74,6 +78,10 @@ def create_app() -> FastAPI:
     app.include_router(reminders.router)
     app.include_router(search.router)
     app.include_router(chat.router)
+
+    # Section verticals (new /api/<section> surfaces).
+    app.include_router(feed_router)
+    app.include_router(notecard_router)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):
