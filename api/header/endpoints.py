@@ -1,18 +1,12 @@
 """Header router — GET /api/header/stats. Notes / Links / Reminders counts."""
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from api.deps import current_user
 from api.header import helper
+from api.header.schemas import HeaderStats
 
 router = APIRouter(prefix="/api/header", tags=["header"])
-
-
-class HeaderStats(BaseModel):
-    notes: int = 0
-    links: int = 0
-    reminders: int = 0
 
 
 @router.get("/stats", response_model=HeaderStats)

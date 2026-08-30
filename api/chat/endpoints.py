@@ -3,43 +3,14 @@
 import logging
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 
 from api.deps import current_user
 from api.chat import helper
+from api.chat.schemas import ChatRequest, ChatConfirmRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
-
-
-class ChatCitation(BaseModel):
-    note_id: int
-    title: str
-
-
-class ChatAction(BaseModel):
-    name: str
-    args: dict = {}
-    summary: str
-
-
-class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
-    thread_id: int | None = None
-
-
-class ChatConfirmRequest(BaseModel):
-    thread_id: int
-    approve: bool
-
-
-class ChatResponse(BaseModel):
-    thread_id: int
-    status: str                       # "answer" | "confirm"
-    reply: str | None = None
-    action: ChatAction | None = None
-    citations: list[ChatCitation] = []
 
 
 @router.post("", response_model=ChatResponse)

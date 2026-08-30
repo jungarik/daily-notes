@@ -1,19 +1,12 @@
 """Search router — GET /api/search?q=<query>. Server-side note search."""
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 
 from api.deps import current_user
 from api.search import helper
+from api.search.schemas import SearchHit
 
 router = APIRouter(prefix="/api/search", tags=["search"])
-
-
-class SearchHit(BaseModel):
-    id: int
-    title: str
-    path: str | None = None
-    snippet: str = ""
 
 
 @router.get("", response_model=list[SearchHit])

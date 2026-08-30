@@ -1,34 +1,17 @@
 """Contextmenu router — POST /api/contextmenu/notes/{id}/path and /folder/move."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 
 from api.deps import current_user
 from api.contextmenu import helper
+from api.contextmenu.schemas import (
+    SetPathRequest,
+    NoteMeta,
+    MoveFolderRequest,
+    MoveFolderResponse,
+)
 
 router = APIRouter(prefix="/api/contextmenu", tags=["contextmenu"])
-
-
-class SetPathRequest(BaseModel):
-    path: str = Field(min_length=1, max_length=200)
-
-
-class NoteMeta(BaseModel):
-    type: str | None = None
-    title: str | None = None
-    path: str | None = None
-    tags: list[str] = []
-    priority: str | None = None
-
-
-class MoveFolderRequest(BaseModel):
-    old_path: str = Field(min_length=1, max_length=200)
-    new_path: str = Field(min_length=1, max_length=200)
-
-
-class MoveFolderResponse(BaseModel):
-    count: int
-    new_path: str
 
 
 @router.post("/notes/{note_id}/path", response_model=NoteMeta)
