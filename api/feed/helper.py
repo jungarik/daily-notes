@@ -6,7 +6,7 @@ media_token (core infra).
 """
 
 from api import media_token
-from api.feed import store
+from api.feed import db
 
 # The image proxy lives in the notecard section; an <img> can't send the auth
 # header, so the signed token in the URL is the auth. Path is relative (same
@@ -39,11 +39,11 @@ def _attachment_views(rows: list[dict]) -> list[dict]:
 def feed_for_user(user_id: int) -> list[dict]:
     """Full note cards for the feed (newest first). Links/backlinks and
     attachments are resolved in bulk (no per-note round trips)."""
-    notes = store.list_notes(user_id)
-    edges = store.all_links(user_id)
+    notes = db.list_notes(user_id)
+    edges = db.all_links(user_id)
     ids = {i for e in edges for i in e}
-    briefs = {b["id"]: b for b in store.notes_brief(user_id, ids)}
-    attachments = store.attachments_for_notes([n["id"] for n in notes])
+    briefs = {b["id"]: b for b in db.notes_brief(user_id, ids)}
+    attachments = db.attachments_for_notes([n["id"] for n in notes])
 
     out_map: dict[int, list[int]] = {}
     in_map: dict[int, list[int]] = {}

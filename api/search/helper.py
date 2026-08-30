@@ -1,6 +1,6 @@
 """Search section service: shape matched notes into result rows."""
 
-from api.search import store
+from api.search import db
 
 
 def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
@@ -19,7 +19,7 @@ def search(user_id: int, query: str) -> list[dict]:
     if not q:
         return []
     out = []
-    for n in store.search_notes(user_id, q):
+    for n in db.search_notes(user_id, q):
         out.append({
             "id": n["id"],
             "title": _display_title(n["title"], n["text"]),

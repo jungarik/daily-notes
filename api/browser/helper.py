@@ -1,6 +1,6 @@
 """Browser section service: shape note rows for the tree/list."""
 
-from api.browser import store
+from api.browser import db
 
 
 def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
@@ -17,7 +17,7 @@ def list_for_tree(user_id: int) -> list[dict]:
     """The user's notes for the browser tree (newest first): [{id, title, path,
     snippet, created_at, links}]."""
     out = []
-    for n in store.list_notes(user_id):
+    for n in db.list_notes(user_id):
         created = n.get("created_at")
         out.append({
             "id": n["id"],

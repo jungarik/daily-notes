@@ -77,7 +77,7 @@ Consequences (follow these):
 The API is organised into **section verticals**, not shared service/store
 layers. Each section is a self-contained folder under `api/` with the same three
 files: **`endpoints.py`** (the FastAPI router), **`helper.py`** (its service /
-shaping logic), and **`store.py`** (its own SQL). A section owns everything it
+shaping logic), and **`db.py`** (its own SQL). A section owns everything it
 needs and is decoupled from the others — changing one section's logic can't
 ripple into another (the trade-off is deliberately duplicated query/shaping code).
 
@@ -90,17 +90,17 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat`** — the agentic chat tab (`POST /api/chat`, `/api/chat/confirm`).
-  Thin: it resolves the caller's clock/locale (its own `store`) and delegates to
+  Thin: it resolves the caller's clock/locale (its own `db`) and delegates to
   the self-contained `agents.chat` reasoning engine.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
   `/api/telegram_bot` (capture text/voice/media, enrich, atomize, polish, delete,
   link-candidates/toggle, reminders + dispatcher, user resolve/settings, RAG
-  `search`, `ping`). It owns its full domain in `helper.py` + `store.py`
+  `search`, `ping`). It owns its full domain in `helper.py` + `db.py`
   (embeddings, one-shot enrichment, reminder parsing, links, user settings, RAG).
 
 There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
-`api/telegram_bot` in its `helper.py`/`store.py`; `agents/chat` and `agents/enrich`
+`api/telegram_bot` in its `helper.py`/`db.py`; `agents/chat` and `agents/enrich`
 each in a self-contained `domain.py` (their `tools/loop/service` import it). Only
 true infra is shared, at the repo root — `config`, `db`, `openai_client`, `i18n`,
 `migrate`, and `file_store` (the S3 client) — plus `api/deps.py` (auth, incl. the

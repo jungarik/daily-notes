@@ -1,7 +1,7 @@
 """Notesheet section service: shape one note into a full detail card."""
 
 from api import media_token
-from api.notesheet import store
+from api.notesheet import db
 
 _ATTACHMENT_URL = "/api/notecard/attachments/{id}?t={token}"
 
@@ -25,13 +25,13 @@ def _attachment_views(rows: list[dict]) -> list[dict]:
 
 def note_detail(user_id: int, note_id: int) -> dict | None:
     """Full note detail for the preview, scoped to its owner. None if not found."""
-    n = store.get_note_for_user(user_id, note_id)
+    n = db.get_note_for_user(user_id, note_id)
     if n is None:
         return None
     created = n.get("created_at")
 
     links, backlinks = [], []
-    for _id, title, text, direction in store.neighbours(user_id, note_id):
+    for _id, title, text, direction in db.neighbours(user_id, note_id):
         (links if direction == "out" else backlinks).append(
             {"id": _id, "title": _display_title(title, text)}
         )
@@ -46,5 +46,5 @@ def note_detail(user_id: int, note_id: int) -> dict | None:
         "created_at": created.isoformat() if created else None,
         "links": links,
         "backlinks": backlinks,
-        "attachments": _attachment_views(store.list_attachments(note_id)),
+        "attachments": _attachment_views(db.list_attachments(note_id)),
     }

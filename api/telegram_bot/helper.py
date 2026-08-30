@@ -2,7 +2,7 @@
 
 Self-contained domain — capture, one-shot enrichment, atomize, polish, delete,
 links, reminder detection/dispatch, user settings, and RAG search — duplicated
-here over the section's own `store` + shared infra (config, i18n, openai_client,
+here over the section's own `db` + shared infra (config, i18n, openai_client,
 file_store). No shared domain layer.
 """
 
@@ -19,7 +19,7 @@ import config
 import i18n
 import file_store
 from openai_client import get_client
-from api.telegram_bot import store
+from api.telegram_bot import db
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def _attach_images(note_id: int, images: list[dict]) -> int:
         if not key:
             logger.warning("Skipped image %d for note %s (storage unavailable)", pos, note_id)
             continue
-        store.add_attachment(note_id, key, kind="image", mime=img.get("mime"),
+        db.add_attachment(note_id, key, kind="image", mime=img.get("mime"),
                              size_bytes=len(data), position=pos)
         stored += 1
     return stored
@@ -82,9 +82,9 @@ def capture_note(user_id, text, source_type="text", audio_bytes=None, mime=None,
     if audio_bytes is not None:
         audio_key = file_store.upload_audio(audio_bytes, content_type=mime or "audio/ogg")
     chunks = _build_chunks(text)
-    note_id = store.save_note(user_id, text, source_type=source_type,
+    note_id = db.save_note(user_id, text, source_type=source_type,
                               audio_key=audio_key, audio_mime=mime)
-    store.save_chunks(note_id, chunks)
+    db.save_chunks(note_id, chunks)
     n = _attach_images(note_id, images or [])
     logger.info("Captured note %s (user %s, %s, %d chunk(s), %d image(s))",
                 note_id, user_id, source_type, len(chunks), n)
@@ -145,7 +145,7 @@ def _clean_root_path(path: str) -> str | None:
 
 def known_paths(user_id: int) -> list[str]:
     roots, _ = _localized_roots(user_id)
-    paths = [name for name, _ in store.list_paths(user_id)]
+    paths = [name for name, _ in db.list_paths(user_id)]
     for name in roots:
         if name not in paths:
             paths.append(name)
@@ -156,10 +156,10 @@ def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | No
     cleaned = _clean_root_path(raw_path)
     if cleaned is None:
         return ("invalid", None)
-    if store.get_note_for_user(user_id, note_id) is None:
+    if db.get_note_for_user(user_id, note_id) is None:
         return ("not_found", None)
-    store.set_path(note_id, cleaned)
-    return ("ok", store.get_meta(note_id))
+    db.set_path(note_id, cleaned)
+    return ("ok", db.get_meta(note_id))
 
 
 # ===== atomize / polish / delete ===========================================
@@ -193,7 +193,7 @@ def _split(text: str) -> list[str]:
 
 
 def atomize_note(user_id: int, note_id: int) -> list[dict]:
-    text = store.get_text(note_id)
+    text = db.get_text(note_id)
     if not text:
         return []
     atoms = _split(text)
@@ -228,23 +228,23 @@ def _polish(text: str) -> str:
 
 
 def polish_note(note_id: int) -> str | None:
-    text = store.get_text(note_id)
+    text = db.get_text(note_id)
     if not text:
         return None
     cleaned = _polish(text)
     if cleaned != text:
-        store.set_text(note_id, cleaned)
-        store.delete_chunks(note_id)
-        store.save_chunks(note_id, _build_chunks(cleaned))
+        db.set_text(note_id, cleaned)
+        db.delete_chunks(note_id)
+        db.save_chunks(note_id, _build_chunks(cleaned))
     return cleaned
 
 
 def delete_bare_note(note_id: int) -> bool:
-    keys = store.attachment_keys_for_note(note_id)
-    audio_key = store.get_audio_key(note_id)
+    keys = db.attachment_keys_for_note(note_id)
+    audio_key = db.get_audio_key(note_id)
     if audio_key:
         keys.append(audio_key)
-    deleted = store.delete_if_bare(note_id)
+    deleted = db.delete_if_bare(note_id)
     if deleted:
         for key in keys:
             file_store.delete_object(key)
@@ -394,16 +394,16 @@ def _enrich(text, known_paths_list, known_tags, similar_notes, root_folders, def
 
 
 def enrich_note(user_id: int, note_id: int) -> dict | None:
-    text = store.get_text(note_id)
+    text = db.get_text(note_id)
     if not text:
         return None
     embedding = _embed(text)
-    similar = store.similar_notes(user_id, embedding, exclude_note_id=note_id,
+    similar = db.similar_notes(user_id, embedding, exclude_note_id=note_id,
                                   limit=config.ENRICH_SIMILAR_LIMIT)
     root_folders, default_root = _localized_roots(user_id)
-    meta = _enrich(text, store.list_paths(user_id), store.list_tags(user_id),
+    meta = _enrich(text, db.list_paths(user_id), db.list_tags(user_id),
                    similar, root_folders, default_root)
-    store.set_metadata(note_id, meta["type"], meta["title"], meta["priority"],
+    db.set_metadata(note_id, meta["type"], meta["title"], meta["priority"],
                        meta["tags"], meta["path"])
     return meta
 
@@ -421,11 +421,11 @@ def _same_family(a, b) -> bool:
 
 
 def link_candidates(user_id: int, note_id: int, limit: int = 5) -> list[dict]:
-    note = store.get_note(note_id)
+    note = db.get_note(note_id)
     if not note:
         return []
     embedding = _embed(note["text"])
-    rows = store.candidate_notes(user_id, embedding, [note_id], limit * 3)
+    rows = db.candidate_notes(user_id, embedding, [note_id], limit * 3)
     note_path = note["path"]
     note_tags = set(note["tags"] or [])
 
@@ -443,14 +443,14 @@ def link_candidates(user_id: int, note_id: int, limit: int = 5) -> list[dict]:
 
 
 def is_linked(a: int, b: int) -> bool:
-    return store.is_linked(a, b)
+    return db.is_linked(a, b)
 
 
 def toggle_link(a: int, b: int) -> bool:
-    if store.is_linked(a, b):
-        store.remove_link(a, b)
+    if db.is_linked(a, b):
+        db.remove_link(a, b)
         return False
-    store.add_link(a, b)
+    db.add_link(a, b)
     return True
 
 
@@ -506,32 +506,32 @@ def detect_reminder_info(note_id: int, user_id: int, text: str) -> dict | None:
     remind_at = _extract_reminder(text, datetime.now(tz))
     if not remind_at:
         return None
-    reminder_id = store.create_reminder(note_id, user_id, remind_at)
+    reminder_id = db.create_reminder(note_id, user_id, remind_at)
     return {"id": reminder_id, "remind_at": remind_at.isoformat()}
 
 
 def upcoming(user_id: int):
-    return store.upcoming_reminders(user_id)
+    return db.upcoming_reminders(user_id)
 
 
 def active_count(user_id: int) -> int:
-    return store.count_active(user_id)
+    return db.count_active(user_id)
 
 
 def claim_due(now, stale_before, limit: int = 50):
-    return store.claim_due_reminders(now, stale_before, limit)
+    return db.claim_due_reminders(now, stale_before, limit)
 
 
 def reschedule(reminder_id: int) -> None:
-    store.set_reminder_status(reminder_id, "scheduled")
+    db.set_reminder_status(reminder_id, "scheduled")
 
 
 def cancel(reminder_id: int) -> None:
-    store.set_reminder_status(reminder_id, "canceled")
+    db.set_reminder_status(reminder_id, "canceled")
 
 
 def mark_done(reminder_id: int) -> None:
-    store.set_reminder_status(reminder_id, "done")
+    db.set_reminder_status(reminder_id, "done")
 
 
 def snooze(reminder_id: int, user_id: int, mode: str) -> datetime:
@@ -542,14 +542,14 @@ def snooze(reminder_id: int, user_id: int, mode: str) -> datetime:
             hour=_SNOOZE_TOMORROW_HOUR, minute=0, second=0, microsecond=0)
     else:
         new_time = now + timedelta(minutes=int(mode))
-    store.postpone(reminder_id, new_time)
+    db.postpone(reminder_id, new_time)
     return new_time
 
 
 # ===== user identity + settings ============================================
 
 def resolve(chat_id: int, username: str | None = None) -> int:
-    return store.get_or_create_user(chat_id, username)
+    return db.get_or_create_user(chat_id, username)
 
 
 def _resolve_tz(name: str | None) -> ZoneInfo:
@@ -566,22 +566,22 @@ def _resolve_locale(lang: str | None) -> str:
 
 
 def timezone(user_id: int) -> ZoneInfo:
-    tz_name, _ = store.get_settings(user_id)
+    tz_name, _ = db.get_settings(user_id)
     return _resolve_tz(tz_name)
 
 
 def language(user_id: int) -> str:
-    _, lang = store.get_settings(user_id)
+    _, lang = db.get_settings(user_id)
     return _resolve_locale(lang)
 
 
 def settings(user_id: int) -> tuple[ZoneInfo, str]:
-    tz_name, lang = store.get_settings(user_id)
+    tz_name, lang = db.get_settings(user_id)
     return _resolve_tz(tz_name), _resolve_locale(lang)
 
 
 def settings_view(user_id: int) -> dict:
-    tz_name, lang = store.get_settings(user_id)
+    tz_name, lang = db.get_settings(user_id)
     return {"timezone": tz_name, "language": lang,
             "tz_name": _resolve_tz(tz_name).key, "locale": _resolve_locale(lang)}
 
@@ -591,7 +591,7 @@ def set_timezone(user_id: int, name: str) -> bool:
         ZoneInfo(name)
     except Exception:
         return False
-    store.set_user_timezone(user_id, name)
+    db.set_user_timezone(user_id, name)
     return True
 
 
@@ -599,7 +599,7 @@ def set_language(user_id: int, code: str) -> str | None:
     lang = i18n.normalize(code)
     if lang not in i18n.SUPPORTED:
         return None
-    store.set_user_language(user_id, lang)
+    db.set_user_language(user_id, lang)
     return lang
 
 
@@ -665,7 +665,7 @@ def search_answer(user_id: int, query: str, now: datetime,
                   language: str = "en", tz=None) -> str | None:
     rng = _parse_agenda(query, now)
     start, end = rng if rng else (None, None)
-    hits = store.search_chunks(user_id, _embed(query), remind_start=start, remind_end=end)
+    hits = db.search_chunks(user_id, _embed(query), remind_start=start, remind_end=end)
     if not hits:
         return None
     system = (

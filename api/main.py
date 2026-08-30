@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 from migrate import run_migrations
 from api import system
-# Section verticals — each a self-contained endpoints.py → helper.py → store.py.
+# Section verticals — each a self-contained endpoints.py → helper.py → db.py.
 # The web-app sections are fully isolated; chat + telegram_bot orchestrate the
 # shared `common` domain. There are no more shared services/stores routers.
 from api.feed.endpoints import router as feed_router

@@ -8,7 +8,7 @@ Uses shared infra: media_token (auth) + object storage (bytes).
 """
 
 from api import media_token
-from api.notecard import store
+from api.notecard import db
 # Object storage client is shared infra (S3-compatible), at the repo root
 # alongside db/openai_client; this section imports no domain logic from it.
 import file_store
@@ -17,7 +17,7 @@ import file_store
 def fetch(attachment_id: int, token: str):
     if not media_token.verify(token, attachment_id):
         return ("forbidden", None)
-    a = store.get_attachment(attachment_id)
+    a = db.get_attachment(attachment_id)
     if a is None:
         return ("not_found", None)
     obj = file_store.fetch_object(a["storage_key"])

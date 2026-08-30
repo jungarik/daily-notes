@@ -8,7 +8,7 @@ import logging
 
 import config
 import i18n
-from api.contextmenu import store
+from api.contextmenu import db
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +41,11 @@ def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | No
     cleaned = clean_root_path(raw_path)
     if cleaned is None:
         return ("invalid", None)
-    if not store.note_exists_for_user(user_id, note_id):
+    if not db.note_exists_for_user(user_id, note_id):
         return ("not_found", None)
-    store.set_path(note_id, cleaned)
+    db.set_path(note_id, cleaned)
     logger.info("Note %s (user %s) path set to %r", note_id, user_id, cleaned)
-    return ("ok", store.get_meta(note_id))
+    return ("ok", db.get_meta(note_id))
 
 
 def move_folder(user_id: int, old_path: str, raw_new_path: str) -> tuple[str, dict | None]:
@@ -56,6 +56,6 @@ def move_folder(user_id: int, old_path: str, raw_new_path: str) -> tuple[str, di
     cleaned = clean_root_path(raw_new_path)
     if cleaned is None:
         return ("invalid", None)
-    count = store.move_folder_paths(user_id, old_path, cleaned)
+    count = db.move_folder_paths(user_id, old_path, cleaned)
     logger.info("Moved folder %r -> %r for user %s (%d notes)", old_path, cleaned, user_id, count)
     return ("ok", {"count": count, "new_path": cleaned})

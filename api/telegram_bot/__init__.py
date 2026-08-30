@@ -2,9 +2,8 @@
 atomize, polish, delete, links, reminders + dispatcher, user identity/settings,
 RAG search, ping), all under /api/telegram_bot.
 
-Unlike the web-app sections, the bot drives the shared note lifecycle (capture,
-enrichment, reminder detection, RAG) — genuinely shared domain that also backs
-the future web-capture path — so this section orchestrates `common` rather than
-duplicating that logic. endpoints.py → helper.py → common; store.py notes where
-persistence lives.
+Self-contained like every other vertical: endpoints.py (router) → helper.py
+(the full note-lifecycle domain: capture, one-shot enrichment, reminders, links,
+user settings, RAG) → db.py (its SQL). Shared infra only (config, i18n,
+openai_client, file_store, api.deps); no shared domain layer.
 """

@@ -2,7 +2,7 @@
 
 The tool-calling loop, thread state, and citations live in the shared
 `agents.chat` engine (itself self-contained); this helper supplies per-user
-context and delegates. Settings are read via this section's own store.
+context and delegates. Settings are read via this section's own db.
 """
 
 from datetime import datetime
@@ -11,11 +11,11 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 from agents import chat as chat_agent
-from api.chat import store
+from api.chat import db
 
 
 def _settings(user_id: int) -> tuple[ZoneInfo, str]:
-    tz_name, lang = store.get_settings(user_id)
+    tz_name, lang = db.get_settings(user_id)
     tz = config.DEFAULT_TZ
     if tz_name:
         try:

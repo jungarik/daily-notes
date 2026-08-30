@@ -33,7 +33,7 @@ Client adapters live under `capture/` (the Telegram bot in
 `capture/Telegram_Bot/`) and `browser/` (the React Mini App in `browser/webapp/`).
 The API gateway is `api/`, organised into **section verticals** — one folder per
 concern, each with its own `endpoints.py` (router) + `helper.py` (service) +
-`store.py` (SQL). Every vertical is self-contained — there is **no shared domain
+`db.py` (SQL). Every vertical is self-contained — there is **no shared domain
 layer**; each duplicates the domain + persistence it needs. Only true infra is
 shared, at the root.
 
@@ -44,7 +44,7 @@ shared, at the root.
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
 | `api/<section>/`  | one isolated vertical per web-app section: `feed`, `browser`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
 | `api/chat/`       | agentic chat tab (`/api/chat`) — thin; delegates to `agents/chat` |
-| `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `store.py` (capture, enrich, reminders, links, users, RAG) |
+| `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
 | `agents/chat/`    | self-contained chat reasoning engine (`tools`/`loop`/`service` + `domain.py`) |
 | `agents/enrich/`  | self-contained capture-time enrichment agent (+ `domain.py`) |
 | **shared infra (root + api):** | |

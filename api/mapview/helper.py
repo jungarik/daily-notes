@@ -3,7 +3,7 @@
 Only notes that participate in a link appear. Direction is preserved in the
 edges (the client can render undirected for now, directed later)."""
 
-from api.mapview import store
+from api.mapview import db
 
 
 def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
@@ -18,9 +18,9 @@ def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
 
 def graph(user_id: int) -> dict:
     """{nodes:[{id,title,path,degree}], edges:[{source,target}]}."""
-    edges = store.all_links(user_id)
+    edges = db.all_links(user_id)
     ids = {i for e in edges for i in e}
-    briefs = {b["id"]: b for b in store.notes_brief(user_id, ids)}
+    briefs = {b["id"]: b for b in db.notes_brief(user_id, ids)}
 
     degree: dict[int, int] = {}
     for f, t in edges:
