@@ -115,16 +115,20 @@ routers are thin: they validate at the edge (`api/schemas.py`) and compose
 
 The `api/` service (FastAPI) reuses the same `services/`/`stores/`; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`
-on startup (`api/main.py` lifespan). It deploys separately (`railway.api.json`)
-and its start command is `python -m api.run`, a dual-stack launcher — binds `::`
+on startup (`api/main.py` lifespan). It deploys separately and its start command
+is `python -m api.run` (the image's `CMD`), a dual-stack launcher — binds `::`
 with IPV6_V6ONLY=0 so it serves both private IPv6 and the public IPv4 edge. The
 API image is built from **`Dockerfile.api`** (single-stage Python — the API is a
 pure `/api` gateway and serves no frontend). The Mini App is a **separate static
 Railway service** built from **`Dockerfile.webapp`** (Vite build → a Caddy static
-server, `frontend/webapp/Caddyfile`, SPA fallback to `index.html`), configured by
-`railway.webapp.json`; it calls the API cross-origin (hence CORS +
-`WEBAPP_ALLOWED_ORIGINS` on the API). The bot uses `railway.bot.json` → Nixpacks →
-`python -m frontend.Telegram_Bot.bot`. See `api/README.md`.
+server, `frontend/webapp/Caddyfile`, SPA fallback to `index.html`); it calls the
+API cross-origin (hence CORS + `WEBAPP_ALLOWED_ORIGINS` on the API). The bot is
+built from **`Dockerfile.bot`** (single-stage Python; `CMD python -m
+frontend.Telegram_Bot.bot`). Each of the three services selects its Dockerfile
+via a `RAILWAY_DOCKERFILE_PATH` service variable (`Dockerfile.api` /
+`Dockerfile.webapp` / `Dockerfile.bot`) set in the Railway dashboard — there are
+no `railway.*.json` config-as-code files (Railway deprecated Config-as-Code; use
+the dashboard or `.railway/railway.ts` IaC). See `api/README.md`.
 
 ## Web app (Telegram Mini App)
 

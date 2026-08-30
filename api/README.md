@@ -73,20 +73,29 @@ curl localhost:8080/health          # {"status":"ok"}
 
 ## Run on Railway
 
-Two services in one project (shared repo, shared private network):
+Three services in one project (shared repo, shared private network): **API**,
+**bot**, and the **webapp** static host. Each is created from this same repo
+(New → GitHub Repo → this repo) and selects its Dockerfile via a
+`RAILWAY_DOCKERFILE_PATH` service variable — there are no `railway.*.json`
+config-as-code files (Railway deprecated Config-as-Code; configure services in
+the dashboard, or with `.railway/railway.ts` IaC).
 
-1. **Push the repo.** Both services build from the same image.
-2. **Create the API service** in the same project (New → GitHub Repo → this repo).
-   Point Settings → *Config-as-code* at `railway.api.json` (start command
-   `python -m api.run` — a dual-stack launcher, see the note below). Point the bot
-   service at `railway.bot.json`.
-3. **API env:** `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `OPENAI_API_KEY`,
-   `PORT=8080` (stable internal port), `API_INTERNAL_TOKEN=<random secret>`.
-4. **Bot env:** same `API_INTERNAL_TOKEN`, and
-   `API_BASE_URL=http://${{<ApiServiceName>.RAILWAY_PRIVATE_DOMAIN}}:8080`.
-5. **Keep the API private:** do *not* generate a public domain — the private
-   network is the access control. The bot reaches it at
-   `http://<api>.railway.internal:8080`.
+1. **Push the repo.**
+2. **API service:** set `RAILWAY_DOCKERFILE_PATH=Dockerfile.api`. Start command
+   is the image's `CMD` (`python -m api.run` — a dual-stack launcher, see the
+   note below). Env: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `OPENAI_API_KEY`,
+   `PORT=8080` (stable internal port), `API_INTERNAL_TOKEN=<random secret>`,
+   `WEBAPP_ALLOWED_ORIGINS=<webapp public origin>` (CORS).
+3. **Bot service:** set `RAILWAY_DOCKERFILE_PATH=Dockerfile.bot`. Env: same
+   `API_INTERNAL_TOKEN`, `API_BASE_URL=http://${{<ApiServiceName>.RAILWAY_PRIVATE_DOMAIN}}:8080`,
+   and `WEBAPP_URL=<webapp public origin>` (Menu Button).
+4. **Webapp service:** set `RAILWAY_DOCKERFILE_PATH=Dockerfile.webapp` and
+   `VITE_API_BASE=<API public origin>` (baked into the build). Generate a public
+   domain for it; that domain is the Mini App URL (BotFather + `WEBAPP_URL`).
+5. **Keep the API private:** do *not* generate a public domain for it unless the
+   webapp needs it — the bot reaches it at `http://<api>.railway.internal:8080`.
+   (The webapp is a browser client, so its `VITE_API_BASE` does need a public API
+   origin; give the API a public domain if you host the webapp separately.)
 
 ### Startup ordering (important)
 
@@ -125,7 +134,7 @@ ordering stops mattering — only the API touches the database.
 - **`API_INTERNAL_TOKEN`** is defence in depth: if set, `/api/*` requires a
   matching `X-Internal-Token` header. `/health` stays open (no token) for manual
   checks and for the bot's `ApiClient.health()`.
-- **No Railway deploy healthcheck.** `railway.api.json` has no `healthcheckPath`;
+- **No Railway deploy healthcheck.** No `healthcheckPath` is configured;
   Railway marks the deploy healthy once the process stays up. `/health` still
   exists for on-demand checks. (The dual-stack `api/run.py` bind — see above —
   means both the public edge and any IPv4 probe can now reach the app, but the

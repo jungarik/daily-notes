@@ -34,11 +34,14 @@ baked into the build and must point at the API's public origin.
 ## Hosting on Railway (separate static service)
 
 The app is a standalone Railway service built from `Dockerfile.webapp` (Vite
-build → Caddy static server), configured by `railway.webapp.json`. The API
-(`Dockerfile.api`) is a pure `/api` gateway and serves no frontend. To deploy:
+build → Caddy static server). The API (`Dockerfile.api`) is a pure `/api` gateway
+and serves no frontend. There are no `railway.*.json` config files — each service
+selects its Dockerfile via a `RAILWAY_DOCKERFILE_PATH` variable in the dashboard.
+To deploy:
 
-1. On the **webapp** service set `VITE_API_BASE` = the API's public origin
-   (baked into the build at `Dockerfile.webapp`'s `ARG VITE_API_BASE`).
+1. On the **webapp** service set `RAILWAY_DOCKERFILE_PATH=Dockerfile.webapp` and
+   `VITE_API_BASE` = the API's public origin (baked into the build at
+   `Dockerfile.webapp`'s `ARG VITE_API_BASE`).
 2. On the **API** service add the webapp's public origin to
    `WEBAPP_ALLOWED_ORIGINS` (CORS; `*` also works since auth is header-based via
    signed initData).
