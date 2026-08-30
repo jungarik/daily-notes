@@ -3,18 +3,15 @@
 Read tools let the agent gather the vocabulary/context it needs to classify a
 note consistently (existing paths, existing tags, similar past notes); the
 terminal `submit_metadata` tool is how the agent emits its final structured
-answer. Handlers wrap existing services/stores — no duplicated logic. Validation
-of the submitted metadata reuses the one-shot enricher's guardrails.
+answer. Handlers wrap this package's self-contained `domain` module. Validation
+of the submitted metadata reuses the one-shot enricher's guardrails (in `domain`).
 """
 
 import json
 import logging
 
 import config
-from services import semantic
-from services import enrichment as enrichment_svc
-from stores import note_store
-from stores import chunk_store
+from agents.enrich import domain as d
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +38,18 @@ def _json(obj) -> str:
 # ---- read tools -----------------------------------------------------------
 
 def _list_paths(ctx: Ctx, args: dict) -> str:
-    rows = note_store.list_paths(ctx.user_id)
+    rows = d.list_paths(ctx.user_id)
     return _json([{"path": p, "count": c} for p, c in rows]) if rows else "No existing paths."
 
 
 def _list_tags(ctx: Ctx, args: dict) -> str:
-    rows = note_store.list_tags(ctx.user_id)
+    rows = d.list_tags(ctx.user_id)
     return _json([{"tag": t, "count": c} for t, c in rows]) if rows else "No existing tags."
 
 
 def _find_similar(ctx: Ctx, args: dict) -> str:
-    emb = semantic.embed(ctx.text)
-    sim = chunk_store.similar_notes(
+    emb = d.embed(ctx.text)
+    sim = d.similar_notes(
         ctx.user_id, emb, exclude_note_id=ctx.note_id, limit=config.ENRICH_SIMILAR_LIMIT)
     out = [{"title": n["title"], "path": n.get("path"), "tags": n.get("tags") or [],
             "type": n["note_type"], "distance": n.get("distance")} for n in sim]
@@ -63,7 +60,7 @@ def _find_similar(ctx: Ctx, args: dict) -> str:
 
 def _submit_metadata(ctx: Ctx, args: dict) -> str:
     """Record the final classification (normalized + guardrailed) and end the run."""
-    ctx.result = enrichment_svc._normalize(
+    ctx.result = d.normalize(
         args, ctx.text, ctx.root_folders, ctx.default_root)
     return "Metadata recorded."
 
@@ -107,11 +104,11 @@ TOOL_SPECS = [
         "Submit the FINAL classification for this note. Call this exactly once when "
         "you've decided. The path must start with one of the root folders.",
         {
-            "type": {"type": "string", "enum": list(enrichment_svc.TYPES)},
+            "type": {"type": "string", "enum": list(d.TYPES)},
             "title": {"type": "string", "description": "Concise summary, ≤8 words, in the note's language."},
             "path": {"type": "string", "description": "root folder + optional sub-folder (two levels max)."},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "0–5 lowercase keywords."},
-            "priority": {"type": "string", "enum": list(enrichment_svc.PRIORITIES)},
+            "priority": {"type": "string", "enum": list(d.PRIORITIES)},
         },
         ["type", "title", "path"]),
 ]

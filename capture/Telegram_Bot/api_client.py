@@ -54,12 +54,12 @@ class ApiClient:
             return False
 
     async def ping(self) -> bool:
-        """True if the token-guarded /api/ping succeeds (connectivity + auth)."""
+        """True if the token-guarded /api/telegram_bot/ping succeeds (connectivity + auth)."""
         if not self.configured:
             return False
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(f"{self._base_url}/api/ping", headers=self._headers())
+                resp = await client.get(f"{self._base_url}/api/telegram_bot/ping", headers=self._headers())
                 return resp.status_code == 200
         except Exception:
             logger.exception("API ping failed")
@@ -73,7 +73,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/users/resolve",
+                    f"{self._base_url}/api/telegram_bot/users/resolve",
                     json={"chat_id": chat_id, "username": username},
                     headers=self._headers(),
                 )
@@ -90,7 +90,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(
-                    f"{self._base_url}/api/users/settings", headers=self._headers(user_id))
+                    f"{self._base_url}/api/telegram_bot/users/settings", headers=self._headers(user_id))
                 resp.raise_for_status()
                 return resp.json()
         except Exception:
@@ -105,7 +105,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/users/timezone",
+                    f"{self._base_url}/api/telegram_bot/users/timezone",
                     json={"timezone": name}, headers=self._headers(user_id),
                 )
             if resp.status_code == 422:
@@ -124,7 +124,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/users/language",
+                    f"{self._base_url}/api/telegram_bot/users/language",
                     json={"language": code}, headers=self._headers(user_id),
                 )
             if resp.status_code == 422:
@@ -142,7 +142,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes",
+                    f"{self._base_url}/api/telegram_bot/notes",
                     json={"text": text}, headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -161,7 +161,7 @@ class ApiClient:
             files = {"audio": ("voice.ogg", audio_bytes, mime)}
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/voice",
+                    f"{self._base_url}/api/telegram_bot/notes/voice",
                     data=data, files=files, headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -182,7 +182,7 @@ class ApiClient:
             files = [("files", (name, blob, mime)) for name, blob, mime in images]
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/media",
+                    f"{self._base_url}/api/telegram_bot/notes/media",
                     data=data, files=files, headers=self._headers(user_id),
                 )
             if resp.status_code >= 400:
@@ -200,7 +200,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{note_id}/atomize",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/atomize",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -216,7 +216,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{note_id}/delete",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/delete",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -232,7 +232,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{note_id}/polish",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/polish",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -248,7 +248,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(
-                    f"{self._base_url}/api/notes/{note_id}/link-candidates",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/link-candidates",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -264,7 +264,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{from_note_id}/links/{to_note_id}/toggle",
+                    f"{self._base_url}/api/telegram_bot/notes/{from_note_id}/links/{to_note_id}/toggle",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -280,7 +280,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(
-                    f"{self._base_url}/api/reminders", headers=self._headers(user_id))
+                    f"{self._base_url}/api/telegram_bot/reminders", headers=self._headers(user_id))
                 resp.raise_for_status()
                 return resp.json().get("reminders", [])
         except Exception:
@@ -294,7 +294,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/reminders/claim-due",
+                    f"{self._base_url}/api/telegram_bot/reminders/claim-due",
                     json={"limit": limit}, headers=self._headers(),
                 )
                 resp.raise_for_status()
@@ -305,7 +305,7 @@ class ApiClient:
 
     async def retry_reminder(self, reminder_id: int) -> bool:
         """Return a claimed reminder to 'scheduled' so the next poll retries it."""
-        return await self._post_ok(f"/api/reminders/{reminder_id}/retry")
+        return await self._post_ok(f"/api/telegram_bot/reminders/{reminder_id}/retry")
 
     async def known_paths(self, user_id: int) -> list[str]:
         """The user's existing vault paths (controlled vocabulary). Empty on error."""
@@ -314,7 +314,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(
-                    f"{self._base_url}/api/notes/paths", headers=self._headers(user_id))
+                    f"{self._base_url}/api/telegram_bot/notes/paths", headers=self._headers(user_id))
                 resp.raise_for_status()
                 return resp.json().get("paths", [])
         except Exception:
@@ -328,7 +328,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{note_id}/enrich",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/enrich",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -344,7 +344,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/notes/{note_id}/path",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/path",
                     json={"path": path}, headers=self._headers(user_id),
                 )
             if resp.status_code == 422:
@@ -373,10 +373,10 @@ class ApiClient:
             return False
 
     async def cancel_reminder(self, reminder_id: int) -> bool:
-        return await self._post_ok(f"/api/reminders/{reminder_id}/cancel")
+        return await self._post_ok(f"/api/telegram_bot/reminders/{reminder_id}/cancel")
 
     async def complete_reminder(self, reminder_id: int) -> bool:
-        return await self._post_ok(f"/api/reminders/{reminder_id}/done")
+        return await self._post_ok(f"/api/telegram_bot/reminders/{reminder_id}/done")
 
     async def snooze_reminder(self, reminder_id: int, user_id: int, mode: str) -> str | None:
         """Postpone a reminder; returns the new remind_at (ISO) or None on failure."""
@@ -385,7 +385,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/reminders/{reminder_id}/snooze",
+                    f"{self._base_url}/api/telegram_bot/reminders/{reminder_id}/snooze",
                     json={"mode": mode}, headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
@@ -401,7 +401,7 @@ class ApiClient:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/search",
+                    f"{self._base_url}/api/telegram_bot/search",
                     json={"query": query}, headers=self._headers(user_id),
                 )
                 resp.raise_for_status()

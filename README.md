@@ -30,42 +30,38 @@ in `note_chunks` (pgvector), powering semantic search via `/search`.
 Each module has a single responsibility; the Telegram bot is only the UI layer.
 
 Client adapters live under `capture/` (the Telegram bot in
-`capture/Telegram_Bot/`) and `browser/` (the React Mini App in
-`browser/webapp/`); the API gateway is `api/`; domain logic in
-`services/`; persistence in `stores/`; shared infra at the root.
+`capture/Telegram_Bot/`) and `browser/` (the React Mini App in `browser/webapp/`).
+The API gateway is `api/`, organised into **section verticals** — one folder per
+concern, each with its own `endpoints.py` (router) + `helper.py` (service) +
+`store.py` (SQL). Every vertical is self-contained — there is **no shared domain
+layer**; each duplicates the domain + persistence it needs. Only true infra is
+shared, at the root.
 
 | module            | responsibility                                             |
 |-------------------|------------------------------------------------------------|
 | `capture/Telegram_Bot/bot.py`        | Telegram handlers, command menu, reminder dispatcher loop  |
+| `capture/Telegram_Bot/api_client.py` | async client the bot uses to call `/api/telegram_bot/*` |
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
-| `capture/Telegram_Bot/api_client.py` | async client the bot uses to call the API      |
+| `api/<section>/`  | one isolated vertical per web-app section: `feed`, `browser`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
+| `api/chat/`       | agentic chat tab (`/api/chat`) — thin; delegates to `agents/chat` |
+| `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `store.py` (capture, enrich, reminders, links, users, RAG) |
+| `agents/chat/`    | self-contained chat reasoning engine (`tools`/`loop`/`service` + `domain.py`) |
+| `agents/enrich/`  | self-contained capture-time enrichment agent (+ `domain.py`) |
+| **shared infra (root + api):** | |
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
 | `openai_client.py`| one lazily-created OpenAI client                            |
-| `stores/file_store.py` | upload voice audio to S3-compatible object storage         |
+| `file_store.py`   | S3-compatible object storage client (voice audio + attachments) |
 | `i18n.py`, `locales.json` | localization                                       |
 | `migrate.py`, `migrations/` | schema migrations (run by the API on startup)    |
-| **`services/`**   | domain logic (below)                                       |
-| `services/note_service.py`   | capture + on-demand enrichment orchestration    |
-| `services/search_service.py` | agenda-aware RAG answer                          |
-| `services/user_service.py`   | identity resolution + per-user settings         |
-| `services/reminders.py`      | reminder-time extraction + creation             |
-| `services/links.py`          | ranked link candidates + link toggle            |
-| `services/semantic.py`       | chunking + embeddings + semantic search / answer |
-| `services/enrichment.py`     | note enrichment → type/title/path/tags/priority |
-| `services/transcription.py`  | voice audio → text (OpenAI whisper)             |
-| `services/timeparser.py`     | agenda date-range parsing for search            |
-| **`stores/`**     | persistence (below)                                        |
-| `stores/note_store.py`   | `notes` row persistence                                |
-| `stores/chunk_store.py`  | `note_chunks` persistence                              |
-| `stores/link_store.py`   | `note_links` persistence (directed; backlinks = reverse) |
-| `stores/reminder_store.py`| `reminders` persistence + atomic claim                |
-| `stores/user_store.py`   | `users` (surrogate id, optional chat_id, timezone, language) |
+| `api/deps.py`     | auth (`current_user`, `require_internal_token`) + identity resolve |
+| `api/media_token.py` | short-lived signed tokens for the image proxy           |
 
-Dependencies flow one way: clients (`bot`, `api`) → `services/` → `stores/` →
-`db`/`config`. Stores never import services; services never import a client — so
-the domain layer stays reusable by every client and the API. Imports are
-absolute (`from services import …`, `from stores import …`).
+Dependencies flow one way: every vertical → shared infra (`db`/`config`/`i18n`/
+`openai_client`/`file_store`/`api.deps`/`api.media_token`). No vertical imports
+another's domain — each owns its SQL and logic, so a section's behaviour can
+change in isolation (the trade-off is deliberate duplication). Imports are
+absolute (`from api.<section> import …`, `from agents.<agent> import …`).
 
 ## Setup
 

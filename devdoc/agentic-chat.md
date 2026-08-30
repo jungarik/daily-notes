@@ -52,7 +52,7 @@ Initial write tools (confirmation required):
 
 Adding a capability = append one entry to the registry. Nothing else changes.
 
-### State — `stores/chat_store.py` (+ migration `0019_chat_threads`)
+### State — `agents/chat/domain.py` (+ migration `0019_chat_threads`)
 A `chat_threads` row per conversation holds the running `messages` array (the
 provider message list, including assistant tool-calls and tool results) and a
 `pending` blob (a paused write awaiting confirmation). The client passes a

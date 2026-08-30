@@ -15,9 +15,12 @@ both agents share one shape (tools · loop · service, keyed on `user_id`).
 
 ## Where it lives (layering)
 
-Client-agnostic domain code in **`agents/enrich/`**. It's invoked server-side by
-the capture endpoints (`api/routers/notes.py`) — not by any client directly. It
-may call `services/` and `stores/` (like `agents/chat`), never a client.
+Client-agnostic code in **`agents/enrich/`**, reserved for the (future) web-app
+capture path — not wired into the bot, which uses one-shot enrichment. It is
+fully self-contained: its data access lives in `agents/enrich/domain.py`
+(embeddings, note/chunk SQL, root-folder vocabulary, the one-shot enricher), and
+it imports only shared infra (`db`, `config`, `i18n`, `openai_client`), never a
+client and no shared domain layer.
 
 ## Building blocks
 
@@ -29,23 +32,23 @@ forces `tool_choice=submit_metadata`, so a run always ends with structured outpu
 rather than a stray text turn.
 
 ### Tools (tool use) — `agents/enrich/tools.py`
-Read tools (all wrap existing stores/services):
-- `list_paths` — existing vault paths with counts (`note_store.list_paths`).
-- `list_tags` — existing tags with counts (`note_store.list_tags`).
+Read tools (all wrap `agents/enrich/domain.py`):
+- `list_paths` — existing vault paths with counts (`domain.list_paths`).
+- `list_tags` — existing tags with counts (`domain.list_tags`).
 - `find_similar` — notes most similar to this one and how they were classified
-  (`semantic.embed` + `chunk_store.similar_notes`), for a consistent decision.
+  (`domain.embed` + `domain.similar_notes`), for a consistent decision.
 
 Terminal tool:
 - `submit_metadata(type, title, path, tags, priority)` — validated + guardrailed
-  by reusing the one-shot enricher's `enrichment._normalize` (enforces the known
+  by reusing the one-shot enricher's `domain.normalize` (enforces the known
   root folder, two-level path cap, allowed types/priorities, tag cap).
 
 ### Service — `agents/enrich/service.py`
 `enrich(user_id, note_id, text)`: builds the system prompt (reusing
-`enrichment._root_folders` for the path rules) + the note, runs the loop, and
-**persists** via `note_store.set_metadata`. If the loop doesn't converge (or
-errors), it falls back to the existing one-shot `services/enrichment.enrich`, so
-there is always a result. Never raises — a note is never lost to enrichment.
+`domain.root_folders_block` for the path rules) + the note, runs the loop, and
+**persists** via `domain.set_metadata`. If the loop doesn't converge (or errors),
+it falls back to the one-shot `domain.enrich`, so there is always a result. Never
+raises — a note is never lost to enrichment.
 
 ## Intended wiring (web app)
 

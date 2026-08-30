@@ -9,9 +9,9 @@ Uses shared infra: media_token (auth) + object storage (bytes).
 
 from api import media_token
 from api.notecard import store
-# Object storage client is shared core infra (S3-compatible). Kept in `stores`
-# until the core migration; this section imports no domain logic from it.
-from stores import file_store
+# Object storage client is shared infra (S3-compatible), at the repo root
+# alongside db/openai_client; this section imports no domain logic from it.
+import file_store
 
 
 def fetch(attachment_id: int, token: str):

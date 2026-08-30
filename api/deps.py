@@ -15,8 +15,26 @@ browser. `require_internal_token` guards privileged, cross-user endpoints
 from fastapi import Header, HTTPException, status
 
 import config
+from db import cursor
 from api.telegram_auth import validate_init_data
-from services import user_service
+
+
+def _resolve_user(chat_id: int, username: str | None = None) -> int:
+    """Identity is shared auth infra: exchange an external chat_id for the internal
+    user_id, creating the user on first sight (and refreshing a new username). Kept
+    here rather than in a domain layer so every section's auth is self-contained."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO users (chat_id, username) VALUES (%s, %s)
+            ON CONFLICT (chat_id) DO UPDATE
+              SET updated_at = now(),
+                  username = COALESCE(EXCLUDED.username, users.username)
+            RETURNING id;
+            """,
+            (chat_id, username),
+        )
+        return cur.fetchone()[0]
 
 
 def _token_ok(token: str | None) -> bool:
@@ -51,7 +69,7 @@ def current_user(
             config.WEBAPP_INITDATA_MAX_AGE_SECONDS)
         if not user:
             raise HTTPException(status_code=401, detail="invalid init data")
-        return user_service.resolve(int(user["id"]), user.get("username"))
+        return _resolve_user(int(user["id"]), user.get("username"))
     if x_user_id is not None and _token_ok(x_internal_token):
         return int(x_user_id)
     raise HTTPException(status_code=401, detail="authentication required")

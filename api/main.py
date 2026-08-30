@@ -21,9 +21,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from migrate import run_migrations
-from api.routers import system, internal, users, notes, reminders, search, chat
-# Section verticals (each: endpoints.py → helper.py → store.py). Being migrated
-# off the shared services/stores routers above, one section at a time.
+from api import system
+# Section verticals — each a self-contained endpoints.py → helper.py → store.py.
+# The web-app sections are fully isolated; chat + telegram_bot orchestrate the
+# shared `common` domain. There are no more shared services/stores routers.
 from api.feed.endpoints import router as feed_router
 from api.notecard.endpoints import router as notecard_router
 from api.browser.endpoints import router as browser_router
@@ -32,6 +33,8 @@ from api.mapview.endpoints import router as mapview_router
 from api.contextmenu.endpoints import router as contextmenu_router
 from api.header.endpoints import router as header_router
 from api.search.endpoints import router as search_section_router
+from api.chat.endpoints import router as chat_router
+from api.telegram_bot.endpoints import router as telegram_bot_router
 
 # The Telegram Mini App (browser/webapp, React) is deployed as its own static
 # host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
@@ -78,14 +81,8 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(system.router)
-    app.include_router(internal.router)
-    app.include_router(users.router)
-    app.include_router(notes.router)
-    app.include_router(reminders.router)
-    app.include_router(search.router)
-    app.include_router(chat.router)
 
-    # Section verticals (new /api/<section> surfaces).
+    # Section verticals (each on its own /api/<section> surface).
     app.include_router(feed_router)
     app.include_router(notecard_router)
     app.include_router(browser_router)
@@ -94,6 +91,8 @@ def create_app() -> FastAPI:
     app.include_router(contextmenu_router)
     app.include_router(header_router)
     app.include_router(search_section_router)
+    app.include_router(chat_router)
+    app.include_router(telegram_bot_router)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):

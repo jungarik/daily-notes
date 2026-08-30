@@ -11,12 +11,7 @@ import logging
 import config
 from agents.enrich.tools import Ctx
 from agents.enrich.loop import run_loop
-from services import note_service
-from services import user_service
-from services import semantic
-from services import enrichment as enrichment_svc
-from stores import note_store
-from stores import chunk_store
+from agents.enrich import domain as d
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +24,19 @@ def _system(root_folders, default_root) -> str:
         "the user's existing vault, then call submit_metadata exactly once with your "
         "final decision. Reuse an existing path/tag verbatim when it fits; extend a "
         "path rather than inventing a parallel one."
-        + enrichment_svc._root_folders(root_folders, default_root)
+        + d.root_folders_block(root_folders, default_root)
     )
 
 
 def _one_shot(user_id, note_id, text, root_folders, default_root) -> dict:
     """Guaranteed fallback: the existing one-shot enricher with fresh context."""
-    embedding = semantic.embed(text)
-    similar = chunk_store.similar_notes(
+    embedding = d.embed(text)
+    similar = d.similar_notes(
         user_id, embedding, exclude_note_id=note_id, limit=config.ENRICH_SIMILAR_LIMIT)
-    return enrichment_svc.enrich(
+    return d.enrich(
         text,
-        known_paths=note_store.list_paths(user_id),
-        known_tags=note_store.list_tags(user_id),
+        known_paths=d.list_paths(user_id),
+        known_tags=d.list_tags(user_id),
         similar_notes=similar,
         root_folders=root_folders,
         default_root_folder=default_root,
@@ -54,8 +49,8 @@ def enrich(user_id: int, note_id: int, text: str) -> dict | None:
     if not (text and text.strip()):
         return None
 
-    root_folders, default_root = note_service.localized_roots(user_id)
-    ctx = Ctx(user_id, note_id, text, user_service.language(user_id), root_folders, default_root)
+    root_folders, default_root = d.localized_roots(user_id)
+    ctx = Ctx(user_id, note_id, text, d.language(user_id), root_folders, default_root)
     messages = [
         {"role": "system", "content": _system(root_folders, default_root)},
         {"role": "user", "content": text},
@@ -75,7 +70,7 @@ def enrich(user_id: int, note_id: int, text: str) -> dict | None:
             logger.exception("one-shot enrichment failed for note %s", note_id)
             return None
 
-    note_store.set_metadata(
+    d.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"], meta["tags"], meta["path"])
     logger.info("Enriched note %s -> %s '%s' @ %s", note_id, meta["type"], meta["title"], meta["path"])
     return meta

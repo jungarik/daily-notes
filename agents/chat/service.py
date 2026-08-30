@@ -9,7 +9,7 @@ import logging
 
 from agents.chat.tools import Ctx
 from agents.chat.loop import run_loop, resume_write
-from stores import chat_store
+from agents.chat import domain as chat_store
 
 logger = logging.getLogger(__name__)
 

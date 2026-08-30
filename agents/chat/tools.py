@@ -1,6 +1,6 @@
 """Agent tool registry.
 
-Each tool wraps an existing service (no duplicated domain logic). A tool is its
+Each tool wraps this package's self-contained `domain` module. A tool is its
 OpenAI function schema (in TOOL_SPECS) plus a handler(ctx, args) -> str. Handlers
 return a string the model reads back. `WRITE_TOOLS` names the tools that mutate
 data and therefore require the user's confirmation before they run.
@@ -9,11 +9,7 @@ data and therefore require the user's confirmation before they run.
 import json
 import logging
 
-from services import search_service
-from services import note_service
-from services import reminders
-from stores import note_store
-from stores import link_store
+from agents.chat import domain as d
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +54,10 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
     query = (args.get("query") or "").strip()
     if not query:
         return "Error: query is required."
-    ans, source_ids = search_service.answer_with_sources(
+    ans, source_ids = d.answer_with_sources(
         ctx.user_id, query, ctx.now, language=ctx.locale, tz=ctx.tz)
     # Cite the distinct notes this answer drew on, in relevance order.
-    briefs = {b["id"]: b for b in note_store.notes_brief(ctx.user_id, source_ids[:4])}
+    briefs = {b["id"]: b for b in d.notes_brief(ctx.user_id, source_ids[:4])}
     for nid in source_ids[:4]:
         b = briefs.get(nid)
         if b:
@@ -71,7 +67,7 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
 
 def _get_note(ctx: Ctx, args: dict) -> str:
     nid = args.get("note_id")
-    n = note_store.get_note_for_user(ctx.user_id, int(nid)) if nid is not None else None
+    n = d.get_note_for_user(ctx.user_id, int(nid)) if nid is not None else None
     if not n:
         return "Error: note not found."
     ctx.cite(n["id"], _label(n.get("title"), n.get("text")))
@@ -83,19 +79,19 @@ def _neighbors(ctx: Ctx, args: dict) -> str:
     nid = args.get("note_id")
     if nid is None:
         return "Error: note_id is required."
-    rows = link_store.links_of_for_user(ctx.user_id, int(nid))
+    rows = d.links_of_for_user(ctx.user_id, int(nid))
     out = [{"id": r[0], "title": r[1] or "untitled", "direction": r[3]} for r in rows]
     return _json(out) if out else "No linked notes."
 
 
 def _list_reminders(ctx: Ctx, args: dict) -> str:
-    rows = reminders.upcoming(ctx.user_id)
+    rows = d.upcoming(ctx.user_id)
     out = [{"id": r[0], "remind_at": r[1], "text": r[2], "status": r[3]} for r in rows]
     return _json(out) if out else "No upcoming reminders."
 
 
 def _list_paths(ctx: Ctx, args: dict) -> str:
-    return _json(note_service.known_paths(ctx.user_id))
+    return _json(d.known_paths(ctx.user_id))
 
 
 # ---- write tools (confirmation required) ----------------------------------
@@ -104,8 +100,8 @@ def _create_reminder(ctx: Ctx, args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not text:
         return "Error: text is required."
-    note_id = note_service.capture_note(ctx.user_id, text)
-    res = reminders.detect_reminder(note_id, ctx.user_id, text, ctx.now)
+    note_id = d.capture_note(ctx.user_id, text)
+    res = d.detect_reminder(note_id, ctx.user_id, text, ctx.now)
     if not res:
         return "Saved a note, but no time could be parsed — ask the user when to remind them."
     rid, remind_at = res
@@ -116,7 +112,7 @@ def _set_note_path(ctx: Ctx, args: dict) -> str:
     nid, path = args.get("note_id"), (args.get("path") or "").strip()
     if nid is None or not path:
         return "Error: note_id and path are required."
-    status, meta = note_service.move_note(ctx.user_id, int(nid), path)
+    status, meta = d.move_note(ctx.user_id, int(nid), path)
     if status == "invalid":
         return "Error: path must start with a root folder."
     if status == "not_found":
