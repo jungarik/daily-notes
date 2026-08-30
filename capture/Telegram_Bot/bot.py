@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import config
 import i18n
-from frontend.Telegram_Bot.api_client import ApiClient
+from capture.Telegram_Bot.api_client import ApiClient
 from i18n import t
 from config import (
     DEFAULT_TZ,

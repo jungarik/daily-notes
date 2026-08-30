@@ -79,8 +79,8 @@ holds client-agnostic agent packages (`agents/chat` — the agentic chat tab;
 tools/loop/service shape; infra stays at the repo root (`config`, `db`,
 `openai_client`, `i18n`, `migrate`).
 
-`frontend/Telegram_Bot/bot.py` (thin Telegram adapter) →
-`frontend/Telegram_Bot/api_client.py` → **`api/`** (FastAPI
+`capture/Telegram_Bot/bot.py` (thin Telegram adapter) →
+`capture/Telegram_Bot/api_client.py` → **`api/`** (FastAPI
 gateway) → `services/` orchestration (`note_service`: capture / enrich,
 `reminders`: detect + create + dispatch state, `search_service`: agenda-aware
 RAG answer, `user_service`: identity + settings resolution, `links`: candidates
@@ -121,10 +121,10 @@ with IPV6_V6ONLY=0 so it serves both private IPv6 and the public IPv4 edge. The
 API image is built from **`Dockerfile.api`** (single-stage Python — the API is a
 pure `/api` gateway and serves no frontend). The Mini App is a **separate static
 Railway service** built from **`Dockerfile.webapp`** (Vite build → a Caddy static
-server, `frontend/webapp/Caddyfile`, SPA fallback to `index.html`); it calls the
+server, `browser/webapp/Caddyfile`, SPA fallback to `index.html`); it calls the
 API cross-origin (hence CORS + `WEBAPP_ALLOWED_ORIGINS` on the API). The bot is
 built from **`Dockerfile.bot`** (single-stage Python; `CMD python -m
-frontend.Telegram_Bot.bot`). Each of the three services selects its Dockerfile
+capture.Telegram_Bot.bot`). Each of the three services selects its Dockerfile
 via a `RAILWAY_DOCKERFILE_PATH` service variable (`Dockerfile.api` /
 `Dockerfile.webapp` / `Dockerfile.bot`) set in the Railway dashboard — there are
 no `railway.*.json` config-as-code files (Railway deprecated Config-as-Code; use
@@ -132,7 +132,7 @@ the dashboard or `.railway/railway.ts` IaC). See `api/README.md`.
 
 ## Web app (Telegram Mini App)
 
-`frontend/webapp/` is a **React + Vite** Mini App, deployed as its own static
+`browser/webapp/` is a **React + Vite** Mini App, deployed as its own static
 host (Caddy) that calls the API cross-origin. It sets `VITE_API_BASE` (the API's
 public origin, baked into the build) and builds with `base: "/"`. It is split by
 section — one component per UI section (`Header`, `Dock`, `Feed`, `Browser`,
@@ -141,7 +141,7 @@ small `AppContext` store (`store/AppContext.jsx`), with `lib/` for API access
 (`api.js`), Telegram init (`telegram.js`) and formatting (`format.js`), and
 `graph/engine.js` holding the imperative canvas graph engine used by `MapView`.
 The shared note card lives in `components/NoteCard.jsx` (feed + preview sheet).
-(The former vanilla single-file app `frontend/Telegram_WebApp/` has been removed.)
+(The former vanilla single-file app has been removed.)
 It is a
 separate client from the bot and authenticates with Telegram's signed `initData`
 (`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py` via

@@ -129,7 +129,7 @@ API_BASE_URL = os.environ.get("API_BASE_URL")
 API_TIMEOUT_SECONDS = float(os.environ.get("API_TIMEOUT_SECONDS", "10"))
 
 # --- Telegram Mini App (note-browser web app) ---
-# Public HTTPS URL of the Mini App's static host (frontend/webapp, deployed via
+# Public HTTPS URL of the Mini App's static host (browser/webapp, deployed via
 # Dockerfile.webapp). When set, the bot exposes a Menu Button that opens it.
 # Blank = the button stays off.
 WEBAPP_URL = os.environ.get("WEBAPP_URL")

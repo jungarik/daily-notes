@@ -4,4 +4,3 @@
 **/*.pyc
 .git
 .venv
-frontend/webapp/dist

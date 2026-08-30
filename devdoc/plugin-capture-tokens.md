@@ -114,7 +114,7 @@ behalf, these stay on the trusted internal surface with `user_id`:
 
 New Pydantic models in `api/schemas.py`.
 
-## Bot commands — `frontend/Telegram_Bot/`
+## Bot commands — `capture/Telegram_Bot/`
 
 - `api_client.py`: add `create_token`, `list_tokens`, `revoke_token`.
 - Commands:

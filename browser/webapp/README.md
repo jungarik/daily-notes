@@ -24,8 +24,8 @@ src/
 ## Build
 
 ```
-npm --prefix frontend/webapp install
-npm --prefix frontend/webapp run build     # → frontend/webapp/dist
+npm --prefix browser/webapp install
+npm --prefix browser/webapp run build     # → browser/webapp/dist
 ```
 
 `vite.config.js` sets `base: "/"` (served at the host root). `VITE_API_BASE` is
@@ -56,7 +56,7 @@ Telegram).
 ## Dev
 
 ```
-npm --prefix frontend/webapp run dev
+npm --prefix browser/webapp run dev
 ```
 Set `window.__API_BASE__` to your deployed API origin when running outside
 Telegram, since initData/auth comes from the API.

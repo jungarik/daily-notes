@@ -23,9 +23,9 @@ import config
 from migrate import run_migrations
 from api.routers import system, internal, users, notes, reminders, search, chat
 
-# The Telegram Mini App (frontend/webapp, React) is deployed as its own static
+# The Telegram Mini App (browser/webapp, React) is deployed as its own static
 # host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
-# pure /api gateway and no longer serves any frontend itself.
+# pure /api gateway and serves no client itself.
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
