@@ -26,7 +26,7 @@ const initial = {
   notes: [],                // browser tree + search source
   feed: null,               // full note cards; null = not loaded
   filterSel: loadFilter(),  // Set of included folder keys, or null = all
-  reminderCount: 0,
+  stats: { notes: 0, links: 0, reminders: 0 },   // header stats (/api/header/stats)
   sheetNoteId: null,        // open note preview (null = closed)
   filterOpen: false,
   ctx: null,                // { target, rect } context menu
@@ -83,8 +83,8 @@ export function AppProvider({ children }) {
 
   const setScoped = useCallback((s) => patch({ scoped: s }), [patch]);
 
-  const refreshReminders = useCallback(async () => {
-    patch({ reminderCount: await api.fetchReminderCount() });
+  const refreshStats = useCallback(async () => {
+    patch({ stats: await api.fetchStats() });
   }, [patch]);
 
   // ----- preview sheet -----
@@ -131,13 +131,13 @@ export function AppProvider({ children }) {
   }, [runChat]);
 
   // ----- boot -----
-  useEffect(() => { reload(); refreshReminders(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { reload(); refreshStats(); /* eslint-disable-next-line */ }, []);
 
   const value = useMemo(() => ({
-    state, patch, setView, closeMode, toggleMode, reload, refreshReminders,
+    state, patch, setView, closeMode, toggleMode, reload, refreshStats,
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
     openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped, feedReq,
-  }), [state, patch, setView, closeMode, toggleMode, reload, refreshReminders,
+  }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
       openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped]);
 

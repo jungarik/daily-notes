@@ -26,6 +26,12 @@ from api.routers import system, internal, users, notes, reminders, search, chat
 # off the shared services/stores routers above, one section at a time.
 from api.feed.endpoints import router as feed_router
 from api.notecard.endpoints import router as notecard_router
+from api.browser.endpoints import router as browser_router
+from api.notesheet.endpoints import router as notesheet_router
+from api.mapview.endpoints import router as mapview_router
+from api.contextmenu.endpoints import router as contextmenu_router
+from api.header.endpoints import router as header_router
+from api.search.endpoints import router as search_section_router
 
 # The Telegram Mini App (browser/webapp, React) is deployed as its own static
 # host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
@@ -82,6 +88,12 @@ def create_app() -> FastAPI:
     # Section verticals (new /api/<section> surfaces).
     app.include_router(feed_router)
     app.include_router(notecard_router)
+    app.include_router(browser_router)
+    app.include_router(notesheet_router)
+    app.include_router(mapview_router)
+    app.include_router(contextmenu_router)
+    app.include_router(header_router)
+    app.include_router(search_section_router)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):

@@ -39,14 +39,15 @@ export function mediaUrl(u) {
 }
 
 // --- domain helpers (each degrades to a sensible default) ---
-// Endpoints are being migrated to per-section surfaces (/api/<section>). Migrated
-// so far: feed → /api/feed (attachment proxy → /api/notecard).
-export const fetchNotes = () => apiGet("/api/notes").catch(() => []);
+// Each web-app section calls its own /api/<section> surface (endpoints.py in the
+// matching api/ folder). Attachment proxy lives in the notecard section.
+export const fetchNotes = () => apiGet("/api/browser").catch(() => []);
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
-export const fetchNote = (id) => apiGet("/api/notes/" + encodeURIComponent(id)).catch(() => null);
-export const fetchGraph = () => apiGet("/api/notes/graph").catch(() => ({ nodes: [], edges: [] }));
-export const fetchReminderCount = () => apiGet("/api/reminders/count").then((d) => d.count || 0).catch(() => 0);
-export const setNotePath = (id, path) => apiPost("/api/notes/" + encodeURIComponent(id) + "/path", { path });
-export const moveFolder = (old_path, new_path) => apiPost("/api/notes/folder/move", { old_path, new_path });
+export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
+export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
+export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ notes: 0, links: 0, reminders: 0 }));
+export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
+export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
+export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
 export const chatSend = (message, thread_id) => apiPost("/api/chat", { message, thread_id });
 export const chatConfirm = (thread_id, approve) => apiPost("/api/chat/confirm", { thread_id, approve });
