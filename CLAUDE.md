@@ -244,7 +244,9 @@ the final schema has no `eval_cases` table. Chat replay never approves writes;
 Enrich/Reminder evaluate extracted handoff planning only. Structured traces
 capture routes, tools, and retrieved chunks. The LLM
 judge is controlled by `AGENT_EVAL_JUDGE_ENABLED`. Hidden Telegram commands
-`/eval` and `/eval_metrics` are restricted by `EVAL_ADMIN_TELEGRAM_IDS`.
+`/eval` and `/eval_metrics` resolve the caller normally from `chat_id` to
+`users.id`; the API authorizes that internal id against chat ids configured in
+`EVAL_ADMIN_TELEGRAM_IDS`. The bot contains no allowlist logic.
 
 ## Design docs
 

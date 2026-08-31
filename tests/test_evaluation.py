@@ -2,13 +2,13 @@
 
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from fastapi import HTTPException
 
 from agents.chat.tools import Ctx
 from api.evals import helper
 from api.evals import endpoints
-from capture.Telegram_Bot import bot
-from types import SimpleNamespace
+from api.evals import db as eval_db
 
 
 class EvaluationTests(unittest.TestCase):
@@ -112,13 +112,26 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual("get_note", ctx.trace["tools"][0]["name"])
         self.assertEqual(["tool"], ctx.trace["routes"])
 
-    def test_eval_api_is_protected_and_telegram_is_admin_allowlisted(self):
+    def test_eval_api_is_protected_and_authorizes_internal_user_id(self):
         self.assertTrue(endpoints.router.dependencies)
-        update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
-        with patch.object(bot.config, "EVAL_ADMIN_TELEGRAM_IDS", {123}):
-            self.assertTrue(bot._is_eval_admin(update))
-        with patch.object(bot.config, "EVAL_ADMIN_TELEGRAM_IDS", {999}):
-            self.assertFalse(bot._is_eval_admin(update))
+        with patch.object(endpoints.db, "is_eval_admin", return_value=True):
+            self.assertEqual(7, endpoints.eval_admin_user(7))
+        with patch.object(endpoints.db, "is_eval_admin", return_value=False):
+            with self.assertRaises(HTTPException) as raised:
+                endpoints.eval_admin_user(7)
+        self.assertEqual(403, raised.exception.status_code)
+
+    def test_eval_admin_chat_ids_resolve_to_internal_user_ids(self):
+        cur = MagicMock()
+        cur.fetchall.return_value = [(7,), (9,)]
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cur
+        with patch.object(eval_db.config, "EVAL_ADMIN_TELEGRAM_IDS", {12345}), \
+                patch.object(eval_db, "cursor", return_value=cursor_context):
+            self.assertTrue(eval_db.is_eval_admin(7))
+            self.assertFalse(eval_db.is_eval_admin(8))
+        cur.execute.assert_called_with(
+            "SELECT id FROM users WHERE chat_id = ANY(%s);", ([12345],))
 
 
 if __name__ == "__main__":

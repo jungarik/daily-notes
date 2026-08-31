@@ -641,11 +641,6 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t(locale, "reminders_header") + "\n" + "\n".join(lines))
 
 
-def _is_eval_admin(update: Update) -> bool:
-    user = update.effective_user
-    return bool(user and user.id in config.EVAL_ADMIN_TELEGRAM_IDS)
-
-
 def _format_eval_metrics(data: dict) -> str:
     total = data.get("total_cases", 0)
     success = data.get("success_yes", 0)
@@ -670,9 +665,6 @@ def _format_eval_metrics(data: dict) -> str:
 
 async def eval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only: replay one completed conversation turn for evaluation."""
-    if not _is_eval_admin(update):
-        await update.message.reply_text("Not authorized.")
-        return
     if not context.args or not context.args[0].isdigit():
         await update.message.reply_text(
             "Usage: /eval <thread_id> [turn_index] [chat|enrich|reminder] <expected behavior>")
@@ -696,6 +688,9 @@ async def eval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     progress = await update.message.reply_text("Running evaluation…")
     result = await api.run_evaluations(
         user_id, thread_id, expected_behavior, agent, turn_index)
+    if result and result.get("error") == "not_authorized":
+        await progress.edit_text("Not authorized.")
+        return
     if not result:
         await progress.edit_text("Evaluation failed. Check API logs.")
         return
@@ -704,9 +699,6 @@ async def eval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def eval_metrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only: /eval_metrics [run_id] [chat|enrich|reminder]."""
-    if not _is_eval_admin(update):
-        await update.message.reply_text("Not authorized.")
-        return
     run_id, agent = None, None
     for value in context.args:
         if value.lower() in ("chat", "enrich", "reminder"):
@@ -719,6 +711,9 @@ async def eval_metrics_command(update: Update, context: ContextTypes.DEFAULT_TYP
             return
     user_id = await resolve_uid(update)
     data = await api.evaluation_metrics(user_id, run_id, agent) if user_id else None
+    if data and data.get("error") == "not_authorized":
+        await update.message.reply_text("Not authorized.")
+        return
     await update.message.reply_text(
         _format_eval_metrics(data) if data else "No evaluation metrics found.")
 

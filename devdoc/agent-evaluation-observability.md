@@ -39,7 +39,10 @@ Internal-token-protected endpoints:
 - `POST /api/evals/run`: `{thread_id, turn_index?, agent, expected_behavior}`
 - `GET /api/evals/metrics?run_id=&agent=`
 
-Hidden Telegram commands are allowlisted by `EVAL_ADMIN_TELEGRAM_IDS`:
+Hidden Telegram commands use the normal `chat_id → users.id` identity resolution.
+The bot sends the trusted internal user id; the API resolves configured
+`EVAL_ADMIN_TELEGRAM_IDS` through `users.chat_id` and authorizes by `users.id`.
+The allowlist is therefore enforced only by the API, not by bot code:
 
 ```text
 /eval <thread_id> [turn_index] [chat|enrich|reminder] <expected behavior>

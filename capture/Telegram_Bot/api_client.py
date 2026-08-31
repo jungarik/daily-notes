@@ -424,6 +424,8 @@ class ApiClient:
                     json={"thread_id": thread_id, "turn_index": turn_index,
                           "agent": agent, "expected_behavior": expected_behavior},
                     headers=self._headers(user_id))
+                if resp.status_code == 403:
+                    return {"error": "not_authorized"}
                 resp.raise_for_status()
                 return resp.json()
         except Exception:
@@ -445,6 +447,8 @@ class ApiClient:
                 resp = await client.get(
                     f"{self._base_url}/api/evals/metrics", params=params,
                     headers=self._headers(user_id))
+                if resp.status_code == 403:
+                    return {"error": "not_authorized"}
                 resp.raise_for_status()
                 return resp.json()
         except Exception:
