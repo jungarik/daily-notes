@@ -89,11 +89,16 @@
   .tab-icons.hidden, .tab-input.hidden { display: none; }
   .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
   .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
-  .tab-input input { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
+  .tab-input input, .tab-input textarea { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
+  .tab-input textarea {
+    display: block; min-height: 1.5em; max-height: 9em; line-height: 1.5;
+    resize: none; overflow-y: hidden; overflow-wrap: anywhere;
+    scrollbar-width: thin;
+  }
   /* Input mode: let the pill stretch toward the borders and the field fill it. */
   .dock.input .tabbar { flex: 1; }
   .dock.input .tab-input { width: 100%; }
-  .dock.input .tab-input input { flex: 1; width: auto; max-width: none; }
+  .dock.input .tab-input input, .dock.input .tab-input textarea { flex: 1; width: auto; max-width: none; }
   .tab-input .ts-send { border: none; background: #2f6feb; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center; }
   .tab-input .ts-send svg { width: 16px; height: 16px; }
   .fab.hidden { display: none; }

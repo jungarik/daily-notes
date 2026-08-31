@@ -25,6 +25,17 @@ export default function Dock() {
 
   useEffect(() => { setText(""); if (barMode) setTimeout(() => inputRef.current && inputRef.current.focus(), 60); }, [barMode]);
 
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input || input.tagName !== "TEXTAREA") return;
+
+    input.style.height = "auto";
+    const lineHeight = parseFloat(window.getComputedStyle(input).lineHeight) || 22;
+    const maxHeight = lineHeight * 6;
+    input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [text, barMode]);
+
   const onInput = (e) => {
     setText(e.target.value);
     if (barMode === "search") setSearchQuery(e.target.value);
@@ -54,11 +65,18 @@ export default function Dock() {
             {barMode === "chat"
               ? <svg className="ts-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z" /></svg>
               : <svg className="ts-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>}
-            <input ref={inputRef} type="text" value={text}
-              placeholder={barMode === "chat" ? "Ask about your notes…" : "Search notes…"}
-              autoComplete="off" autoCapitalize="off" spellCheck={false}
-              onChange={onInput}
-              onKeyDown={(e) => { if (e.key === "Enter" && barMode === "chat") { e.preventDefault(); submit(); } }} />
+            {barMode === "chat" ? (
+              <textarea ref={inputRef} rows={1} value={text}
+                placeholder="Ask about your notes…"
+                autoComplete="off" autoCapitalize="off" spellCheck={false}
+                enterKeyHint="enter"
+                onChange={onInput} />
+            ) : (
+              <input ref={inputRef} type="text" value={text}
+                placeholder="Search notes…"
+                autoComplete="off" autoCapitalize="off" spellCheck={false}
+                onChange={onInput} />
+            )}
             <button className="ts-send" aria-label="Send" onClick={submit}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
             </button>
