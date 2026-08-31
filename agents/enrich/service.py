@@ -12,6 +12,7 @@ import config
 from agents.enrich.tools import Ctx
 from agents.enrich.loop import run_loop
 from agents.enrich import domain as d
+from agents.enrich import db
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,12 @@ def _system(root_folders, default_root) -> str:
 def _one_shot(user_id, note_id, text, root_folders, default_root) -> dict:
     """Guaranteed fallback: the existing one-shot enricher with fresh context."""
     embedding = d.embed(text)
-    similar = d.similar_notes(
+    similar = db.similar_notes(
         user_id, embedding, exclude_note_id=note_id, limit=config.ENRICH_SIMILAR_LIMIT)
     return d.enrich(
         text,
-        known_paths=d.list_paths(user_id),
-        known_tags=d.list_tags(user_id),
+        known_paths=db.list_paths(user_id),
+        known_tags=db.list_tags(user_id),
         similar_notes=similar,
         root_folders=root_folders,
         default_root_folder=default_root,
@@ -70,7 +71,7 @@ def enrich(user_id: int, note_id: int, text: str) -> dict | None:
             logger.exception("one-shot enrichment failed for note %s", note_id)
             return None
 
-    d.set_metadata(
+    db.set_metadata(
         note_id, meta["type"], meta["title"], meta["priority"], meta["tags"], meta["path"])
     logger.info("Enriched note %s -> %s '%s' @ %s", note_id, meta["type"], meta["title"], meta["path"])
     return meta

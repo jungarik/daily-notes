@@ -10,6 +10,7 @@ import json
 import logging
 
 from agents.chat import domain as d
+from agents.chat import db
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
     ans, source_ids = d.answer_with_sources(
         ctx.user_id, query, ctx.now, language=ctx.locale, tz=ctx.tz)
     # Cite the distinct notes this answer drew on, in relevance order.
-    briefs = {b["id"]: b for b in d.notes_brief(ctx.user_id, source_ids[:4])}
+    briefs = {b["id"]: b for b in db.notes_brief(ctx.user_id, source_ids[:4])}
     for nid in source_ids[:4]:
         b = briefs.get(nid)
         if b:
@@ -67,7 +68,7 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
 
 def _get_note(ctx: Ctx, args: dict) -> str:
     nid = args.get("note_id")
-    n = d.get_note_for_user(ctx.user_id, int(nid)) if nid is not None else None
+    n = db.get_note_for_user(ctx.user_id, int(nid)) if nid is not None else None
     if not n:
         return "Error: note not found."
     ctx.cite(n["id"], _label(n.get("title"), n.get("text")))
@@ -79,13 +80,13 @@ def _neighbors(ctx: Ctx, args: dict) -> str:
     nid = args.get("note_id")
     if nid is None:
         return "Error: note_id is required."
-    rows = d.links_of_for_user(ctx.user_id, int(nid))
+    rows = db.links_of_for_user(ctx.user_id, int(nid))
     out = [{"id": r[0], "title": r[1] or "untitled", "direction": r[3]} for r in rows]
     return _json(out) if out else "No linked notes."
 
 
 def _list_reminders(ctx: Ctx, args: dict) -> str:
-    rows = d.upcoming(ctx.user_id)
+    rows = db.upcoming_reminders(ctx.user_id)
     out = [{"id": r[0], "remind_at": r[1], "text": r[2], "status": r[3]} for r in rows]
     return _json(out) if out else "No upcoming reminders."
 

@@ -12,6 +12,7 @@ import logging
 
 import config
 from agents.enrich import domain as d
+from agents.enrich import db
 
 logger = logging.getLogger(__name__)
 
@@ -38,18 +39,18 @@ def _json(obj) -> str:
 # ---- read tools -----------------------------------------------------------
 
 def _list_paths(ctx: Ctx, args: dict) -> str:
-    rows = d.list_paths(ctx.user_id)
+    rows = db.list_paths(ctx.user_id)
     return _json([{"path": p, "count": c} for p, c in rows]) if rows else "No existing paths."
 
 
 def _list_tags(ctx: Ctx, args: dict) -> str:
-    rows = d.list_tags(ctx.user_id)
+    rows = db.list_tags(ctx.user_id)
     return _json([{"tag": t, "count": c} for t, c in rows]) if rows else "No existing tags."
 
 
 def _find_similar(ctx: Ctx, args: dict) -> str:
     emb = d.embed(ctx.text)
-    sim = d.similar_notes(
+    sim = db.similar_notes(
         ctx.user_id, emb, exclude_note_id=ctx.note_id, limit=config.ENRICH_SIMILAR_LIMIT)
     out = [{"title": n["title"], "path": n.get("path"), "tags": n.get("tags") or [],
             "type": n["note_type"], "distance": n.get("distance")} for n in sim]
