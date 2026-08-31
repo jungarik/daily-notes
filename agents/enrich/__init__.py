@@ -1,7 +1,7 @@
 """Enrichment/action agent — the write/action agent for the user's notes.
 
-A client-agnostic agent that creates notes, creates reminders (from time-bearing
-instructions), moves notes, and classifies/enriches note metadata — each with a
+A client-agnostic agent that creates notes, moves notes, and classifies/enriches
+note metadata — each with a
 confirmation step. Reserved for the web-app capture path; not wired into the bot.
 See devdoc/agentic-enrich.md.
 

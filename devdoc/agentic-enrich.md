@@ -1,82 +1,32 @@
-# Agentic enrichment / actions
+# Agentic enrichment / note actions
 
-Status: **action agent built; not yet wired to a client.** The enrich agent is
-the **write/action agent** for the user's notes: it creates notes, creates
-reminders (from time-bearing instructions), moves notes to a vault path, and
-classifies/enriches note metadata — each with a Confirm/Cancel step. Reserved for
-the **web app's** future capture/action path; the Telegram bot keeps its own
-behaviour (fast capture + on-demand 🧠 Enrich) and does **not** call this agent.
-The chat agent is now read-only (Q&A); all writes moved here.
+Status: **implemented.** Enrich owns non-reminder note writes: create a text
+note, move a note to a validated vault path, and classify/enrich note metadata.
+Reminder interpretation and creation belong to `agents/reminder`.
 
-## Goal
+## Workflow
 
-Take natural-language instructions and act on the user's own vault — create a
-note, create a reminder, move a note, or classify/enrich one — with a
-confirmation step before each write, using tools over the user's own vault so the
-result stays consistent. Mirrors the `agents/chat` shape (tools · loop · service,
-keyed on `user_id`).
+`agents/enrich/loop.py` defines `ENRICH_GRAPH`, a bounded LangGraph
+single-tool-call workflow. Read tools (`list_paths`, `list_tags`) loop to the
+model. Write tools (`create_note`, `set_note_path`, `enrich_note`) route to
+`pending_write` and stop for confirmation. `resume_write` executes approval or
+records decline, then returns to the model. `final` is the bounded fallback.
 
-## Where it lives (layering)
+The stateless `ACTION_PLAN_GRAPH` supports Chat's `perform_action` handoff. It
+selects exactly one Enrich write schema and returns `{name,args,summary}` without
+executing.
 
-Client-agnostic code in **`agents/enrich/`**, reserved for the (future) web-app
-capture path — not wired into the bot, which uses one-shot enrichment. It is
-fully self-contained: its data access lives in `agents/enrich/domain.py`
-(embeddings, note/chunk SQL, root-folder vocabulary, the one-shot enricher), and
-it imports only shared infra (`db`, `config`, `i18n`, `openai_client`), never a
-client and no shared domain layer.
+## Layers and public API
 
-## Building blocks
+- `tools.py`: schemas, handlers, and human confirmation summaries.
+- `domain.py`: note chunking/embedding, path validation, and one-shot enrichment.
+- `db.py`: owner-scoped reads, note writes, metadata writes, and optional direct
+  agent thread persistence.
+- `service.py`: `start_turn` / `confirm` for a future direct surface, plus
+  `plan_action` / `execute_action` used by Chat.
 
-### Loop (planning) — `agents/enrich/loop.py`
-A bounded single-tool-call ReAct loop (`ENRICH_AGENT_MAX_STEPS`) with
-write-confirmation — the same pattern the chat agent originally used. The model
-may call read tools freely; when it calls a **write** tool the loop pauses
-(returns `{status:"confirm", action, pending}`) instead of executing, and
-`resume_write` continues after the user approves/declines.
+The agent is client-agnostic and imports only shared infrastructure. Note
+creation is text-only. Telegram keeps fast capture and its deferred Enrich
+button; it does not call this agent for that flow.
 
-### Tools (tool use) — `agents/enrich/tools.py`
-Read tools (context, wrap `db`):
-- `list_paths` — existing vault paths with counts.
-- `list_tags` — existing tags with counts.
-
-Write tools (in `WRITE_TOOLS`, confirmation required; wrap `domain`):
-- `create_note(text)` — persist a new note (chunk + embed) → `domain.capture_note`.
-- `create_reminder(text)` — create a note AND its reminder from a time-bearing
-  instruction → `domain.create_note_with_reminder` (gated LLM time parse).
-- `set_note_path(note_id, path)` — move a note to a validated vault path
-  → `domain.move_note`.
-- `enrich_note(note_id)` — classify + persist metadata (type/title/path/tags/
-  priority) via the one-shot enricher → `domain.enrich_note`.
-
-### Service — `agents/enrich/service.py`
-Turn-based (for a future direct enrich surface): `start_turn(user_id, message,
-thread_id, now, tz, locale)` runs one instruction; `confirm(user_id, thread_id,
-approve, …)` resumes a paused write. Thread state (running messages + `pending`
-write) is persisted in the shared `chat_threads` table via `db`. Returns
-`{thread_id, status:"answer"|"confirm", reply|action}`.
-
-Stateless **handoff API** (used by the chat agent's `perform_action` tool):
-- `plan_action(user_id, instruction, now, tz, locale)` — one LLM call over the
-  write-tool schemas → `{name, args, summary}` for the single write the
-  instruction implies, or `None`. Executes nothing.
-- `execute_action(user_id, action, now, tz, locale)` — run a planned write's tool
-  handler (after the user approved it). The chat agent owns the thread/confirm
-  UX; this just exposes the write capability.
-
-## Intended wiring (web app)
-
-When the web app gains a capture/action surface, it calls
-`agents.enrich.start_turn(...)` / `confirm(...)` behind an `/api` section (like the
-chat tab), rendering the confirm card for pending writes. The bot's
-`/api/telegram_bot/*` endpoints are left alone (fast capture + deferred one-shot
-Enrich button). Note creation here is text-only (no media captions).
-
-## Config
-
-- `ENRICH_AGENT_MODEL` (default = `ENRICH_LLM_MODEL`) — the loop's model.
-- `ENRICH_AGENT_MAX_STEPS` (default `4`) — max tool-call iterations.
-
-## Not in this pass
-
-Merging the on-demand Enrich button onto the agent, enriching media captions, and
-streaming progress. All fit behind the existing loop/tool/service seams.
+Config: `ENRICH_AGENT_MODEL` and `ENRICH_AGENT_MAX_STEPS`.

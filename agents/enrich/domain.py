@@ -1,16 +1,14 @@
 """Domain logic for the enrichment/action agent (no raw SQL; that lives in db.py).
 
-Everything the agent's tools do — create a note (chunk + embed), detect + create a
-reminder, move a note, and classify/enrich a note (one-shot LLM + guardrails) —
+Everything the agent's tools do — create a note (chunk + embed), move a note,
+and classify/enrich a note (one-shot LLM + guardrails) —
 over the agent's own `db` + shared infra (config, i18n, openai_client). No shared
 domain layer.
 """
 
-import re
 import json
 import logging
 from collections import Counter
-from datetime import datetime
 
 import config
 import i18n
@@ -86,62 +84,6 @@ def capture_note(user_id: int, text: str) -> int:
     db.save_chunks(note_id, _build_chunks(text))
     logger.info("Enrich agent captured note %s (user %s)", note_id, user_id)
     return note_id
-
-
-# ===== reminders (create_reminder tool) ====================================
-
-_REL_UNITS = (r"хвилин|хвил|секунд|годин|тижн|тиждень|дн(і|ів|я)|день|"
-              r"seconds?|minutes?|\bmin\b|hours?|\bhr\b|days?|weeks?")
-_TIME_HINT = re.compile(
-    r"(remind|reminder|schedule|нагада|нагадай|"
-    r"tomorrow|today|tonight|завтра|сьогодні|післязавтра|"
-    r"morning|afternoon|evening|night|noon|"
-    r"вранці|зранку|ранок|вдень|ввечері|увечері|вечір|вночі|ніч|опівдні|"
-    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-    r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ|"
-    r"пізніше|later|кілька|декілька|пару|couple|few|через|"
-    rf"{_REL_UNITS}|\bin\s+\d|\bat\s+\d|\d{{1,2}}:\d{{2}}|"
-    r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)", re.IGNORECASE)
-
-
-def _extract_reminder(text: str, now: datetime):
-    if not _TIME_HINT.search(text):
-        return None
-    try:
-        system = (
-            "Extract a reminder from the user's message (Ukrainian or English). "
-            "Return strict JSON: {\"is_reminder\": bool, \"remind_at\": string|null}. "
-            "remind_at is ISO-8601 local time with no timezone, e.g. 2026-07-30T09:00:00. "
-            f"Current local time is {now.strftime('%Y-%m-%dT%H:%M:%S')} ({now.tzname()}). "
-            "Resolve all relative expressions against it. If only a part of day is "
-            "given, use morning=09:00, noon=12:00, afternoon=15:00, evening=19:00, "
-            "night=21:00. If a date has no time, use 09:00. For an indefinite quantity "
-            f"('кілька'/'a few') assume about {config.REMINDER_FEW_COUNT}. For a vague "
-            f"'later'/'пізніше', schedule about {config.REMINDER_LATER} from now. "
-            "If the message is not asking to be reminded, set is_reminder=false.")
-        resp = get_client().chat.completions.create(
-            model=config.REMINDER_LLM_MODEL, temperature=0,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": text}])
-        data = json.loads(resp.choices[0].message.content)
-        if not data.get("is_reminder") or not data.get("remind_at"):
-            return None
-        dt = datetime.fromisoformat(data["remind_at"])
-        return dt if dt.tzinfo else dt.replace(tzinfo=now.tzinfo)
-    except Exception:
-        logger.exception("Reminder extraction failed")
-        return None
-
-
-def create_note_with_reminder(user_id: int, text: str, now: datetime):
-    """Capture a note and, if it carries a time, create its reminder. Returns
-    (note_id, reminder_id|None, remind_at|None)."""
-    note_id = capture_note(user_id, text)
-    remind_at = _extract_reminder(text, now)
-    if not remind_at:
-        return note_id, None, None
-    reminder_id = db.create_reminder(note_id, user_id, remind_at)
-    return note_id, reminder_id, remind_at
 
 
 # ===== move (set_note_path tool) ===========================================

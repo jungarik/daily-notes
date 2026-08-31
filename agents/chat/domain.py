@@ -2,7 +2,7 @@
 
 Embeddings for retrieval, RAG search, and the user's path vocabulary — over the
 agent's own `db` + shared infra (config, i18n, openai_client). The chat agent
-never writes; note/reminder creation and moves live in the enrich agent.
+never writes; creation and mutation live in specialist agents.
 """
 
 import json

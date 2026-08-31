@@ -2,8 +2,8 @@
 
 Read tools wrap this package's `domain` (logic) or `db` (reads). The chat agent
 does no writes itself: when the user asks to create/change something it calls the
-`perform_action` HANDOFF tool, which the loop routes to the enrich (action) agent
-for planning + a confirmation step — the chat agent never mutates data directly.
+handoff tools, which the loop routes to the appropriate specialist for planning
++ a confirmation step — the chat agent never mutates data directly.
 A tool is its OpenAI function schema (in TOOL_SPECS) plus, for read tools, a
 handler(ctx, args) -> str; the handoff tool is intercepted by the loop.
 """
@@ -105,9 +105,11 @@ HANDLERS = {
     "list_paths": _list_paths,
 }
 
-# Handoff tools have no local handler — the loop routes them to the enrich agent
+# Handoff tools have no local handler. The loop routes each to its owning agent
 # and pauses for the user's confirmation.
-HANDOFF_TOOLS = {"perform_action"}
+ENRICH_HANDOFF_TOOLS = {"perform_action"}
+REMINDER_HANDOFF_TOOLS = {"set_reminder"}
+HANDOFF_TOOLS = ENRICH_HANDOFF_TOOLS | REMINDER_HANDOFF_TOOLS
 
 
 def execute_tool(ctx: Ctx, name: str, args: dict) -> str:
@@ -143,10 +145,17 @@ TOOL_SPECS = [
     _fn("list_paths", "List the user's existing folder paths (the vault vocabulary).", {}, []),
     _fn("perform_action",
         "Use this when the user asks you to DO something rather than answer a "
-        "question — create a note, create a reminder, move a note to a folder, or "
-        "classify/enrich a note. Pass the user's request verbatim as `instruction`. "
+        "question — create a note, move a note to a folder, or classify/enrich a "
+        "note. Do not use it for reminders. Pass the user's request verbatim as "
+        "`instruction`. "
         "A specialized action agent proposes the exact change and the user confirms "
         "it before anything happens.",
         {"instruction": {"type": "string", "description": "The user's request, verbatim."}},
+        ["instruction"]),
+    _fn("set_reminder",
+        "Use this when the user asks to set or schedule a reminder. Pass the full "
+        "request verbatim, including what to remember and every date/time detail. "
+        "The reminder agent resolves the time and proposes it for confirmation.",
+        {"instruction": {"type": "string", "description": "The reminder request, verbatim."}},
         ["instruction"]),
 ]

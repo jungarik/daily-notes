@@ -1,7 +1,6 @@
 """Enrichment/action agent tool registry.
 
-The enrich agent is the write/action agent: it can create notes, create reminders,
-move notes and classify (enrich) them — with a confirmation step before each
+The enrich agent can create notes, move notes and classify (enrich) them — with a confirmation step before each
 write. Read tools (existing paths/tags) give it vocabulary/context. Each tool is
 its OpenAI function schema (in TOOL_SPECS) plus a handler(ctx, args) -> str.
 `WRITE_TOOLS` names the tools that mutate data and require the user's confirmation.
@@ -52,16 +51,6 @@ def _create_note(ctx: Ctx, args: dict) -> str:
     return _json({"note_id": note_id})
 
 
-def _create_reminder(ctx: Ctx, args: dict) -> str:
-    text = (args.get("text") or "").strip()
-    if not text:
-        return "Error: text is required."
-    note_id, reminder_id, remind_at = d.create_note_with_reminder(ctx.user_id, text, ctx.now)
-    if reminder_id is None:
-        return "Saved a note, but no time could be parsed — ask the user when to remind them."
-    return _json({"note_id": note_id, "reminder_id": reminder_id, "remind_at": remind_at})
-
-
 def _set_note_path(ctx: Ctx, args: dict) -> str:
     nid, path = args.get("note_id"), (args.get("path") or "").strip()
     if nid is None or not path:
@@ -88,20 +77,17 @@ HANDLERS = {
     "list_paths": _list_paths,
     "list_tags": _list_tags,
     "create_note": _create_note,
-    "create_reminder": _create_reminder,
     "set_note_path": _set_note_path,
     "enrich_note": _enrich_note,
 }
 
-WRITE_TOOLS = {"create_note", "create_reminder", "set_note_path", "enrich_note"}
+WRITE_TOOLS = {"create_note", "set_note_path", "enrich_note"}
 
 
 def summarize_write(name: str, args: dict) -> str:
     """A human-readable one-liner for the confirmation prompt."""
     if name == "create_note":
         return "Create a note: “%s”." % (args.get("text", "").strip())
-    if name == "create_reminder":
-        return "Create a reminder: “%s”." % (args.get("text", "").strip())
     if name == "set_note_path":
         return "Move note %s to “%s”." % (args.get("note_id"), args.get("path", "").strip())
     if name == "enrich_note":
@@ -135,10 +121,6 @@ TOOL_SPECS = [
     _fn("create_note",
         "Create a new note from the given text (chunked + embedded). Requires user "
         "confirmation.", {"text": {"type": "string"}}, ["text"]),
-    _fn("create_reminder",
-        "Create a note AND a reminder from a natural-language instruction that includes "
-        "a time (e.g. 'remind me to call Bob tomorrow at 5pm'). Requires user confirmation.",
-        {"text": {"type": "string"}}, ["text"]),
     _fn("set_note_path",
         "Move a note to a different vault path (must start with a root folder). "
         "Requires user confirmation.",

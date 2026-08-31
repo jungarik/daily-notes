@@ -1,7 +1,7 @@
 """Persistence for the enrichment/action agent (isolated SQL).
 
 Context reads (path/tag vocabulary, similar notes, user language), the writes the
-agent's tools perform (create note + chunks, create reminder, move, set metadata),
+agent's tools perform (create note + chunks, move, set metadata),
 and thread state for the write-confirmation flow (over the shared chat_threads
 table). `domain.py` holds the logic that calls these.
 """
@@ -130,15 +130,6 @@ def set_metadata(note_id, note_type, title, priority, tags, path) -> None:
             """,
             (note_type, title, priority, Json(tags or []), path, note_id),
         )
-
-
-def create_reminder(note_id: int, user_id: int, remind_at) -> int:
-    with cursor() as cur:
-        cur.execute(
-            "INSERT INTO reminders (note_id, user_id, remind_at) VALUES (%s, %s, %s) RETURNING id;",
-            (note_id, user_id, remind_at),
-        )
-        return cur.fetchone()[0]
 
 
 # ----- thread state (shared chat_threads table) -----

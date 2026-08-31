@@ -46,7 +46,8 @@ shared, at the root.
 | `api/chat/`       | agentic chat tab (`/api/chat`) — thin; delegates to `agents/chat` |
 | `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
 | `agents/chat/`    | self-contained chat reasoning engine (`tools`/`loop`/`service` + `domain.py`) |
-| `agents/enrich/`  | self-contained capture-time enrichment agent (+ `domain.py`) |
+| `agents/enrich/`  | note creation/move/enrichment action agent (+ `domain.py`) |
+| `agents/reminder/`| chat-only reminder parsing/planning/persistence agent |
 | **shared infra (root + api):** | |
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
@@ -146,7 +147,7 @@ top-k.
 
 Capture is instant and cheap. When you send a note (text, or voice → transcribed)
 the bot immediately chunks + embeds it, saves it, checks for a **reminder**
-(keyword-gated LLM call in `reminders.py`), and replies "Saved ✅" with three
+(keyword-gated LLM call in `api/telegram_bot/helper.py`), and replies "Saved ✅" with three
 actions: **🧠 Enrich**, **✂️ Atomize**, and **❌ Cancel**. If it's time-bearing, it
 also creates the reminder and confirms with a Cancel button.
 

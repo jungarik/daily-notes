@@ -6,15 +6,12 @@ user's clock/locale. A write pauses the loop; `confirm` resumes it (executing or
 declining), then continues to the reply. Reserved for the web-app capture path.
 """
 
-import json
 import logging
 
-import config
-import openai_client
 from agents.enrich.tools import (
-    Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write,
+    Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool,
 )
-from agents.enrich.loop import run_loop, resume_write
+from agents.enrich.loop import plan_action as run_action_plan, run_loop, resume_write
 from agents.enrich import db
 
 logger = logging.getLogger(__name__)
@@ -25,7 +22,7 @@ _WRITE_SPECS = [s for s in TOOL_SPECS if s["function"]["name"] in WRITE_TOOLS]
 SYSTEM_PROMPT = (
     "You are the note-processing assistant for the user's personal notes app (a "
     "Zettelkasten-style vault). You TAKE ACTIONS on their notes: create notes, "
-    "create reminders from time-bearing instructions, move notes to a vault path, "
+    "move notes to a vault path, "
     "and classify/enrich a note's metadata. Use list_paths/list_tags to stay "
     "consistent with the user's existing vault. Every action is confirmed with the "
     "user before it runs — do not claim something is done until it is. Be concise."
@@ -90,21 +87,7 @@ def plan_action(user_id: int, instruction: str, now, tz, locale) -> dict | None:
         {"role": "user", "content": instruction},
     ]
     try:
-        resp = openai_client.get_client().chat.completions.create(
-            model=config.ENRICH_AGENT_MODEL, messages=messages, temperature=0,
-            tools=_WRITE_SPECS, tool_choice="auto", parallel_tool_calls=False)
-        msg = resp.choices[0].message
-        if not msg.tool_calls:
-            return None
-        tc = msg.tool_calls[0]
-        name = tc.function.name
-        if name not in WRITE_TOOLS:
-            return None
-        try:
-            args = json.loads(tc.function.arguments or "{}")
-        except Exception:
-            args = {}
-        return {"name": name, "args": args, "summary": summarize_write(name, args)}
+        return run_action_plan(messages, _WRITE_SPECS)
     except Exception:
         logger.exception("plan_action failed for user %s", user_id)
         return None

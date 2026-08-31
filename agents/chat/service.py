@@ -5,8 +5,8 @@ list and any handed-off action awaiting confirmation, and shapes the client
 response. Client-agnostic — the API layer passes the caller's clock/locale.
 
 The chat agent answers questions (read tools) and, when the user asks it to DO
-something, hands the action off to the enrich agent; that write pauses for the
-user's confirmation, and `confirm` resumes it (executing via the enrich agent).
+something, hands the action to the owning specialist; that write pauses for the
+user's confirmation, and `confirm` resumes it through the same specialist.
 """
 
 import logging
@@ -23,8 +23,9 @@ SYSTEM_PROMPT = (
     "questions about what they've captured by USING THE READ TOOLS — never invent "
     "note content. Prefer `search_notes` first, then `get_note`/`neighbors` to dig "
     "in. Cite the notes you used by their title. When the user asks you to DO "
-    "something — create a note, create a reminder, move a note, or classify/enrich "
-    "a note — call `perform_action` with their request; a specialized agent will "
+    "something — use `set_reminder` for reminders, and use `perform_action` to "
+    "create or move a note or classify/enrich it. Pass the full request; the "
+    "appropriate specialized agent will "
     "propose the change and the user confirms it. Be concise."
 )
 
@@ -70,7 +71,7 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
     """Resume a thread paused on a handed-off action: run (or decline) it via the
-    enrich agent and continue to a final reply."""
+    owning specialist and continue to a final reply."""
     t = chat_store.get_thread(user_id, thread_id)
     if t is None or not t.get("pending"):
         return {"thread_id": thread_id, "status": "answer",

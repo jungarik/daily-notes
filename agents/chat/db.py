@@ -1,7 +1,7 @@
 """Persistence for the chat agent (isolated SQL) — reads + thread state only.
 
 The chat agent is read-only, so this holds only the queries its read tools and
-RAG need, plus chat-thread persistence. All writes live in the enrich agent.
+RAG need, plus chat-thread persistence. Writes live in specialist agents.
 """
 
 from psycopg.types.json import Json

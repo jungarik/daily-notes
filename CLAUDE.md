@@ -208,17 +208,19 @@ the focus/ego state.
 ## Agentic chat
 
 The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
-`agents/chat/`) — see `devdoc/agentic-chat.md`. A bounded single-tool-call ReAct
-loop (`agents/chat/loop.py`, `AGENT_MAX_STEPS`) drives a **tool registry**
+`agents/chat/`) — see `devdoc/agentic-chat.md`. A bounded LangGraph
+single-tool-call ReAct workflow (`agents/chat/loop.py`, `AGENT_MAX_STEPS`) drives a **tool registry**
 (`agents/chat/tools.py`): read tools wrap `agents/chat/domain.py` (RAG) and
 `agents/chat/db.py` (`search_notes`, `get_note`, `neighbors`, `list_reminders`,
-`list_paths`), and a single **handoff** tool `perform_action(instruction)`. The
-chat agent **never mutates data itself**: when the user asks it to act, the loop
-routes the instruction to the **enrich (action) agent** (`agents/enrich/`, which
-owns create-note/create-reminder/move/enrich; see `devdoc/agentic-enrich.md`) —
-`enrich.plan_action` proposes the concrete write, the loop pauses
+`list_paths`) and explicit specialist handoffs: `perform_action(instruction)`
+for note actions and `set_reminder(instruction)` for scheduling. The chat agent
+**never mutates data itself**: the loop routes to the **enrich agent**
+(`agents/enrich/`) or **reminder agent** (`agents/reminder/`) — the specialist
+proposes the concrete write, and the loop pauses
 (`{status:"confirm", action}`), and `POST /api/chat/confirm {approve}` resumes,
-running it via `enrich.execute_action`. Conversation state lives in `chat_threads`
+running it through the same specialist. The Reminder agent is used only by the
+Web App chat; `api/telegram_bot` retains its independent reminder detection,
+creation, and delivery implementation. Conversation state lives in `chat_threads`
 (`agents/chat/db.py`, migration `0019`) as the running message list plus a
 `pending` handed-off action. `POST /api/chat` returns `{status:"answer", reply,
 citations}` or `{status:"confirm", action}`.
@@ -241,6 +243,7 @@ for an existing spec and follow it; when a spec is fully implemented, update or
 remove it. Current specs: `devdoc/plugin-capture-tokens.md` (personal access
 tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
 `devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
-tools + write-with-confirmation shipped; streaming and sub-agent handoffs
-deferred); `devdoc/agentic-enrich.md` (the capture-time enrichment agent —
-shipped, with the one-shot enricher as fallback).
+tools + specialist write handoffs shipped; streaming deferred);
+`devdoc/agentic-enrich.md` (the note action/enrichment agent);
+`devdoc/agentic-reminder.md` (the reminder specialist); and
+`devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges).
