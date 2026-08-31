@@ -9,12 +9,12 @@ from db import cursor
 def is_eval_admin(user_id: int) -> bool:
     """Resolve configured Telegram chat ids to users.id, then authorize using
     the already-authenticated internal user id."""
-    allowed_chat_ids = list(config.EVAL_ADMIN_TELEGRAM_IDS)
-    if not allowed_chat_ids:
+    allowed_user_ids = list(config.EVAL_ADMIN_USER_IDS)
+    if not allowed_user_ids:
         return False
     with cursor() as cur:
         cur.execute(
-            "SELECT id FROM users WHERE chat_id = ANY(%s);", (allowed_chat_ids,))
+            "SELECT id FROM users WHERE id = ANY(%s);", (allowed_user_ids,))
         admin_user_ids = {row[0] for row in cur.fetchall()}
         return user_id in admin_user_ids
 
