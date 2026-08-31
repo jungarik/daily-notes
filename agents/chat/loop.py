@@ -109,6 +109,9 @@ def _route_model(state: ChatState):
 def _read_tool_node(state: ChatState) -> dict:
     call = state["tool_call"]
     result = execute_tool(state["ctx"], call["name"], call["args"])
+    if hasattr(state["ctx"], "record_tool"):
+        state["ctx"].record_tool(call["name"], call["args"], result)
+        state["ctx"].record_route("rag" if call["name"] == "search_notes" else "tool")
     message = {"role": "tool", "tool_call_id": call["id"], "content": str(result)}
     return {"messages": [*state["messages"], message], "tool_call": None}
 
@@ -118,6 +121,9 @@ def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
     instruction = (call["args"].get("instruction") or "").strip()
     ctx = state["ctx"]
     action = service.plan_action(ctx.user_id, instruction, ctx.now, ctx.tz, ctx.locale)
+    if hasattr(ctx, "record_tool"):
+        ctx.record_tool(call["name"], call["args"], action)
+        ctx.record_route(agent_name)
     if not action:
         message = {"role": "tool", "tool_call_id": call["id"],
                    "content": "No concrete action could be determined."}

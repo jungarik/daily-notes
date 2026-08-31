@@ -106,17 +106,26 @@ def _parse_agenda(text: str, now: datetime):
         return start, start + timedelta(days=1)
 
 
-def answer_with_sources(user_id: int, query: str, now: datetime,
-                        language: str = "en", tz=None) -> tuple[str | None, list[int]]:
-    """RAG answer + the note ids it drew on (most-relevant first)."""
+def answer_with_evidence(user_id: int, query: str, now: datetime,
+                         language: str = "en", tz=None
+                         ) -> tuple[str | None, list[int], list[dict]]:
+    """RAG answer, source note ids, and retrieved chunks for tracing."""
     rng = _parse_agenda(query, now)
     start, end = rng if rng else (None, None)
     hits = db.search_chunks(user_id, embed(query), remind_start=start, remind_end=end)
     if not hits:
-        return (None, [])
+        return (None, [], [])
     text = _answer_from_hits(hits, query, language=language, tz=tz)
     source_ids = list(dict.fromkeys(h["note_id"] for h in hits))
-    return (text, source_ids)
+    return (text, source_ids, hits)
+
+
+def answer_with_sources(user_id: int, query: str, now: datetime,
+                        language: str = "en", tz=None) -> tuple[str | None, list[int]]:
+    """Compatibility surface returning the answer and distinct source note ids."""
+    answer, source_ids, _ = answer_with_evidence(
+        user_id, query, now, language=language, tz=tz)
+    return answer, source_ids
 
 
 # ===== path vocabulary (for the list_paths read tool) ======================

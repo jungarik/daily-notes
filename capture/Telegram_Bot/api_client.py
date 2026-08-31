@@ -409,3 +409,44 @@ class ApiClient:
         except Exception:
             logger.exception("API search failed")
             return None
+
+    async def run_evaluations(self, user_id: int, thread_id: int,
+                              expected_behavior: str, agent: str = "chat",
+                              turn_index: int | None = None) -> dict | None:
+        """Replay and evaluate one owned conversation turn."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(
+                    timeout=config.AGENT_EVAL_API_TIMEOUT_SECONDS) as client:
+                resp = await client.post(
+                    f"{self._base_url}/api/evals/run",
+                    json={"thread_id": thread_id, "turn_index": turn_index,
+                          "agent": agent, "expected_behavior": expected_behavior},
+                    headers=self._headers(user_id))
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API run_evaluations failed")
+            return None
+
+    async def evaluation_metrics(self, user_id: int, run_id: int | None = None,
+                                 agent: str | None = None) -> dict | None:
+        """Return metrics for one (or the latest) evaluation run."""
+        if not self.configured:
+            return None
+        try:
+            params = {}
+            if run_id is not None:
+                params["run_id"] = run_id
+            if agent is not None:
+                params["agent"] = agent
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(
+                    f"{self._base_url}/api/evals/metrics", params=params,
+                    headers=self._headers(user_id))
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API evaluation_metrics failed")
+            return None

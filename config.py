@@ -83,6 +83,20 @@ AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 # model as the one-shot enricher.
 ENRICH_AGENT_MODEL = os.environ.get("ENRICH_AGENT_MODEL", ENRICH_LLM_MODEL)
 ENRICH_AGENT_MAX_STEPS = int(os.environ.get("ENRICH_AGENT_MAX_STEPS", "4"))
+
+# --- Agent evaluation / observability ---
+# Automatic qualitative grading can be disabled to run trace/latency collection
+# without paying for an additional judge call per case.
+AGENT_EVAL_JUDGE_ENABLED = os.environ.get(
+    "AGENT_EVAL_JUDGE_ENABLED", "true").lower() == "true"
+AGENT_EVAL_JUDGE_MODEL = os.environ.get("AGENT_EVAL_JUDGE_MODEL", "gpt-4o-mini")
+AGENT_EVAL_API_TIMEOUT_SECONDS = float(
+    os.environ.get("AGENT_EVAL_API_TIMEOUT_SECONDS", "300"))
+EVAL_ADMIN_TELEGRAM_IDS = {
+    int(value.strip())
+    for value in os.environ.get("EVAL_ADMIN_TELEGRAM_IDS", "1").split(",")
+    if value.strip()
+}
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.
 REMINDER_FEW_COUNT = int(os.environ.get("REMINDER_FEW_COUNT", "5"))

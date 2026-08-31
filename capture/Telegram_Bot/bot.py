@@ -641,6 +641,88 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t(locale, "reminders_header") + "\n" + "\n".join(lines))
 
 
+def _is_eval_admin(update: Update) -> bool:
+    user = update.effective_user
+    return bool(user and user.id in config.EVAL_ADMIN_TELEGRAM_IDS)
+
+
+def _format_eval_metrics(data: dict) -> str:
+    total = data.get("total_cases", 0)
+    success = data.get("success_yes", 0)
+    partial = data.get("success_partial", 0)
+    failed = data.get("success_no", 0)
+    grounded = data.get("groundedness_good", 0)
+    errors = ", ".join(
+        f"{item['error']}: {item['count']}" for item in data.get("top_error_types", [])) or "none"
+    pct = lambda value: f"{value * 100:.0f}%" if value is not None else "not judged"
+    return (
+        f"Evaluation run {data.get('run_id') or 'none'}\n"
+        f"Cases: {total}\n"
+        f"Success: {success}/{total} ({pct(data.get('success_rate'))})\n"
+        f"Partial: {partial}/{total}; failed: {failed}/{total}\n"
+        f"Groundedness good: {grounded}/{total} "
+        f"({pct(data.get('groundedness_good_rate'))})\n"
+        f"Average latency: {data.get('average_latency_ms')} ms; "
+        f"max: {data.get('max_latency_ms')} ms\n"
+        f"Errors: {errors}"
+    )
+
+
+async def eval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: replay one completed conversation turn for evaluation."""
+    if not _is_eval_admin(update):
+        await update.message.reply_text("Not authorized.")
+        return
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            "Usage: /eval <thread_id> [turn_index] [chat|enrich|reminder] <expected behavior>")
+        return
+    thread_id = int(context.args[0])
+    position, turn_index, agent = 1, None, "chat"
+    if position < len(context.args) and context.args[position].isdigit():
+        turn_index = int(context.args[position]); position += 1
+    if position < len(context.args) and context.args[position].lower() in (
+            "chat", "enrich", "reminder"):
+        agent = context.args[position].lower(); position += 1
+    expected_behavior = " ".join(context.args[position:]).strip()
+    if not expected_behavior:
+        await update.message.reply_text(
+            "Expected behavior is required after the thread/turn selection.")
+        return
+    user_id = await resolve_uid(update)
+    if user_id is None:
+        await update.message.reply_text("Evaluation API is unavailable.")
+        return
+    progress = await update.message.reply_text("Running evaluation…")
+    result = await api.run_evaluations(
+        user_id, thread_id, expected_behavior, agent, turn_index)
+    if not result:
+        await progress.edit_text("Evaluation failed. Check API logs.")
+        return
+    await progress.edit_text(_format_eval_metrics(result["metrics"]))
+
+
+async def eval_metrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: /eval_metrics [run_id] [chat|enrich|reminder]."""
+    if not _is_eval_admin(update):
+        await update.message.reply_text("Not authorized.")
+        return
+    run_id, agent = None, None
+    for value in context.args:
+        if value.lower() in ("chat", "enrich", "reminder"):
+            agent = value.lower()
+        elif value.isdigit():
+            run_id = int(value)
+        else:
+            await update.message.reply_text(
+                "Usage: /eval_metrics [run_id] [chat|enrich|reminder]")
+            return
+    user_id = await resolve_uid(update)
+    data = await api.evaluation_metrics(user_id, run_id, agent) if user_id else None
+    await update.message.reply_text(
+        _format_eval_metrics(data) if data else "No evaluation metrics found.")
+
+
 def _snooze_keyboard(reminder_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -795,6 +877,8 @@ def main():
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("language", language_command))
+    app.add_handler(CommandHandler("eval", eval_command))
+    app.add_handler(CommandHandler("eval_metrics", eval_metrics_command))
     app.add_handler(CallbackQueryHandler(on_button_handle_reminder, pattern=r"^r:"))
     app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
     app.add_handler(CallbackQueryHandler(on_atomize, pattern=r"^a:"))

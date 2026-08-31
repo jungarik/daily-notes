@@ -28,12 +28,20 @@ class Ctx:
         self.locale = locale
         self.citations: list[dict] = []
         self._cited: set[int] = set()
+        self.trace: dict = {"tools": [], "retrieved_chunks": [], "routes": []}
 
     def cite(self, note_id: int, title: str) -> None:
         if note_id in self._cited:
             return
         self._cited.add(note_id)
         self.citations.append({"note_id": note_id, "title": title or "note"})
+
+    def record_tool(self, name: str, args: dict, result=None) -> None:
+        self.trace["tools"].append({"name": name, "args": args or {},
+                                    "result": str(result)[:1000] if result is not None else None})
+
+    def record_route(self, route: str) -> None:
+        self.trace["routes"].append(route)
 
 
 def _json(obj) -> str:
@@ -57,8 +65,13 @@ def _search_notes(ctx: Ctx, args: dict) -> str:
     query = (args.get("query") or "").strip()
     if not query:
         return "Error: query is required."
-    ans, source_ids = d.answer_with_sources(
+    ans, source_ids, hits = d.answer_with_evidence(
         ctx.user_id, query, ctx.now, language=ctx.locale, tz=ctx.tz)
+    ctx.trace["retrieved_chunks"].extend({
+        "chunk_id": hit["chunk_id"], "note_id": hit["note_id"],
+        "rank": hit["rank"], "similarity": hit["similarity"],
+        "content": hit["content"][:1000],
+    } for hit in hits)
     # Cite the distinct notes this answer drew on, in relevance order.
     briefs = {b["id"]: b for b in db.notes_brief(ctx.user_id, source_ids[:4])}
     for nid in source_ids[:4]:

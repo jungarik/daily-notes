@@ -235,6 +235,17 @@ via `Ctx.cite`. `get_note` cites the note it opened. The API returns these as
 note card. Extend by adding a tool (or, later, a sub-agent) — never by editing
 the loop.
 
+## Agent evaluation and observability
+
+`api/evals/` provides internal-token-protected dry-run evaluation for Chat,
+Enrich, and Reminder; see `devdoc/agent-evaluation-observability.md`. Runs and
+results reference completed `chat_threads` turns (migration `0020`);
+the final schema has no `eval_cases` table. Chat replay never approves writes;
+Enrich/Reminder evaluate extracted handoff planning only. Structured traces
+capture routes, tools, and retrieved chunks. The LLM
+judge is controlled by `AGENT_EVAL_JUDGE_ENABLED`. Hidden Telegram commands
+`/eval` and `/eval_metrics` are restricted by `EVAL_ADMIN_TELEGRAM_IDS`.
+
 ## Design docs
 
 `devdoc/` holds implementation specs for planned/agreed features (design agreed
@@ -245,5 +256,6 @@ tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
 `devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
 tools + specialist write handoffs shipped; streaming deferred);
 `devdoc/agentic-enrich.md` (the note action/enrichment agent);
-`devdoc/agentic-reminder.md` (the reminder specialist); and
-`devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges).
+`devdoc/agentic-reminder.md` (the reminder specialist);
+`devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
+and `devdoc/agent-evaluation-observability.md` (evaluation runs and metrics).

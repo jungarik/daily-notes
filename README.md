@@ -44,6 +44,7 @@ shared, at the root.
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
 | `api/<section>/`  | one isolated vertical per web-app section: `feed`, `browser`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
 | `api/chat/`       | agentic chat tab (`/api/chat`) — thin; delegates to `agents/chat` |
+| `api/evals/`      | protected agent evaluation runner, result persistence, and metrics |
 | `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
 | `agents/chat/`    | self-contained chat reasoning engine (`tools`/`loop`/`service` + `domain.py`) |
 | `agents/enrich/`  | note creation/move/enrichment action agent (+ `domain.py`) |
