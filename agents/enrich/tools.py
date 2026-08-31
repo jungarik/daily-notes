@@ -1,16 +1,15 @@
-"""Enrichment-agent tool registry.
+"""Enrichment/action agent tool registry.
 
-Read tools let the agent gather the vocabulary/context it needs to classify a
-note consistently (existing paths, existing tags, similar past notes); the
-terminal `submit_metadata` tool is how the agent emits its final structured
-answer. Handlers wrap this package's self-contained `domain` module. Validation
-of the submitted metadata reuses the one-shot enricher's guardrails (in `domain`).
+The enrich agent is the write/action agent: it can create notes, create reminders,
+move notes and classify (enrich) them — with a confirmation step before each
+write. Read tools (existing paths/tags) give it vocabulary/context. Each tool is
+its OpenAI function schema (in TOOL_SPECS) plus a handler(ctx, args) -> str.
+`WRITE_TOOLS` names the tools that mutate data and require the user's confirmation.
 """
 
 import json
 import logging
 
-import config
 from agents.enrich import domain as d
 from agents.enrich import db
 
@@ -18,25 +17,20 @@ logger = logging.getLogger(__name__)
 
 
 class Ctx:
-    """Per-run context for enriching one note. Carries the note (id + text), the
-    user's language and root-folder vocabulary, and collects the final metadata
-    once `submit_metadata` is called."""
+    """Per-turn execution context: the caller's identity + clock/locale."""
 
-    def __init__(self, user_id, note_id, text, locale, root_folders, default_root):
+    def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
         self.user_id = user_id
-        self.note_id = note_id
-        self.text = text
+        self.now = now
+        self.tz = tz
         self.locale = locale
-        self.root_folders = root_folders
-        self.default_root = default_root
-        self.result = None            # set by submit_metadata
 
 
 def _json(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, default=str)
 
 
-# ---- read tools -----------------------------------------------------------
+# ---- read tools (context) -------------------------------------------------
 
 def _list_paths(ctx: Ctx, args: dict) -> str:
     rows = db.list_paths(ctx.user_id)
@@ -48,39 +42,78 @@ def _list_tags(ctx: Ctx, args: dict) -> str:
     return _json([{"tag": t, "count": c} for t, c in rows]) if rows else "No existing tags."
 
 
-def _find_similar(ctx: Ctx, args: dict) -> str:
-    emb = d.embed(ctx.text)
-    sim = db.similar_notes(
-        ctx.user_id, emb, exclude_note_id=ctx.note_id, limit=config.ENRICH_SIMILAR_LIMIT)
-    out = [{"title": n["title"], "path": n.get("path"), "tags": n.get("tags") or [],
-            "type": n["note_type"], "distance": n.get("distance")} for n in sim]
-    return _json(out) if out else "No similar notes."
+# ---- write tools (confirmation required) ----------------------------------
+
+def _create_note(ctx: Ctx, args: dict) -> str:
+    text = (args.get("text") or "").strip()
+    if not text:
+        return "Error: text is required."
+    note_id = d.capture_note(ctx.user_id, text)
+    return _json({"note_id": note_id})
 
 
-# ---- terminal tool --------------------------------------------------------
+def _create_reminder(ctx: Ctx, args: dict) -> str:
+    text = (args.get("text") or "").strip()
+    if not text:
+        return "Error: text is required."
+    note_id, reminder_id, remind_at = d.create_note_with_reminder(ctx.user_id, text, ctx.now)
+    if reminder_id is None:
+        return "Saved a note, but no time could be parsed — ask the user when to remind them."
+    return _json({"note_id": note_id, "reminder_id": reminder_id, "remind_at": remind_at})
 
-def _submit_metadata(ctx: Ctx, args: dict) -> str:
-    """Record the final classification (normalized + guardrailed) and end the run."""
-    ctx.result = d.normalize(
-        args, ctx.text, ctx.root_folders, ctx.default_root)
-    return "Metadata recorded."
+
+def _set_note_path(ctx: Ctx, args: dict) -> str:
+    nid, path = args.get("note_id"), (args.get("path") or "").strip()
+    if nid is None or not path:
+        return "Error: note_id and path are required."
+    status, meta = d.move_note(ctx.user_id, int(nid), path)
+    if status == "invalid":
+        return "Error: path must start with a root folder."
+    if status == "not_found":
+        return "Error: note not found."
+    return _json({"ok": True, "path": (meta or {}).get("path")})
+
+
+def _enrich_note(ctx: Ctx, args: dict) -> str:
+    nid = args.get("note_id")
+    if nid is None:
+        return "Error: note_id is required."
+    meta = d.enrich_note(ctx.user_id, int(nid))
+    if meta is None:
+        return "Error: note not found or empty."
+    return _json(meta)
 
 
 HANDLERS = {
     "list_paths": _list_paths,
     "list_tags": _list_tags,
-    "find_similar": _find_similar,
-    "submit_metadata": _submit_metadata,
+    "create_note": _create_note,
+    "create_reminder": _create_reminder,
+    "set_note_path": _set_note_path,
+    "enrich_note": _enrich_note,
 }
 
-TERMINAL_TOOL = "submit_metadata"
+WRITE_TOOLS = {"create_note", "create_reminder", "set_note_path", "enrich_note"}
+
+
+def summarize_write(name: str, args: dict) -> str:
+    """A human-readable one-liner for the confirmation prompt."""
+    if name == "create_note":
+        return "Create a note: “%s”." % (args.get("text", "").strip())
+    if name == "create_reminder":
+        return "Create a reminder: “%s”." % (args.get("text", "").strip())
+    if name == "set_note_path":
+        return "Move note %s to “%s”." % (args.get("note_id"), args.get("path", "").strip())
+    if name == "enrich_note":
+        return "Enrich note %s (classify type/title/path/tags)." % args.get("note_id")
+    return "Run %s with %s." % (name, args)
 
 
 def execute_tool(ctx: Ctx, name: str, args: dict) -> str:
     fn = HANDLERS.get(name)
     if not fn:
         return "Error: unknown tool %s." % name
-    logger.info("enrich tool %s note=%s args=%s", name, ctx.note_id, args if name == TERMINAL_TOOL else "")
+    logger.info("enrich tool %s user=%s args=%s", name, ctx.user_id, args)
     try:
         return fn(ctx, args or {})
     except Exception as exc:
@@ -96,20 +129,22 @@ def _fn(name, description, properties, required):
 
 
 TOOL_SPECS = [
-    _fn("list_paths", "List the user's existing vault folder paths (with note counts) "
-        "so you can reuse one instead of inventing a parallel path.", {}, []),
+    _fn("list_paths", "List the user's existing vault folder paths (with counts), "
+        "so you reuse one instead of inventing a parallel path.", {}, []),
     _fn("list_tags", "List the user's existing tags (with counts) so you can reuse them.", {}, []),
-    _fn("find_similar", "List notes most similar to this one and how they were "
-        "classified (type/path/tags), for a consistent decision.", {}, []),
-    _fn("submit_metadata",
-        "Submit the FINAL classification for this note. Call this exactly once when "
-        "you've decided. The path must start with one of the root folders.",
-        {
-            "type": {"type": "string", "enum": list(d.TYPES)},
-            "title": {"type": "string", "description": "Concise summary, ≤8 words, in the note's language."},
-            "path": {"type": "string", "description": "root folder + optional sub-folder (two levels max)."},
-            "tags": {"type": "array", "items": {"type": "string"}, "description": "0–5 lowercase keywords."},
-            "priority": {"type": "string", "enum": list(d.PRIORITIES)},
-        },
-        ["type", "title", "path"]),
+    _fn("create_note",
+        "Create a new note from the given text (chunked + embedded). Requires user "
+        "confirmation.", {"text": {"type": "string"}}, ["text"]),
+    _fn("create_reminder",
+        "Create a note AND a reminder from a natural-language instruction that includes "
+        "a time (e.g. 'remind me to call Bob tomorrow at 5pm'). Requires user confirmation.",
+        {"text": {"type": "string"}}, ["text"]),
+    _fn("set_note_path",
+        "Move a note to a different vault path (must start with a root folder). "
+        "Requires user confirmation.",
+        {"note_id": {"type": "integer"}, "path": {"type": "string"}}, ["note_id", "path"]),
+    _fn("enrich_note",
+        "Classify a note and fill in its metadata (type, title, vault path, tags, "
+        "priority) with the one-shot enricher. Requires user confirmation.",
+        {"note_id": {"type": "integer"}}, ["note_id"]),
 ]

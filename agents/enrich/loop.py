@@ -1,10 +1,14 @@
-"""The enrichment agent loop.
+"""The enrichment/action agent loop (planning).
 
-Bounded single-tool-call loop (mirrors the chat agent): the model may call read
-tools to gather vocabulary/context, then calls `submit_metadata` to emit its
-final structured classification, which ends the run. Returns the normalized
-metadata dict, or None if it didn't converge (the caller then falls back to the
-one-shot enricher).
+A bounded ReAct-style tool-calling loop (one tool call per step). A write tool
+pauses the loop cleanly with a single pending call, so the app can confirm it
+before it runs.
+
+Returns a dict:
+- {"status": "answer", "reply": str, "messages": [...]}
+- {"status": "confirm", "action": {...}, "pending": {...}, "messages": [...]}
+`messages` is the running provider message list, persisted so the thread (and a
+paused write) can resume on the next request.
 """
 
 import json
@@ -12,7 +16,7 @@ import logging
 
 import config
 import openai_client
-from agents.enrich.tools import TOOL_SPECS, TERMINAL_TOOL, execute_tool
+from agents.enrich.tools import TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
 
 logger = logging.getLogger(__name__)
 
@@ -27,31 +31,52 @@ def _assistant_dict(msg) -> dict:
     return d
 
 
-def run_loop(ctx, messages: list):
-    """Drive the loop until the agent submits metadata or the step budget runs
-    out. Returns the metadata dict or None."""
-    client = openai_client.get_client()
+def _complete(messages, use_tools):
+    kwargs = {"model": config.ENRICH_AGENT_MODEL, "messages": messages, "temperature": 0.2}
+    if use_tools:
+        kwargs.update(tools=TOOL_SPECS, tool_choice="auto", parallel_tool_calls=False)
+    return openai_client.get_client().chat.completions.create(**kwargs)
+
+
+def run_loop(ctx, messages: list) -> dict:
+    """Drive the tool-calling loop until the model answers, a write needs
+    confirmation, or the step budget is exhausted."""
     for step in range(config.ENRICH_AGENT_MAX_STEPS):
-        # On the last allowed step, force the terminal tool so we always get a
-        # structured result rather than a stray text message.
-        force = step == config.ENRICH_AGENT_MAX_STEPS - 1
-        resp = client.chat.completions.create(
-            model=config.ENRICH_AGENT_MODEL, messages=messages, temperature=0,
-            tools=TOOL_SPECS, parallel_tool_calls=False,
-            tool_choice=({"type": "function", "function": {"name": TERMINAL_TOOL}}
-                         if force else "auto"),
-        )
-        msg = resp.choices[0].message
+        msg = _complete(messages, use_tools=True).choices[0].message
         messages.append(_assistant_dict(msg))
+
         if not msg.tool_calls:
-            continue   # a stray text turn — let the loop nudge toward submit
-        tc = msg.tool_calls[0]
+            return {"status": "answer", "reply": msg.content or "", "messages": messages}
+
+        tc = msg.tool_calls[0]   # parallel_tool_calls=False → at most one
+        name = tc.function.name
         try:
             args = json.loads(tc.function.arguments or "{}")
         except Exception:
             args = {}
-        result = execute_tool(ctx, tc.function.name, args)
+
+        if name in WRITE_TOOLS:
+            pending = {"tool_call_id": tc.id, "name": name, "args": args,
+                       "summary": summarize_write(name, args)}
+            logger.info("enrich agent pausing for confirmation: %s user=%s", name, ctx.user_id)
+            return {"status": "confirm",
+                    "action": {"name": name, "args": args, "summary": pending["summary"]},
+                    "pending": pending, "messages": messages}
+
+        result = execute_tool(ctx, name, args)
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
-        if tc.function.name == TERMINAL_TOOL and ctx.result is not None:
-            return ctx.result
-    return None
+
+    reply = (_complete(messages, use_tools=False).choices[0].message.content
+             or "I couldn't finish that in time.")
+    messages.append({"role": "assistant", "content": reply})
+    return {"status": "answer", "reply": reply, "messages": messages}
+
+
+def resume_write(ctx, messages: list, pending: dict, approve: bool) -> dict:
+    """Provide the paused write's tool result (executed or declined) and continue."""
+    if approve:
+        result = execute_tool(ctx, pending["name"], pending["args"])
+    else:
+        result = "The user declined this action; do not perform it. Acknowledge and continue."
+    messages.append({"role": "tool", "tool_call_id": pending["tool_call_id"], "content": str(result)})
+    return run_loop(ctx, messages)

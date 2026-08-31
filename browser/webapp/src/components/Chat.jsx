@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 
 function ConfirmMsg({ action, onConfirm }) {
@@ -39,7 +39,8 @@ function Message({ m, onConfirm, onCite }) {
   );
 }
 
-// Agentic chat: renders the conversation; the pill input (Dock) sends messages.
+// Agentic chat: renders the conversation. Answers are read-only; write requests
+// are handed to the enrich agent and shown as a Confirm/Cancel card.
 export default function Chat({ hidden }) {
   const { state, confirmChat, openNote } = useApp();
   const msgs = state.chat.messages;

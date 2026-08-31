@@ -1,4 +1,9 @@
-"""Request/response models for the chat section."""
+"""Request/response models for the chat section.
+
+The chat agent answers questions and hands off write requests to the enrich
+agent, which pauses for confirmation — so a response is either an answer or a
+`confirm` carrying the proposed action.
+"""
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +14,7 @@ class ChatCitation(BaseModel):
 
 
 class ChatAction(BaseModel):
+    # The write the enrich agent proposes, awaiting the user's confirmation.
     name: str
     args: dict = {}
     summary: str
@@ -26,7 +32,7 @@ class ChatConfirmRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     thread_id: int
-    status: str                       # "answer" | "confirm"
-    reply: str | None = None
-    action: ChatAction | None = None
+    status: str = "answer"             # "answer" | "confirm"
+    reply: str | None = None          # set when status == "answer"
+    action: ChatAction | None = None  # set when status == "confirm"
     citations: list[ChatCitation] = []

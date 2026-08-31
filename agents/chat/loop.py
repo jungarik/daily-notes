@@ -1,14 +1,16 @@
-"""The agent loop (planning).
+"""The chat agent loop (planning).
 
 A bounded ReAct-style tool-calling loop. Each step the model makes at most one
-tool call (`parallel_tool_calls=False`), which keeps the write-confirmation
-protocol simple: a write pauses the loop cleanly with a single pending call.
+tool call (`parallel_tool_calls=False`). Read tools run inline. The one write
+path is the `perform_action` HANDOFF tool: the loop hands the instruction to the
+enrich (action) agent to plan a concrete write, then pauses for the user's
+confirmation instead of executing it.
 
 Returns a dict:
 - {"status": "answer", "reply": str, "messages": [...]}
 - {"status": "confirm", "action": {...}, "pending": {...}, "messages": [...]}
 `messages` is the running provider message list, persisted so the thread (and a
-paused write) can resume on the next request.
+paused action) can resume on the next request.
 """
 
 import json
@@ -16,7 +18,8 @@ import logging
 
 import config
 import openai_client
-from agents.chat.tools import TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
+from agents.chat.tools import TOOL_SPECS, HANDOFF_TOOLS, execute_tool
+from agents.enrich import service as enrich_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +44,8 @@ def _complete(messages, use_tools):
 
 
 def run_loop(ctx, messages: list) -> dict:
-    """Drive the tool-calling loop until the model answers, a write needs
-    confirmation, or the step budget is exhausted."""
+    """Drive the tool-calling loop until the model answers, a handed-off action
+    needs confirmation, or the step budget is exhausted."""
     for step in range(config.AGENT_MAX_STEPS):
         msg = _complete(messages, use_tools=True).choices[0].message
         messages.append(_assistant_dict(msg))
@@ -57,13 +60,17 @@ def run_loop(ctx, messages: list) -> dict:
         except Exception:
             args = {}
 
-        if name in WRITE_TOOLS:
-            pending = {"tool_call_id": tc.id, "name": name, "args": args,
-                       "summary": summarize_write(name, args)}
-            logger.info("agent pausing for confirmation: %s user=%s", name, ctx.user_id)
-            return {"status": "confirm",
-                    "action": {"name": name, "args": args, "summary": pending["summary"]},
-                    "pending": pending, "messages": messages}
+        if name in HANDOFF_TOOLS:
+            instruction = (args.get("instruction") or "").strip()
+            action = enrich_service.plan_action(
+                ctx.user_id, instruction, ctx.now, ctx.tz, ctx.locale)
+            if not action:
+                messages.append({"role": "tool", "tool_call_id": tc.id,
+                                 "content": "No concrete action could be determined."})
+                continue
+            pending = {"tool_call_id": tc.id, "action": action, "summary": action["summary"]}
+            logger.info("chat handing off to enrich: %s user=%s", action["name"], ctx.user_id)
+            return {"status": "confirm", "action": action, "pending": pending, "messages": messages}
 
         result = execute_tool(ctx, name, args)
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
@@ -75,10 +82,12 @@ def run_loop(ctx, messages: list) -> dict:
     return {"status": "answer", "reply": reply, "messages": messages}
 
 
-def resume_write(ctx, messages: list, pending: dict, approve: bool) -> dict:
-    """Provide the paused write's tool result (executed or declined) and continue."""
+def resume_action(ctx, messages: list, pending: dict, approve: bool) -> dict:
+    """Provide the handed-off action's result (executed by the enrich agent, or
+    declined) and continue the loop to a final reply."""
     if approve:
-        result = execute_tool(ctx, pending["name"], pending["args"])
+        result = enrich_service.execute_action(
+            ctx.user_id, pending["action"], ctx.now, ctx.tz, ctx.locale)
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."
     messages.append({"role": "tool", "tool_call_id": pending["tool_call_id"], "content": str(result)})

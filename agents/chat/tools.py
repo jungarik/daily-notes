@@ -1,9 +1,11 @@
-"""Agent tool registry.
+"""Chat agent tool registry.
 
-Each tool wraps this package's self-contained `domain` module. A tool is its
-OpenAI function schema (in TOOL_SPECS) plus a handler(ctx, args) -> str. Handlers
-return a string the model reads back. `WRITE_TOOLS` names the tools that mutate
-data and therefore require the user's confirmation before they run.
+Read tools wrap this package's `domain` (logic) or `db` (reads). The chat agent
+does no writes itself: when the user asks to create/change something it calls the
+`perform_action` HANDOFF tool, which the loop routes to the enrich (action) agent
+for planning + a confirmation step — the chat agent never mutates data directly.
+A tool is its OpenAI function schema (in TOOL_SPECS) plus, for read tools, a
+handler(ctx, args) -> str; the handoff tool is intercepted by the loop.
 """
 
 import json
@@ -95,63 +97,28 @@ def _list_paths(ctx: Ctx, args: dict) -> str:
     return _json(d.known_paths(ctx.user_id))
 
 
-# ---- write tools (confirmation required) ----------------------------------
-
-def _create_reminder(ctx: Ctx, args: dict) -> str:
-    text = (args.get("text") or "").strip()
-    if not text:
-        return "Error: text is required."
-    note_id = d.capture_note(ctx.user_id, text)
-    res = d.detect_reminder(note_id, ctx.user_id, text, ctx.now)
-    if not res:
-        return "Saved a note, but no time could be parsed — ask the user when to remind them."
-    rid, remind_at = res
-    return _json({"reminder_id": rid, "remind_at": remind_at})
-
-
-def _set_note_path(ctx: Ctx, args: dict) -> str:
-    nid, path = args.get("note_id"), (args.get("path") or "").strip()
-    if nid is None or not path:
-        return "Error: note_id and path are required."
-    status, meta = d.move_note(ctx.user_id, int(nid), path)
-    if status == "invalid":
-        return "Error: path must start with a root folder."
-    if status == "not_found":
-        return "Error: note not found."
-    return _json({"ok": True, "path": (meta or {}).get("path")})
-
-
 HANDLERS = {
     "search_notes": _search_notes,
     "get_note": _get_note,
     "neighbors": _neighbors,
     "list_reminders": _list_reminders,
     "list_paths": _list_paths,
-    "create_reminder": _create_reminder,
-    "set_note_path": _set_note_path,
 }
 
-WRITE_TOOLS = {"create_reminder", "set_note_path"}
-
-
-def summarize_write(name: str, args: dict) -> str:
-    """A human-readable one-liner for the confirmation prompt."""
-    if name == "create_reminder":
-        return "Create a reminder: “%s”." % (args.get("text", "").strip())
-    if name == "set_note_path":
-        return "Move note %s to “%s”." % (args.get("note_id"), args.get("path", "").strip())
-    return "Run %s with %s." % (name, args)
+# Handoff tools have no local handler — the loop routes them to the enrich agent
+# and pauses for the user's confirmation.
+HANDOFF_TOOLS = {"perform_action"}
 
 
 def execute_tool(ctx: Ctx, name: str, args: dict) -> str:
     fn = HANDLERS.get(name)
     if not fn:
         return "Error: unknown tool %s." % name
-    logger.info("agent tool %s user=%s args=%s", name, ctx.user_id, args)
+    logger.info("chat tool %s user=%s args=%s", name, ctx.user_id, args)
     try:
         return fn(ctx, args or {})
     except Exception as exc:
-        logger.exception("agent tool %s failed", name)
+        logger.exception("chat tool %s failed", name)
         return "Error running %s: %s" % (name, exc)
 
 
@@ -174,12 +141,12 @@ TOOL_SPECS = [
         {"note_id": {"type": "integer"}}, ["note_id"]),
     _fn("list_reminders", "List the user's upcoming (active) reminders.", {}, []),
     _fn("list_paths", "List the user's existing folder paths (the vault vocabulary).", {}, []),
-    _fn("create_reminder",
-        "Create a reminder from a natural-language instruction that includes a time "
-        "(e.g. 'remind me to call Bob tomorrow at 5pm'). Requires user confirmation.",
-        {"text": {"type": "string"}}, ["text"]),
-    _fn("set_note_path",
-        "Move a note to a different vault path (must start with a root folder). "
-        "Requires user confirmation.",
-        {"note_id": {"type": "integer"}, "path": {"type": "string"}}, ["note_id", "path"]),
+    _fn("perform_action",
+        "Use this when the user asks you to DO something rather than answer a "
+        "question — create a note, create a reminder, move a note to a folder, or "
+        "classify/enrich a note. Pass the user's request verbatim as `instruction`. "
+        "A specialized action agent proposes the exact change and the user confirms "
+        "it before anything happens.",
+        {"instruction": {"type": "string", "description": "The user's request, verbatim."}},
+        ["instruction"]),
 ]

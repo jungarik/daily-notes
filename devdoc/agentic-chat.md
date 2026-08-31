@@ -1,7 +1,10 @@
 # Agentic chat (Web App chat tab)
 
-Status: **in progress** — read tools + write-with-confirmation, single-tool-call
-loop. Streaming and sub-agent handoffs are deferred (interfaces left open).
+Status: **Q&A + write-handoff** — the chat tab answers with read tools and, when
+the user asks it to DO something, hands the action to the **enrich agent** via a
+single `perform_action` tool; the write pauses for the user's confirmation. All
+write *logic* lives in `agents/enrich/` (see `devdoc/agentic-enrich.md`); the chat
+agent never mutates data directly. Streaming is deferred.
 
 ## Goal
 
@@ -14,7 +17,8 @@ extensible by *adding a tool or a sub-agent*, never by editing the loop.
 Client-agnostic domain code in **`agents/chat/`**. Clients reach it through the
 API only:
 
-- Web app → `POST /api/chat` and `POST /api/chat/confirm` (initData auth).
+- Web app → `POST /api/chat` and `POST /api/chat/confirm` (initData auth) — the
+  confirm endpoint resumes a handed-off action.
 - Bot (future) → the same `/api/chat` endpoint over `agents/chat`.
 
 Everything keys on the internal `user_id`; tools are per-user scoped and
@@ -32,32 +36,33 @@ tool-calling loop today ("agentic RAG"); it's isolated so it can be upgraded to
 explicit plan-then-execute later without touching tools or transport.
 
 ### Tools (tool use) — `agents/chat/tools.py`
-Each tool is `{name, description, JSON schema, handler(ctx, args)}` and **wraps an
-existing service** (no duplicated logic). `ctx` carries `user_id`, `now`, `tz`,
+Each tool is `{name, description, JSON schema, handler(ctx, args)}` wrapping this
+package's `domain` (RAG) or `db` (reads). `ctx` carries `user_id`, `now`, `tz`,
 `locale`. A single `TOOL_SPECS` (OpenAI function schemas) + `execute_tool()`
-dispatch. Tools are split into read and write; `WRITE_TOOLS` names the ones that
-require confirmation.
+dispatch. Read tools run inline; the one handoff tool is intercepted by the loop.
 
-Initial read tools:
+Read tools:
 - `search_notes(query)` — agenda-aware RAG answer over the user's notes
-  (`search_service.answer`); the retrieval workhorse.
-- `get_note(note_id)` — one note's full detail (`note_store.get_note_for_user`).
-- `neighbors(note_id)` — a note's directly linked notes (`link_store`).
-- `list_reminders()` — upcoming reminders (`reminders.upcoming`).
-- `list_paths()` — the user's folder vocabulary (`note_service.known_paths`).
+  (`domain.answer_with_sources`); the retrieval workhorse.
+- `get_note(note_id)` — one note's full detail (`db.get_note_for_user`).
+- `neighbors(note_id)` — a note's directly linked notes (`db.links_of_for_user`).
+- `list_reminders()` — upcoming reminders (`db.upcoming_reminders`).
+- `list_paths()` — the user's folder vocabulary (`domain.known_paths`).
 
-Initial write tools (confirmation required):
-- `create_reminder(text)` — capture a note + schedule its reminder.
-- `set_note_path(note_id, path)` — move a note to a validated vault path.
+Handoff tool (`HANDOFF_TOOLS`):
+- `perform_action(instruction)` — the model calls this when the user wants to DO
+  something. The loop routes the instruction to `enrich.plan_action`, which
+  returns the concrete write, and pauses for confirmation (see Writes). The chat
+  agent itself performs no writes. Adding a read capability = append one registry
+  entry; adding a write = add it to the enrich agent's tools.
 
-Adding a capability = append one entry to the registry. Nothing else changes.
-
-### State — `agents/chat/domain.py` (+ migration `0019_chat_threads`)
+### State — `agents/chat/db.py` (+ migration `0019_chat_threads`)
 A `chat_threads` row per conversation holds the running `messages` array (the
-provider message list, including assistant tool-calls and tool results) and a
-`pending` blob (a paused write awaiting confirmation). The client passes a
-`thread_id` back on each turn to continue. Short-term state = the thread; the
-turn's scratchpad = the tool call/result messages appended during the loop.
+provider message list, including assistant tool-calls and tool results). The
+client passes a `thread_id` back on each turn to continue. Short-term state = the
+thread; the turn's scratchpad = the tool call/result messages appended during the
+loop. (The `pending` column is unused here now — the enrich agent uses it for its
+write-confirmation flow.)
 
 ### Memory
 Durable memory is the notes themselves — already embedded — reached via
@@ -71,31 +76,39 @@ specialist). Today there is one generalist; the loop calls a single agent config
 (system prompt + tool subset), and that seam is where a handoff/router will slot
 in.
 
-## Write-with-confirmation protocol
+## Writes — handoff to the enrich agent
 
-1. The model calls a write tool. The loop does **not** execute it; it persists the
-   thread (including the assistant message carrying the `tool_call`) plus
-   `pending = {tool_call_id, name, args, summary}` and returns
-   `{status: "confirm", action: {name, args, summary}, thread_id}`.
-2. The client shows a Confirm / Cancel prompt.
-3. `POST /api/chat/confirm {thread_id, approve}` resumes: on approve we execute
-   the write and append its result as the pending `tool_call`'s tool message; on
-   decline we append a "user declined" tool message. Either way the loop continues
-   from there and returns the final answer.
+The chat agent never mutates data. When the model calls `perform_action`:
 
-Only one write may be pending at a time (guaranteed by `parallel_tool_calls=False`).
+1. The loop calls `enrich.plan_action(user_id, instruction, …)` — one LLM call over
+   the enrich agent's write-tool schemas — which returns the concrete write
+   `{name, args, summary}` (e.g. `create_reminder`), or `None` if it can't decide.
+2. The loop persists the thread (incl. the assistant `perform_action` tool_call)
+   plus `pending = {tool_call_id, action}` and returns
+   `{status:"confirm", action:{name, args, summary}, thread_id}`.
+3. The client shows Confirm / Cancel. `POST /api/chat/confirm {thread_id, approve}`
+   resumes: on approve the loop runs `enrich.execute_action(...)` (which calls the
+   enrich tool handler) and appends its result as the pending tool_call's message;
+   on decline it appends a "declined" message. Either way the loop continues to a
+   final reply.
+
+So the enrich agent owns the write *logic* (create note/reminder, move, enrich);
+the chat agent owns the conversation + confirmation UX. Only one action may be
+pending at a time (`parallel_tool_calls=False`).
 
 ## Transport & response shape
 
 `POST /api/chat {message, thread_id?}` →
-`{thread_id, status: "answer"|"confirm", reply?, action?, citations?}`.
-`citations` are `[{note_id, title}]` the agent referenced, so the client renders
-chips that open the existing note card. Streaming (SSE of tokens/steps) is a later
-pass; the current UI already posts to this seam and degrades gracefully.
+`{thread_id, status: "answer"|"confirm", reply?, action?, citations}`. `citations`
+are `[{note_id, title}]` the agent referenced, so the client renders chips that
+open the existing note card; `action` is the enrich agent's proposed write.
+Streaming (SSE of tokens/steps) is a later pass; the current UI already posts to
+this seam and degrades gracefully.
 
 ## Safety / watchdogs
 
-Read-only by default; every write goes through the confirmation step above.
+The chat agent runs no writes directly; every write is a handed-off action the
+user confirms before the enrich agent executes it.
 `AGENT_MAX_STEPS` bounds the loop; each tool call is wrapped so a failing tool
 returns an error string to the model (never crashes the turn); all tool calls are
 logged with `user_id` + args. Tools only ever see the caller's own data.

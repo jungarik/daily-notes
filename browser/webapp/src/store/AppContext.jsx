@@ -45,7 +45,8 @@ function reducer(s, a) {
   }
 }
 
-// The bot bubble for a chat response: an answer (with citations) or a paused write.
+// The bot bubble for a chat response: an answer (with citations) or a proposed
+// action (handed off to the enrich agent) awaiting the user's confirmation.
 function toBot(data) {
   if (data && data.status === "confirm" && data.action) return { role: "bot", action: data.action };
   if (data && data.reply) return { role: "bot", text: data.reply, citations: data.citations || [] };

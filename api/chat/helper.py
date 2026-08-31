@@ -33,6 +33,6 @@ def run_turn(user_id: int, message: str, thread_id: int | None) -> dict:
 
 
 def confirm_turn(user_id: int, thread_id: int, approve: bool) -> dict:
-    """Approve/decline the paused write, then continue the turn."""
+    """Approve/decline the handed-off action, then continue the turn."""
     tz, locale = _settings(user_id)
     return chat_agent.confirm(user_id, thread_id, approve, datetime.now(tz), tz, locale)

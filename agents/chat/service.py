@@ -1,14 +1,18 @@
-"""Agent orchestration: thread state + turn/confirm entry points.
+"""Chat agent orchestration: thread state + turn/confirm entry points.
 
 Loads/creates a conversation thread, runs the loop, persists the running message
-list and any paused write, and shapes the client response. Client-agnostic — the
-API layer passes the caller's clock/locale; no client touches the DB or the LLM.
+list and any handed-off action awaiting confirmation, and shapes the client
+response. Client-agnostic — the API layer passes the caller's clock/locale.
+
+The chat agent answers questions (read tools) and, when the user asks it to DO
+something, hands the action off to the enrich agent; that write pauses for the
+user's confirmation, and `confirm` resumes it (executing via the enrich agent).
 """
 
 import logging
 
 from agents.chat.tools import Ctx
-from agents.chat.loop import run_loop, resume_write
+from agents.chat.loop import run_loop, resume_action
 from agents.chat import db as chat_store
 
 logger = logging.getLogger(__name__)
@@ -16,11 +20,12 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are an assistant embedded in the user's personal notes app (a "
     "Zettelkasten-style vault of their own notes, reminders and links). Answer "
-    "questions about what they've captured by USING THE TOOLS — never invent note "
-    "content. Prefer `search_notes` first, then `get_note`/`neighbors` to dig in. "
-    "Cite the notes you used by their title. Be concise. For any action that "
-    "creates or changes data, call the corresponding write tool; the app will ask "
-    "the user to confirm before it runs — do not claim it's done until it is."
+    "questions about what they've captured by USING THE READ TOOLS — never invent "
+    "note content. Prefer `search_notes` first, then `get_note`/`neighbors` to dig "
+    "in. Cite the notes you used by their title. When the user asks you to DO "
+    "something — create a note, create a reminder, move a note, or classify/enrich "
+    "a note — call `perform_action` with their request; a specialized agent will "
+    "propose the change and the user confirms it. Be concise."
 )
 
 
@@ -29,7 +34,7 @@ def _ctx(user_id, now, tz, locale):
 
 
 def _load(user_id, thread_id):
-    """Return (thread_id, messages) for an existing thread, or a fresh one."""
+    """Return (thread_id, messages, pending) for an existing thread, or a fresh one."""
     if thread_id is not None:
         t = chat_store.get_thread(user_id, thread_id)
         if t is not None:
@@ -64,12 +69,13 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
-    """Resume a thread paused on a write: execute (or decline) it and continue."""
+    """Resume a thread paused on a handed-off action: run (or decline) it via the
+    enrich agent and continue to a final reply."""
     t = chat_store.get_thread(user_id, thread_id)
     if t is None or not t.get("pending"):
         return {"thread_id": thread_id, "status": "answer",
                 "reply": "There's nothing to confirm.", "citations": []}
     ctx = _ctx(user_id, now, tz, locale)
-    result = resume_write(ctx, list(t["messages"]), t["pending"], bool(approve))
+    result = resume_action(ctx, list(t["messages"]), t["pending"], bool(approve))
     chat_store.save_thread(thread_id, result["messages"], result.get("pending"))
     return _shape(thread_id, result, ctx)

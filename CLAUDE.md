@@ -207,17 +207,21 @@ the focus/ego state.
 
 ## Agentic chat
 
-The chat tab is an **agent** (client-agnostic, in `agents/chat/`) that plans,
-calls tools over the user's own data, and answers with citations — see
-`devdoc/agentic-chat.md`. A bounded single-tool-call ReAct loop (`agents/chat/loop.py`,
-`AGENT_MAX_STEPS`) drives a **tool registry** (`agents/chat/tools.py`) where each tool
-wraps `agents/chat/domain.py` (the agent's self-contained data access): read tools
-(`search_notes`, `get_note`, `neighbors`, `list_reminders`, `list_paths`) and write
-tools (`create_reminder`, `set_note_path`) that require confirmation. Conversation
-state lives in `chat_threads` (`agents/chat/domain.py`, migration `0019`) as the running provider
-message list plus a `pending` paused write. A write pauses the loop and returns
-`{status:"confirm", action}`; `POST /api/chat/confirm {approve}` resumes —
-executing or declining the write, then continuing to the answer.
+The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
+`agents/chat/`) — see `devdoc/agentic-chat.md`. A bounded single-tool-call ReAct
+loop (`agents/chat/loop.py`, `AGENT_MAX_STEPS`) drives a **tool registry**
+(`agents/chat/tools.py`): read tools wrap `agents/chat/domain.py` (RAG) and
+`agents/chat/db.py` (`search_notes`, `get_note`, `neighbors`, `list_reminders`,
+`list_paths`), and a single **handoff** tool `perform_action(instruction)`. The
+chat agent **never mutates data itself**: when the user asks it to act, the loop
+routes the instruction to the **enrich (action) agent** (`agents/enrich/`, which
+owns create-note/create-reminder/move/enrich; see `devdoc/agentic-enrich.md`) —
+`enrich.plan_action` proposes the concrete write, the loop pauses
+(`{status:"confirm", action}`), and `POST /api/chat/confirm {approve}` resumes,
+running it via `enrich.execute_action`. Conversation state lives in `chat_threads`
+(`agents/chat/db.py`, migration `0019`) as the running message list plus a
+`pending` handed-off action. `POST /api/chat` returns `{status:"answer", reply,
+citations}` or `{status:"confirm", action}`.
 
 **Citations.** Answers are grounded in the notes they drew on: `search_notes`
 calls `domain.answer_with_sources` — which retrieves once and returns the answer

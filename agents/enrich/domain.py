@@ -1,13 +1,16 @@
-"""Domain logic for the enrichment agent (no raw SQL — that lives in db.py).
+"""Domain logic for the enrichment/action agent (no raw SQL; that lives in db.py).
 
-Embeddings, the user's root-folder vocabulary, and the one-shot enrichment LLM
-logic (+ normalization guardrails) — over the agent's own `db` + shared infra
-(config, i18n, openai_client). Self-contained: no shared domain layer.
+Everything the agent's tools do — create a note (chunk + embed), detect + create a
+reminder, move a note, and classify/enrich a note (one-shot LLM + guardrails) —
+over the agent's own `db` + shared infra (config, i18n, openai_client). No shared
+domain layer.
 """
 
+import re
 import json
 import logging
 from collections import Counter
+from datetime import datetime
 
 import config
 import i18n
@@ -23,27 +26,137 @@ PRIORITIES = ("low", "med", "high")
 # ===== user language + roots ===============================================
 
 def language(user_id: int) -> str:
-    """The user's UI language code ('en'/'uk'), or the default."""
     return i18n.normalize(db.get_language(user_id)) or i18n.DEFAULT_LOCALE
 
 
 def localized_roots(user_id: int) -> tuple[dict[str, str], str]:
-    """(root folders {translated name -> English meaning}, default folder name) in
-    the user's language."""
     locale = language(user_id)
     roots = {i18n.t(locale, key): definition for key, definition in config.ROOT_FOLDERS.items()}
     default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
     return roots, default
 
 
+def _all_root_names() -> set[str]:
+    return {i18n.t(loc, key) for key in config.ROOT_FOLDERS for loc in i18n.SUPPORTED}
+
+
+def clean_root_path(path: str) -> str | None:
+    if not path:
+        return None
+    parts = [p.strip() for p in str(path).replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")]
+    if not parts:
+        return None
+    roots = {name.lower(): name for name in _all_root_names()}
+    canonical = roots.get(parts[0].lower())
+    if canonical is None:
+        return None
+    return "/".join([canonical] + parts[1:])
+
+
 # ===== embeddings ==========================================================
+
+def _chunk_text(text: str, size: int = config.CHUNK_SIZE, overlap: int = config.CHUNK_OVERLAP):
+    text = text.strip()
+    if len(text) <= size:
+        return [text]
+    chunks, start = [], 0
+    while start < len(text):
+        chunks.append(text[start:start + size])
+        start += size - overlap
+    return chunks
+
 
 def embed(text: str) -> str:
     resp = get_client().embeddings.create(model=config.EMBED_MODEL, input=text)
     return str(resp.data[0].embedding)
 
 
-# ===== enrichment LLM + normalization ======================================
+def _build_chunks(text: str) -> list[dict]:
+    return [{"index": i, "content": c, "token_count": len(c.split()),
+             "metadata": {"char_len": len(c)}, "embedding": embed(c)}
+            for i, c in enumerate(_chunk_text(text))]
+
+
+# ===== note capture (create_note tool) =====================================
+
+def capture_note(user_id: int, text: str) -> int:
+    """Persist a text note (chunk + embed). Text-only (the agent captures no media)."""
+    note_id = db.save_note(user_id, text)
+    db.save_chunks(note_id, _build_chunks(text))
+    logger.info("Enrich agent captured note %s (user %s)", note_id, user_id)
+    return note_id
+
+
+# ===== reminders (create_reminder tool) ====================================
+
+_REL_UNITS = (r"хвилин|хвил|секунд|годин|тижн|тиждень|дн(і|ів|я)|день|"
+              r"seconds?|minutes?|\bmin\b|hours?|\bhr\b|days?|weeks?")
+_TIME_HINT = re.compile(
+    r"(remind|reminder|schedule|нагада|нагадай|"
+    r"tomorrow|today|tonight|завтра|сьогодні|післязавтра|"
+    r"morning|afternoon|evening|night|noon|"
+    r"вранці|зранку|ранок|вдень|ввечері|увечері|вечір|вночі|ніч|опівдні|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"понеділ|вівтор|серед|четвер|п.?ятниц|субот|неділ|"
+    r"пізніше|later|кілька|декілька|пару|couple|few|через|"
+    rf"{_REL_UNITS}|\bin\s+\d|\bat\s+\d|\d{{1,2}}:\d{{2}}|"
+    r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)", re.IGNORECASE)
+
+
+def _extract_reminder(text: str, now: datetime):
+    if not _TIME_HINT.search(text):
+        return None
+    try:
+        system = (
+            "Extract a reminder from the user's message (Ukrainian or English). "
+            "Return strict JSON: {\"is_reminder\": bool, \"remind_at\": string|null}. "
+            "remind_at is ISO-8601 local time with no timezone, e.g. 2026-07-30T09:00:00. "
+            f"Current local time is {now.strftime('%Y-%m-%dT%H:%M:%S')} ({now.tzname()}). "
+            "Resolve all relative expressions against it. If only a part of day is "
+            "given, use morning=09:00, noon=12:00, afternoon=15:00, evening=19:00, "
+            "night=21:00. If a date has no time, use 09:00. For an indefinite quantity "
+            f"('кілька'/'a few') assume about {config.REMINDER_FEW_COUNT}. For a vague "
+            f"'later'/'пізніше', schedule about {config.REMINDER_LATER} from now. "
+            "If the message is not asking to be reminded, set is_reminder=false.")
+        resp = get_client().chat.completions.create(
+            model=config.REMINDER_LLM_MODEL, temperature=0,
+            response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": text}])
+        data = json.loads(resp.choices[0].message.content)
+        if not data.get("is_reminder") or not data.get("remind_at"):
+            return None
+        dt = datetime.fromisoformat(data["remind_at"])
+        return dt if dt.tzinfo else dt.replace(tzinfo=now.tzinfo)
+    except Exception:
+        logger.exception("Reminder extraction failed")
+        return None
+
+
+def create_note_with_reminder(user_id: int, text: str, now: datetime):
+    """Capture a note and, if it carries a time, create its reminder. Returns
+    (note_id, reminder_id|None, remind_at|None)."""
+    note_id = capture_note(user_id, text)
+    remind_at = _extract_reminder(text, now)
+    if not remind_at:
+        return note_id, None, None
+    reminder_id = db.create_reminder(note_id, user_id, remind_at)
+    return note_id, reminder_id, remind_at
+
+
+# ===== move (set_note_path tool) ===========================================
+
+def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | None]:
+    cleaned = clean_root_path(raw_path)
+    if cleaned is None:
+        return ("invalid", None)
+    if db.get_note_for_user(user_id, note_id) is None:
+        return ("not_found", None)
+    db.set_path(note_id, cleaned)
+    return ("ok", db.get_meta(note_id))
+
+
+# ===== enrichment LLM + normalization (enrich_note tool) ===================
 
 def _clean_path(raw) -> str | None:
     if not raw:
@@ -85,7 +198,7 @@ def _fallback(text: str, default_root_folder: str | None = None) -> dict:
             "tags": [], "priority": "low"}
 
 
-def root_folders_block(root_folders, default_root_folder) -> str:
+def _root_folders_block(root_folders, default_root_folder) -> str:
     if not root_folders:
         return ""
     names = ", ".join(root_folders)
@@ -151,10 +264,7 @@ def _similar(similar_notes_list) -> str:
             "path / tags when appropriate):\n" + "\n".join(lines))
 
 
-def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
-           root_folders=None, default_root_folder=None) -> dict:
-    """One-shot classification (fallback for the agent). Returns normalized
-    {type, title, path, tags, priority}; degrades to a plain note on failure."""
+def _enrich(text, known_paths, known_tags, similar_notes, root_folders, default_root) -> dict:
     try:
         neighbours = similar_notes or []
         threshold = config.ENRICH_SIMILAR_MAX_DISTANCE
@@ -173,26 +283,37 @@ def enrich(text: str, known_paths=None, known_tags=None, similar_notes=None,
             "You organize a person's brain-dump notes (Ukrainian or English) into "
             "an PARA-style vault (i.e. Obsidian-style)."
             "Classify the note and extract metadata. Return strict JSON with keys: "
-            "reasoning (1-2 short sentences naming the note's topic and why this path "
-            "and these tags — decide this first, before the other fields), "
+            "reasoning (1-2 short sentences), "
             "type (one of: idea, task, reminder, note, question, link), "
             "title (a concise summary, <=8 words, in the note's own language), "
             "path (a single vault folder path: a root folder plus at most one "
-            "sub-folder — two levels at most, forward slashes, no filename, no "
-            "deeper nesting, e.g. Projects/telegram-bot or Areas/health), "
-            "tags (0-5 lowercase topic keywords), "
-            "priority (one of: low, med, high)."
-            + root_folders_block(root_folders, default_root_folder)
-            + _vocabulary(known_paths, known_tags)
-            + neighbour_block
-        )
+            "sub-folder — two levels at most), "
+            "tags (0-5 lowercase topic keywords), priority (one of: low, med, high)."
+            + _root_folders_block(root_folders, default_root) + _vocabulary(known_paths, known_tags)
+            + neighbour_block)
         resp = get_client().chat.completions.create(
             model=config.ENRICH_LLM_MODEL, temperature=0,
             response_format={"type": "json_object"},
             messages=[{"role": "system", "content": system}, {"role": "user", "content": text}])
-        content = resp.choices[0].message.content
-        logger.info("Enrichment | input=%r | response=%r", text, content)
-        return normalize(json.loads(content), text, root_folders, default_root_folder)
+        return normalize(json.loads(resp.choices[0].message.content), text, root_folders, default_root)
     except Exception:
         logger.exception("Enrichment failed; storing as a plain note")
-        return _fallback(text, default_root_folder)
+        return _fallback(text, default_root)
+
+
+def enrich_note(user_id: int, note_id: int) -> dict | None:
+    """Classify a note and persist its metadata. Returns the metadata, or None if
+    the note has no text."""
+    text = db.get_text(note_id)
+    if not text:
+        return None
+    embedding = embed(text)
+    similar = db.similar_notes(user_id, embedding, exclude_note_id=note_id,
+                               limit=config.ENRICH_SIMILAR_LIMIT)
+    root_folders, default_root = localized_roots(user_id)
+    meta = _enrich(text, db.list_paths(user_id), db.list_tags(user_id),
+                   similar, root_folders, default_root)
+    db.set_metadata(note_id, meta["type"], meta["title"], meta["priority"],
+                    meta["tags"], meta["path"])
+    logger.info("Enriched note %s -> %s '%s' @ %s", note_id, meta["type"], meta["title"], meta["path"])
+    return meta
