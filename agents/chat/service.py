@@ -29,7 +29,9 @@ SYSTEM_PROMPT = (
     "something — use `set_reminder` for reminders, and use `perform_action` to "
     "create or move a note or classify/enrich it. Pass the full request; the "
     "appropriate specialized agent will "
-    "propose the change and the user confirms it. Be concise."
+    "propose the change and the user confirms it. Resolve references such as "
+    "'that note' with read tools when needed and include ordered referenced note "
+    "ids in specialist handoffs. Be concise."
 )
 
 
@@ -111,8 +113,12 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
             else:
                 messages = _with_system(messages)
                 messages.append({"role": "user", "content": message})
+            references = []
+            if snapshot.values:
+                references = snapshot.values.get("reference_notes") or []
             result = loop.invoke(
-                graph, graph_config, loop.initial_state(ctx, messages, pending))
+                graph, graph_config,
+                loop.initial_state(ctx, messages, pending, references))
         _project(thread_id, result)
         return _shape(thread_id, result)
 

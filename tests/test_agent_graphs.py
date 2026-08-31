@@ -40,7 +40,7 @@ class AgentGraphTests(unittest.TestCase):
             set(enrich_loop.ENRICH_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
         self.assertEqual(
-            {"parse_time", "prepare_action"},
+            {"resolve_reference", "parse_time", "prepare_action"},
             set(reminder_loop.REMINDER_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
 
@@ -167,7 +167,7 @@ class AgentGraphTests(unittest.TestCase):
 
         with patch.object(enrich_loop.openai_client, "get_client", return_value=client):
             action = enrich_loop.plan_action(
-                [{"role": "user", "content": "Save Graph idea"}], specs)
+                context(), [{"role": "user", "content": "Save Graph idea"}], specs)
 
         self.assertEqual("create_note", action["name"])
         self.assertEqual({"text": "Graph idea"}, action["args"])

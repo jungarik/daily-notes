@@ -93,3 +93,13 @@ def create(user_id: int, text: str, remind_at: datetime) -> dict:
     return {"note_id": note_id, "reminder_id": reminder_id,
             "remind_at": remind_at.isoformat()}
 
+
+def attach(user_id: int, note_id: int, remind_at: datetime) -> dict | None:
+    """Attach a reminder to an existing user-owned note."""
+    reminder_id = db.attach_reminder(user_id, note_id, remind_at)
+    if reminder_id is None:
+        return None
+    logger.info("Reminder agent attached reminder %s to note %s (user %s)",
+                reminder_id, note_id, user_id)
+    return {"note_id": note_id, "reminder_id": reminder_id,
+            "remind_at": remind_at.isoformat()}

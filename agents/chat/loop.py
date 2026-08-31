@@ -38,6 +38,7 @@ from langgraph.types import Command, interrupt
 import config
 import openai_client
 from agents import action_execution
+from agents import handoff
 from agents.chat.tools import (
     Ctx, ENRICH_HANDOFF_TOOLS, REMINDER_HANDOFF_TOOLS, TOOL_SPECS, execute_tool,
 )
@@ -51,6 +52,7 @@ class ChatState(TypedDict, total=False):
     messages: list[dict]
     context: dict
     citations: list[dict]
+    reference_notes: list[dict]
     trace: dict
     steps: int
     tool_call: dict | None
@@ -94,14 +96,24 @@ def _ctx_update(ctx: Ctx) -> dict:
     return {"citations": ctx.citations, "trace": ctx.trace}
 
 
-def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> ChatState:
+def initial_state(ctx: Ctx, messages: list, pending: dict | None = None,
+                  reference_notes: list[dict] | None = None) -> ChatState:
     return {
         "context": _context_data(ctx), "messages": list(messages), "steps": 0,
         "tool_call": None, "pending": pending,
         "action": pending.get("action") if pending else None,
         "completed_action_id": None,
-        "citations": [], "trace": {"tools": [], "retrieved_chunks": [], "routes": []},
+        "citations": [], "reference_notes": list(reference_notes or []),
+        "trace": {"tools": [], "retrieved_chunks": [], "routes": []},
     }
+
+
+def _merge_references(existing: list[dict], current: list[dict]) -> list[dict]:
+    merged = list(existing)
+    for citation in current:
+        merged = [item for item in merged if item.get("note_id") != citation.get("note_id")]
+        merged.append(citation)
+    return merged[-20:]
 
 
 def _assistant_dict(msg) -> dict:
@@ -164,14 +176,17 @@ def _read_tool_node(state: ChatState) -> dict:
     ctx.record_route("rag" if call["name"] == "search_notes" else "tool")
     message = {"role": "tool", "tool_call_id": call["id"], "content": str(result)}
     return {"messages": [*state["messages"], message], "tool_call": None,
+            "reference_notes": _merge_references(
+                state.get("reference_notes") or [], ctx.citations),
             **_ctx_update(ctx)}
 
 
 def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
     call = state["tool_call"]
-    instruction = (call["args"].get("instruction") or "").strip()
     ctx = _ctx(state)
-    action = service.plan_action(ctx.user_id, instruction, ctx.now, ctx.tz, ctx.locale)
+    references = _merge_references(state.get("reference_notes") or [], ctx.citations)
+    contract = handoff.build(state["messages"], call["args"], references, ctx)
+    action = service.plan_action(ctx.user_id, contract, ctx.now, ctx.tz, ctx.locale)
     if hasattr(ctx, "record_tool"):
         ctx.record_tool(call["name"], call["args"], action)
         ctx.record_route(agent_name)
@@ -183,7 +198,7 @@ def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
 
     pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
                "agent": agent_name, "action": action,
-               "summary": action["summary"]}
+               "summary": action["summary"], "handoff": contract}
     logger.info("chat handing off to %s: %s user=%s",
                 agent_name, action["name"], ctx.user_id)
     return {"status": "confirm", "action": action, "pending": pending,

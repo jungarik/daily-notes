@@ -7,14 +7,20 @@ Reminder interpretation and creation belong to `agents/reminder`.
 ## Workflow
 
 `agents/enrich/loop.py` defines `ENRICH_GRAPH`, a bounded LangGraph
-single-tool-call workflow. Read tools (`list_paths`, `list_tags`) loop to the
+single-tool-call workflow. Read tools (`get_note_context`, `list_paths`, `list_tags`) loop to the
 model. Write tools (`create_note`, `set_note_path`, `enrich_note`) route to
-`pending_write` and stop for confirmation. `resume_write` executes approval or
-records decline, then returns to the model. `final` is the bounded fallback.
+`pending_write` and then the durable `approval` interrupt. The confirm endpoint
+resumes approval or decline, then returns to the model. `final` is the bounded fallback.
 
-The stateless `ACTION_PLAN_GRAPH` supports Chat's `perform_action` handoff. It
-selects exactly one Enrich write schema and returns `{name,args,summary}` without
-executing.
+The stateless `ACTION_PLAN_GRAPH` supports Chat's `perform_action` handoff. Its
+`plan_model -> plan_read -> validate_write` flow may inspect referenced notes,
+paths, and tags before it returns `{name,args,summary}`. Note-targeting writes
+are checked against the current user. Planning never executes a write.
+
+Chat sends a typed handoff containing the instruction, recent conversation,
+ordered referenced note ids, citations, recent tool results, resolved entities,
+locale, timezone, and request time. This lets the planner resolve phrases such
+as “that note” without guessing from an isolated sentence.
 
 ## Layers and public API
 

@@ -9,8 +9,8 @@ Public entry points:
 - `start_turn(user_id, message, thread_id, now, tz, locale)` — run an instruction
   (turn-based, for a future direct enrich surface).
 - `confirm(user_id, thread_id, approve, now, tz, locale)` — resume a paused write.
-- `plan_action(user_id, instruction, now, tz, locale)` — one-shot: the write a
-  request implies (used by the chat agent's handoff), without executing.
+- `plan_action(user_id, handoff, now, tz, locale)` — one-shot: read context as
+  needed and return the validated write a typed Chat handoff implies.
 - `execute_action(user_id, action, now, tz, locale)` — run a planned write.
 """
 

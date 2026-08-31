@@ -20,8 +20,8 @@ deserialization enabled.
 ## Chat graph
 
 `ChatState` carries provider messages, per-turn context, step count, current tool
-call, terminal response, pending action, specialist identity, and confirmation
-resume flags.
+call, terminal response, pending action, specialist identity, and an ordered
+cross-turn `reference_notes` list. Response citations remain turn-local.
 
 ```mermaid
 flowchart TD
@@ -66,16 +66,19 @@ flowchart TD
 ```
 
 The stateless Chat handoff uses `ACTION_PLAN_GRAPH`:
-`START -> plan_action -> END`, restricted to Enrich write schemas.
+`START -> plan_model -> plan_read -> plan_model ... -> validate_write -> END`.
+It can read note context, paths, and tags, but only returns a validated write
+proposal. The handoff itself is typed and includes conversation and entities.
 
 ## Reminder graph
 
-`ReminderState` carries the verbatim instruction, caller-local `now`, parsed
-`remind_at`, and proposed action.
+`ReminderState` carries the typed handoff, resolved referenced-note text,
+caller-local `now`, parsed `remind_at`, and proposed action.
 
 ```mermaid
 flowchart LR
-    S((START)) --> P[parse_time]
+    S((START)) --> R[resolve_reference]
+    R --> P[parse_time]
     P -->|resolved| A[prepare_action]
     P -->|unresolved| E((END))
     A --> E

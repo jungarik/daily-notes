@@ -11,16 +11,14 @@ import logging
 import uuid
 
 from agents.enrich.tools import (
-    Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool,
+    Ctx, TOOL_SPECS, execute_tool,
 )
 from agents import checkpoint
+from agents import handoff
 from agents.enrich import loop
 from agents.enrich import db
 
 logger = logging.getLogger(__name__)
-
-# The write tools' function schemas, for the one-shot handoff planner.
-_WRITE_SPECS = [s for s in TOOL_SPECS if s["function"]["name"] in WRITE_TOOLS]
 
 SYSTEM_PROMPT = (
     "You are the note-processing assistant for the user's personal notes app (a "
@@ -141,17 +139,26 @@ def confirm(user_id, thread_id, approve, now, tz, locale):
 
 # ----- stateless handoff API (used by the chat agent) ----------------------
 
-def plan_action(user_id: int, instruction: str, now, tz, locale) -> dict | None:
+def plan_action(user_id: int, request, now, tz, locale) -> dict | None:
     """One-shot: decide the single write action a natural-language instruction
     implies. Returns {name, args, summary} for a write tool, or None if no
     concrete action could be determined. Does not execute anything."""
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + " Choose exactly one action "
-         "tool that fulfils the user's request; do not answer in prose."},
-        {"role": "user", "content": instruction},
-    ]
+    contract = handoff.normalize(request, now, tz, locale)
+    ctx = Ctx(user_id, now, tz=tz, locale=locale)
+    messages = [{
+        "role": "system",
+        "content": (
+            SYSTEM_PROMPT
+            + " You are planning from a typed Chat handoff. Use get_note_context "
+              "for referenced notes and list_paths/list_tags when those reads are "
+              "needed. Do not execute writes. Finish by choosing exactly one write "
+              "tool only when its target and arguments are resolved; otherwise answer "
+              "without a tool so Chat can ask for clarification. Handoff:\n"
+            + json.dumps(contract, ensure_ascii=False, default=str)
+        ),
+    }, {"role": "user", "content": contract["instruction"]}]
     try:
-        return loop.plan_action(messages, _WRITE_SPECS)
+        return loop.plan_action(ctx, messages, TOOL_SPECS)
     except Exception:
         logger.exception("plan_action failed for user %s", user_id)
         return None

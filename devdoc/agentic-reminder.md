@@ -9,17 +9,23 @@ previous independent implementation.
 
 ## Public surfaces
 
-- `plan_action(user_id, instruction, now, tz, locale)` resolves a chat request
+- `plan_action(user_id, handoff, now, tz, locale)` resolves a typed chat request
   into `{name:"create_reminder", args:{text,remind_at}, summary}` without writing.
 - `execute_action(...)` persists the backing note/chunks and reminder after Chat
   confirmation. It uses the already-resolved time rather than reinterpreting a
   relative expression during approval.
 
+When the handoff resolves an existing note, the action contains its `note_id`
+and execution attaches the reminder to that owner-scoped note instead of
+creating a duplicate backing note. A reminder with no note reference keeps the
+original create-note-and-reminder behavior.
+
 ## State, nodes, and edges
 
-`ReminderState` holds `instruction`, caller-local `now`, `remind_at`, and
-`action`. `REMINDER_GRAPH` runs `START -> parse_time`; resolved requests route to
-`prepare_action -> END`, while unresolved requests end with no action so Chat can
+`ReminderState` holds the handoff, resolved reminder text, caller-local `now`,
+`remind_at`, and `action`. `REMINDER_GRAPH` first resolves ordinal or pronoun
+references against user-owned notes, then parses time. Resolved requests route
+to `prepare_action -> END`; unresolved requests end with no action so Chat can
 ask for a clearer date/time.
 
 ## Ownership and safety

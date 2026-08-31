@@ -67,8 +67,18 @@ def get_language(user_id: int) -> str | None:
 
 def get_note_for_user(user_id: int, note_id: int) -> dict | None:
     with cursor() as cur:
-        cur.execute("SELECT id FROM notes WHERE id = %s AND user_id = %s;", (note_id, user_id))
-        return {"id": note_id} if cur.fetchone() else None
+        cur.execute(
+            """
+            SELECT id, text, title, path, tags, note_type, priority
+            FROM notes WHERE id = %s AND user_id = %s;
+            """,
+            (note_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "text": row[1], "title": row[2], "path": row[3],
+                "tags": row[4] or [], "type": row[5], "priority": row[6]}
 
 
 def get_text(note_id: int) -> str | None:

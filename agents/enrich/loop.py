@@ -24,6 +24,7 @@ from langgraph.types import Command, interrupt
 import config
 import openai_client
 from agents import action_execution
+from agents.enrich import db
 from agents.enrich.tools import Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,10 @@ def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> Enri
 
 class ActionPlanState(TypedDict, total=False):
     messages: list[dict]
+    context: dict
     tool_specs: list[dict]
+    steps: int
+    tool_call: dict | None
     action: dict | None
 
 
@@ -212,7 +216,7 @@ def build_graph(checkpointer):
     return builder.compile(checkpointer=checkpointer)
 
 
-def _plan_action_node(state: ActionPlanState) -> dict:
+def _plan_model_node(state: ActionPlanState) -> dict:
     response = openai_client.get_client().chat.completions.create(
         model=config.ENRICH_AGENT_MODEL,
         messages=state["messages"],
@@ -223,17 +227,65 @@ def _plan_action_node(state: ActionPlanState) -> dict:
     )
     msg = response.choices[0].message
     call = _parse_tool_call(msg)
-    if call is None or call["name"] not in WRITE_TOOLS:
-        return {"action": None}
+    return {"messages": [*state["messages"], _assistant_dict(msg)],
+            "tool_call": call, "steps": state.get("steps", 0) + 1,
+            "action": None}
+
+
+def _route_plan_model(state: ActionPlanState):
+    call = state.get("tool_call")
+    if call is None:
+        return END
+    return "validate_write" if call["name"] in WRITE_TOOLS else "plan_read"
+
+
+def _plan_read_node(state: ActionPlanState) -> dict:
+    call = state["tool_call"]
+    result = execute_tool(_ctx(state), call["name"], call["args"])
+    message = {"role": "tool", "tool_call_id": call["id"], "content": str(result)}
+    return {"messages": [*state["messages"], message], "tool_call": None}
+
+
+def _route_plan_read(state: ActionPlanState):
+    return END if state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS else "plan_model"
+
+
+def _validate_write_node(state: ActionPlanState) -> dict:
+    call = state["tool_call"]
+    if call["name"] in {"set_note_path", "enrich_note"}:
+        try:
+            note_id = int(call["args"].get("note_id"))
+        except (TypeError, ValueError):
+            note_id = None
+        if note_id is None or not db.get_note_for_user(_ctx(state).user_id, note_id):
+            message = {"role": "tool", "tool_call_id": call["id"],
+                       "content": "Error: choose a valid user-owned note id from the handoff or read tools."}
+            return {"messages": [*state["messages"], message], "tool_call": None,
+                    "action": None}
     return {"action": {"name": call["name"], "args": call["args"],
-                       "summary": summarize_write(call["name"], call["args"])}}
+                       "summary": summarize_write(call["name"], call["args"])},
+            "tool_call": None}
+
+
+def _route_validated(state: ActionPlanState):
+    if state.get("action") or state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS:
+        return END
+    return "plan_model"
 
 
 def _build_action_plan_graph():
     builder = StateGraph(ActionPlanState)
-    builder.add_node("plan_action", _plan_action_node)
-    builder.add_edge(START, "plan_action")
-    builder.add_edge("plan_action", END)
+    builder.add_node("plan_model", _plan_model_node)
+    builder.add_node("plan_read", _plan_read_node)
+    builder.add_node("validate_write", _validate_write_node)
+    builder.add_edge(START, "plan_model")
+    builder.add_conditional_edges("plan_model", _route_plan_model,
+                                  {"plan_read": "plan_read",
+                                   "validate_write": "validate_write", END: END})
+    builder.add_conditional_edges("plan_read", _route_plan_read,
+                                  {"plan_model": "plan_model", END: END})
+    builder.add_conditional_edges("validate_write", _route_validated,
+                                  {"plan_model": "plan_model", END: END})
     return builder.compile()
 
 
@@ -274,8 +326,10 @@ def retry(graph, graph_config: dict) -> dict:
     return _invoke(graph, None, graph_config)
 
 
-def plan_action(messages: list[dict], tool_specs: list[dict]) -> dict | None:
-    """Run the stateless handoff planning sub-workflow and return its action."""
-    result = ACTION_PLAN_GRAPH.invoke({"messages": messages, "tool_specs": tool_specs,
-                                       "action": None})
+def plan_action(ctx: Ctx, messages: list[dict], tool_specs: list[dict]) -> dict | None:
+    """Read context as needed, then return one validated, non-executed write."""
+    result = ACTION_PLAN_GRAPH.invoke({
+        "messages": messages, "context": _context_data(ctx), "tool_specs": tool_specs,
+        "steps": 0, "tool_call": None, "action": None,
+    })
     return result.get("action")

@@ -41,6 +41,14 @@ def _list_tags(ctx: Ctx, args: dict) -> str:
     return _json([{"tag": t, "count": c} for t, c in rows]) if rows else "No existing tags."
 
 
+def _get_note_context(ctx: Ctx, args: dict) -> str:
+    note_id = args.get("note_id")
+    if note_id is None:
+        return "Error: note_id is required."
+    note = db.get_note_for_user(ctx.user_id, int(note_id))
+    return _json(note) if note else "Error: note not found."
+
+
 # ---- write tools (confirmation required) ----------------------------------
 
 def _create_note(ctx: Ctx, args: dict) -> str:
@@ -76,6 +84,7 @@ def _enrich_note(ctx: Ctx, args: dict) -> str:
 HANDLERS = {
     "list_paths": _list_paths,
     "list_tags": _list_tags,
+    "get_note_context": _get_note_context,
     "create_note": _create_note,
     "set_note_path": _set_note_path,
     "enrich_note": _enrich_note,
@@ -118,6 +127,8 @@ TOOL_SPECS = [
     _fn("list_paths", "List the user's existing vault folder paths (with counts), "
         "so you reuse one instead of inventing a parallel path.", {}, []),
     _fn("list_tags", "List the user's existing tags (with counts) so you can reuse them.", {}, []),
+    _fn("get_note_context", "Read one user-owned note before moving or enriching it.",
+        {"note_id": {"type": "integer"}}, ["note_id"]),
     _fn("create_note",
         "Create a new note from the given text (chunked + embedded). Requires user "
         "confirmation.", {"text": {"type": "string"}}, ["text"]),

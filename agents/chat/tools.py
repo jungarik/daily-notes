@@ -163,12 +163,20 @@ TOOL_SPECS = [
         "`instruction`. "
         "A specialized action agent proposes the exact change and the user confirms "
         "it before anything happens.",
-        {"instruction": {"type": "string", "description": "The user's request, verbatim."}},
+        {"instruction": {"type": "string", "description": "The user's request, verbatim."},
+         "referenced_note_ids": {"type": "array", "items": {"type": "integer"},
+                                 "description": "Ordered note ids referred to by words like that/second/it."},
+         "resolved_entities": {"type": "object",
+                               "description": "Entities already resolved from the conversation."}},
         ["instruction"]),
     _fn("set_reminder",
         "Use this when the user asks to set or schedule a reminder. Pass the full "
         "request verbatim, including what to remember and every date/time detail. "
         "The reminder agent resolves the time and proposes it for confirmation.",
-        {"instruction": {"type": "string", "description": "The reminder request, verbatim."}},
+        {"instruction": {"type": "string", "description": "The reminder request, verbatim."},
+         "referenced_note_ids": {"type": "array", "items": {"type": "integer"},
+                                 "description": "Ordered note ids referred to by the reminder."},
+         "resolved_entities": {"type": "object",
+                               "description": "Entities already resolved from the conversation."}},
         ["instruction"]),
 ]
