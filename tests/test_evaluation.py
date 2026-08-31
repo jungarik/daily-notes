@@ -121,17 +121,37 @@ class EvaluationTests(unittest.TestCase):
                 endpoints.eval_admin_user(7)
         self.assertEqual(403, raised.exception.status_code)
 
-    def test_eval_admin_chat_ids_resolve_to_internal_user_ids(self):
+    def test_eval_admin_uses_internal_user_ids(self):
         cur = MagicMock()
         cur.fetchall.return_value = [(7,), (9,)]
         cursor_context = MagicMock()
         cursor_context.__enter__.return_value = cur
-        with patch.object(eval_db.config, "EVAL_ADMIN_TELEGRAM_IDS", {12345}), \
+        with patch.object(eval_db.config, "EVAL_ADMIN_USER_IDS", {7}), \
                 patch.object(eval_db, "cursor", return_value=cursor_context):
             self.assertTrue(eval_db.is_eval_admin(7))
             self.assertFalse(eval_db.is_eval_admin(8))
         cur.execute.assert_called_with(
-            "SELECT id FROM users WHERE chat_id = ANY(%s);", ([12345],))
+            "SELECT id FROM users WHERE id = ANY(%s);", ([7],))
+
+    def test_metric_queries_do_not_use_untyped_nullable_parameters(self):
+        cur = MagicMock()
+        cur.fetchone.side_effect = [(1,), (8,)]
+        cur.fetchall.return_value = []
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cur
+        with patch.object(eval_db, "cursor", return_value=cursor_context):
+            eval_db.metric_rows(7, 8, None)
+            self.assertNotIn("IS NULL", cur.execute.call_args_list[-1].args[0])
+            eval_db.latest_run_id(7, None)
+            self.assertNotIn("IS NULL", cur.execute.call_args_list[-1].args[0])
+
+        cur.reset_mock()
+        cur.fetchone.side_effect = [(1,), (8,)]
+        with patch.object(eval_db, "cursor", return_value=cursor_context):
+            eval_db.metric_rows(7, 8, "chat")
+            self.assertEqual((8, "chat"), cur.execute.call_args_list[-1].args[1])
+            eval_db.latest_run_id(7, "chat")
+            self.assertEqual((7, "chat"), cur.execute.call_args_list[-1].args[1])
 
 
 if __name__ == "__main__":
