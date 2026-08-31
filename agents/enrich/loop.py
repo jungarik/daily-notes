@@ -1,8 +1,8 @@
 """LangGraph workflows for the enrichment/action agent.
 
 The turn graph has explicit ``EnrichState`` plus model, read-tool, pending-write,
-resume-write, and final nodes. Conditional edges enforce that reads may loop but
-writes stop for confirmation. ``ACTION_PLAN_GRAPH`` is the small stateless
+approval, and final nodes. Conditional edges enforce that reads may loop while
+writes pause with a durable interrupt. ``ACTION_PLAN_GRAPH`` is the small stateless
 sub-workflow used when the chat agent hands a write instruction to this agent.
 
 Thread messages and pending writes are persisted by the service in PostgreSQL.
@@ -13,9 +13,13 @@ retry cannot repeat a side effect.
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Literal, TypedDict
+from zoneinfo import ZoneInfo
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 import config
 import openai_client
@@ -27,15 +31,47 @@ logger = logging.getLogger(__name__)
 
 class EnrichState(TypedDict, total=False):
     messages: list[dict]
-    ctx: Ctx
+    context: dict
     steps: int
     tool_call: dict | None
     status: Literal["answer", "confirm"]
     reply: str
     action: dict | None
     pending: dict | None
-    resume: bool
-    approve: bool
+    completed_action_id: str | None
+
+
+def _context_data(ctx: Ctx) -> dict:
+    now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
+    return {"user_id": ctx.user_id, "now": now, "tz": str(ctx.tz),
+            "locale": ctx.locale}
+
+
+def _restore(value, factory):
+    try:
+        return factory(value)
+    except Exception:
+        return value
+
+
+def _ctx(state: EnrichState) -> Ctx:
+    data = state["context"]
+    return Ctx(
+        data["user_id"],
+        _restore(data.get("now"), datetime.fromisoformat),
+        tz=_restore(data.get("tz"), ZoneInfo),
+        locale=data.get("locale") or "en",
+    )
+
+
+def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> EnrichState:
+    action = None
+    if pending:
+        action = {"name": pending["name"], "args": pending["args"],
+                  "summary": pending["summary"]}
+    return {"context": _context_data(ctx), "messages": list(messages), "steps": 0,
+            "tool_call": None, "pending": pending, "action": action,
+            "completed_action_id": None}
 
 
 class ActionPlanState(TypedDict, total=False):
@@ -95,7 +131,7 @@ def _route_model(state: EnrichState):
 
 def _read_tool_node(state: EnrichState) -> dict:
     call = state["tool_call"]
-    result = execute_tool(state["ctx"], call["name"], call["args"])
+    result = execute_tool(_ctx(state), call["name"], call["args"])
     message = {"role": "tool", "tool_call_id": call["id"], "content": str(result)}
     return {"messages": [*state["messages"], message], "tool_call": None}
 
@@ -107,7 +143,7 @@ def _pending_write_node(state: EnrichState) -> dict:
                "name": call["name"],
                "args": call["args"], "summary": summary}
     logger.info("enrich agent pausing for confirmation: %s user=%s",
-                call["name"], state["ctx"].user_id)
+                call["name"], state["context"]["user_id"])
     action = {"name": call["name"], "args": call["args"], "summary": summary}
     return {"status": "confirm", "action": action, "pending": pending,
             "tool_call": None}
@@ -119,21 +155,29 @@ def _route_after_read(state: EnrichState):
     return "model"
 
 
-def _resume_write_node(state: EnrichState) -> dict:
+def _approval_node(state: EnrichState) -> dict:
     pending = state["pending"]
-    if state.get("approve"):
+    approved = bool(interrupt({
+        "action_id": pending["action_id"],
+        "agent": "enrich",
+        "action": state["action"],
+        "summary": pending.get("summary"),
+    }))
+    ctx = _ctx(state)
+    if approved:
         action = {"name": pending["name"], "args": pending["args"],
                   "summary": pending["summary"]}
         result = action_execution.execute_once(
-            pending["action_id"], state["ctx"].user_id, "enrich", action,
-            lambda: execute_tool(state["ctx"], pending["name"], pending["args"]),
+            pending["action_id"], ctx.user_id, "enrich", action,
+            lambda: execute_tool(ctx, pending["name"], pending["args"]),
         )
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."
     message = {"role": "tool", "tool_call_id": pending["tool_call_id"],
                "content": str(result)}
     return {"messages": [*state["messages"], message], "pending": None,
-            "action": None, "status": "answer"}
+            "action": None, "completed_action_id": pending["action_id"],
+            "status": "answer"}
 
 
 def _final_node(state: EnrichState) -> dict:
@@ -144,28 +188,28 @@ def _final_node(state: EnrichState) -> dict:
 
 
 def _entry_route(state: EnrichState):
-    return "resume_write" if state.get("resume") else "model"
+    return "approval" if state.get("pending") else "model"
 
 
-def _build_enrich_graph():
+def build_graph(checkpointer):
     builder = StateGraph(EnrichState)
     builder.add_node("model", _model_node)
     builder.add_node("read_tool", _read_tool_node)
     builder.add_node("pending_write", _pending_write_node)
-    builder.add_node("resume_write", _resume_write_node)
+    builder.add_node("approval", _approval_node)
     builder.add_node("final", _final_node)
 
     builder.add_conditional_edges(START, _entry_route,
-                                  {"model": "model", "resume_write": "resume_write"})
+                                  {"model": "model", "approval": "approval"})
     builder.add_conditional_edges("model", _route_model,
                                   {"read_tool": "read_tool", "pending_write": "pending_write",
                                    END: END})
     builder.add_conditional_edges("read_tool", _route_after_read,
                                   {"model": "model", "final": "final"})
-    builder.add_edge("pending_write", END)
-    builder.add_edge("resume_write", "model")
+    builder.add_edge("pending_write", "approval")
+    builder.add_edge("approval", "model")
     builder.add_edge("final", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 def _plan_action_node(state: ActionPlanState) -> dict:
@@ -193,26 +237,41 @@ def _build_action_plan_graph():
     return builder.compile()
 
 
-ENRICH_GRAPH = _build_enrich_graph()
+ENRICH_GRAPH = build_graph(InMemorySaver())
 ACTION_PLAN_GRAPH = _build_action_plan_graph()
 
 
-def _invoke(state: EnrichState) -> dict:
+def _invoke(graph, value, graph_config: dict) -> dict:
     limit = max(20, config.ENRICH_AGENT_MAX_STEPS * 3 + 5)
-    return ENRICH_GRAPH.invoke(state, {"recursion_limit": limit})
+    invoke_config = {**graph_config, "recursion_limit": limit}
+    return graph.invoke(value, invoke_config)
 
 
 def run_loop(ctx, messages: list) -> dict:
-    """Run a normal enrich turn through the compiled LangGraph workflow."""
-    return _invoke({"ctx": ctx, "messages": list(messages), "steps": 0,
-                    "pending": None, "action": None, "resume": False})
+    """Run an isolated turn (used by tests) with a memory checkpoint."""
+    graph = build_graph(InMemorySaver())
+    graph_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    return _invoke(graph, initial_state(ctx, messages), graph_config)
 
 
 def resume_write(ctx, messages: list, pending: dict, approve: bool) -> dict:
-    """Resume a persisted pending write through the graph's confirmation node."""
-    return _invoke({"ctx": ctx, "messages": list(messages), "steps": 0,
-                    "pending": pending, "action": None, "resume": True,
-                    "approve": bool(approve)})
+    """Exercise confirmation in isolation; production resumes its DB checkpoint."""
+    graph = build_graph(InMemorySaver())
+    graph_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    _invoke(graph, initial_state(ctx, messages, pending), graph_config)
+    return _invoke(graph, Command(resume=bool(approve)), graph_config)
+
+
+def invoke(graph, graph_config: dict, state: EnrichState) -> dict:
+    return _invoke(graph, state, graph_config)
+
+
+def resume(graph, graph_config: dict, approve: bool) -> dict:
+    return _invoke(graph, Command(resume=bool(approve)), graph_config)
+
+
+def retry(graph, graph_config: dict) -> dict:
+    return _invoke(graph, None, graph_config)
 
 
 def plan_action(messages: list[dict], tool_specs: list[dict]) -> dict | None:

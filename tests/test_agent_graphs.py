@@ -28,13 +28,15 @@ def context():
 
 class AgentGraphTests(unittest.TestCase):
     def test_graphs_expose_named_workflow_nodes(self):
+        self.assertIsNotNone(chat_loop.CHAT_GRAPH.checkpointer)
+        self.assertIsNotNone(enrich_loop.ENRICH_GRAPH.checkpointer)
         self.assertEqual(
             {"model", "read_tool", "enrich_agent", "reminder_agent",
-             "resume_action", "final"},
+             "approval", "final"},
             set(chat_loop.CHAT_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
         self.assertEqual(
-            {"model", "read_tool", "pending_write", "resume_write", "final"},
+            {"model", "read_tool", "pending_write", "approval", "final"},
             set(enrich_loop.ENRICH_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
         self.assertEqual(

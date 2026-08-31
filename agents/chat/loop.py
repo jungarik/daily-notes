@@ -9,16 +9,15 @@ Nodes
 -----
 ``model`` plans the next step, ``read_tool`` executes a user-scoped read,
 ``enrich_agent`` and ``reminder_agent`` hand writes to their specialists,
-``resume_action`` applies the user's confirmation, and ``final`` produces a
-tool-free fallback.
+``approval`` interrupts for the user's confirmation and applies its answer,
+and ``final`` produces a tool-free fallback.
 
 Edges
 -----
-START routes a normal turn to ``model`` and a confirmation to
-``resume_action``. Model output conditionally routes to a read tool, the enrich
-agent, or END. Tool/handoff nodes loop to ``model`` while budget remains, else
-route to ``final``. Confirmation resumes at ``model`` after its tool result is
-recorded.
+START routes a normal turn to ``model`` and legacy pending state to ``approval``.
+Model output conditionally routes to a read tool or specialist. Specialist
+handoffs lead to the interrupting approval node. A ``Command(resume=...)``
+continues at that node and then returns its tool result to the model.
 
 PostgreSQL remains the durable store: thread state is saved at the service
 boundary, while confirmed writes are checkpointed in the action-execution
@@ -28,9 +27,13 @@ ledger before the graph makes its final model call.
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Literal, TypedDict
+from zoneinfo import ZoneInfo
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 import config
 import openai_client
@@ -46,15 +49,59 @@ logger = logging.getLogger(__name__)
 
 class ChatState(TypedDict, total=False):
     messages: list[dict]
-    ctx: Ctx
+    context: dict
+    citations: list[dict]
+    trace: dict
     steps: int
     tool_call: dict | None
     status: Literal["answer", "confirm"]
     reply: str
     action: dict | None
     pending: dict | None
-    resume: bool
-    approve: bool
+    completed_action_id: str | None
+
+
+def _context_data(ctx: Ctx) -> dict:
+    now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
+    return {"user_id": ctx.user_id, "now": now, "tz": str(ctx.tz),
+            "locale": ctx.locale}
+
+
+def _restore(value, factory):
+    try:
+        return factory(value)
+    except Exception:
+        return value
+
+
+def _ctx(state: ChatState) -> Ctx:
+    data = state["context"]
+    ctx = Ctx(
+        data["user_id"],
+        _restore(data.get("now"), datetime.fromisoformat),
+        tz=_restore(data.get("tz"), ZoneInfo),
+        locale=data.get("locale") or "en",
+    )
+    ctx.citations = list(state.get("citations") or [])
+    ctx._cited = {item["note_id"] for item in ctx.citations}
+    ctx.trace = dict(state.get("trace") or {
+        "tools": [], "retrieved_chunks": [], "routes": [],
+    })
+    return ctx
+
+
+def _ctx_update(ctx: Ctx) -> dict:
+    return {"citations": ctx.citations, "trace": ctx.trace}
+
+
+def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> ChatState:
+    return {
+        "context": _context_data(ctx), "messages": list(messages), "steps": 0,
+        "tool_call": None, "pending": pending,
+        "action": pending.get("action") if pending else None,
+        "completed_action_id": None,
+        "citations": [], "trace": {"tools": [], "retrieved_chunks": [], "routes": []},
+    }
 
 
 def _assistant_dict(msg) -> dict:
@@ -111,18 +158,19 @@ def _route_model(state: ChatState):
 
 def _read_tool_node(state: ChatState) -> dict:
     call = state["tool_call"]
-    result = execute_tool(state["ctx"], call["name"], call["args"])
-    if hasattr(state["ctx"], "record_tool"):
-        state["ctx"].record_tool(call["name"], call["args"], result)
-        state["ctx"].record_route("rag" if call["name"] == "search_notes" else "tool")
+    ctx = _ctx(state)
+    result = execute_tool(ctx, call["name"], call["args"])
+    ctx.record_tool(call["name"], call["args"], result)
+    ctx.record_route("rag" if call["name"] == "search_notes" else "tool")
     message = {"role": "tool", "tool_call_id": call["id"], "content": str(result)}
-    return {"messages": [*state["messages"], message], "tool_call": None}
+    return {"messages": [*state["messages"], message], "tool_call": None,
+            **_ctx_update(ctx)}
 
 
 def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
     call = state["tool_call"]
     instruction = (call["args"].get("instruction") or "").strip()
-    ctx = state["ctx"]
+    ctx = _ctx(state)
     action = service.plan_action(ctx.user_id, instruction, ctx.now, ctx.tz, ctx.locale)
     if hasattr(ctx, "record_tool"):
         ctx.record_tool(call["name"], call["args"], action)
@@ -131,7 +179,7 @@ def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
         message = {"role": "tool", "tool_call_id": call["id"],
                    "content": "No concrete action could be determined."}
         return {"messages": [*state["messages"], message], "tool_call": None,
-                "action": None}
+                "action": None, **_ctx_update(ctx)}
 
     pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
                "agent": agent_name, "action": action,
@@ -139,7 +187,7 @@ def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
     logger.info("chat handing off to %s: %s user=%s",
                 agent_name, action["name"], ctx.user_id)
     return {"status": "confirm", "action": action, "pending": pending,
-            "tool_call": None}
+            "tool_call": None, **_ctx_update(ctx)}
 
 
 def _enrich_agent_node(state: ChatState) -> dict:
@@ -150,18 +198,22 @@ def _reminder_agent_node(state: ChatState) -> dict:
     return _handoff_node(state, "reminder", reminder_service)
 
 
-def _route_after_work(state: ChatState):
-    if state.get("status") == "confirm":
-        return END
+def _route_after_read(state: ChatState):
     if state.get("steps", 0) >= config.AGENT_MAX_STEPS:
         return "final"
     return "model"
 
 
-def _resume_action_node(state: ChatState) -> dict:
+def _approval_node(state: ChatState) -> dict:
     pending = state["pending"]
-    ctx = state["ctx"]
-    if state.get("approve"):
+    approved = bool(interrupt({
+        "action_id": pending["action_id"],
+        "agent": pending.get("agent", "enrich"),
+        "action": pending["action"],
+        "summary": pending.get("summary"),
+    }))
+    ctx = _ctx(state)
+    if approved:
         service = reminder_service if pending.get("agent") == "reminder" else enrich_service
         result = action_execution.execute_once(
             pending["action_id"], ctx.user_id, pending.get("agent", "enrich"),
@@ -174,7 +226,8 @@ def _resume_action_node(state: ChatState) -> dict:
     message = {"role": "tool", "tool_call_id": pending["tool_call_id"],
                "content": str(result)}
     return {"messages": [*state["messages"], message], "pending": None,
-            "action": None, "status": "answer"}
+            "action": None, "completed_action_id": pending["action_id"],
+            "status": "answer", **_ctx_update(ctx)}
 
 
 def _final_node(state: ChatState) -> dict:
@@ -185,50 +238,69 @@ def _final_node(state: ChatState) -> dict:
 
 
 def _entry_route(state: ChatState):
-    return "resume_action" if state.get("resume") else "model"
+    return "approval" if state.get("pending") else "model"
 
 
-def _build_graph():
+def build_graph(checkpointer):
     builder = StateGraph(ChatState)
     builder.add_node("model", _model_node)
     builder.add_node("read_tool", _read_tool_node)
     builder.add_node("enrich_agent", _enrich_agent_node)
     builder.add_node("reminder_agent", _reminder_agent_node)
-    builder.add_node("resume_action", _resume_action_node)
+    builder.add_node("approval", _approval_node)
     builder.add_node("final", _final_node)
 
     builder.add_conditional_edges(START, _entry_route,
-                                  {"model": "model", "resume_action": "resume_action"})
+                                  {"model": "model", "approval": "approval"})
     builder.add_conditional_edges("model", _route_model,
                                   {"read_tool": "read_tool", "enrich_agent": "enrich_agent",
                                    "reminder_agent": "reminder_agent", END: END})
-    builder.add_conditional_edges("read_tool", _route_after_work,
-                                  {"model": "model", "final": "final", END: END})
-    builder.add_conditional_edges("enrich_agent", _route_after_work,
-                                  {"model": "model", "final": "final", END: END})
-    builder.add_conditional_edges("reminder_agent", _route_after_work,
-                                  {"model": "model", "final": "final", END: END})
-    builder.add_edge("resume_action", "model")
+    builder.add_conditional_edges("read_tool", _route_after_read,
+                                  {"model": "model", "final": "final"})
+    builder.add_edge("enrich_agent", "approval")
+    builder.add_edge("reminder_agent", "approval")
+    builder.add_edge("approval", "model")
     builder.add_edge("final", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
-CHAT_GRAPH = _build_graph()
+CHAT_GRAPH = build_graph(InMemorySaver())
 
 
-def _invoke(state: ChatState) -> dict:
+def _invoke(graph, value, graph_config: dict) -> dict:
     limit = max(20, config.AGENT_MAX_STEPS * 3 + 5)
-    return CHAT_GRAPH.invoke(state, {"recursion_limit": limit})
+    invoke_config = {**graph_config, "recursion_limit": limit}
+    return graph.invoke(value, invoke_config)
 
 
 def run_loop(ctx, messages: list) -> dict:
-    """Run a normal chat turn through the compiled LangGraph workflow."""
-    return _invoke({"ctx": ctx, "messages": list(messages), "steps": 0,
-                    "pending": None, "action": None, "resume": False})
+    """Run an isolated turn (used by tests/evaluation) with a memory checkpoint."""
+    graph = build_graph(InMemorySaver())
+    graph_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    result = _invoke(graph, initial_state(ctx, messages), graph_config)
+    ctx.citations = list(result.get("citations") or [])
+    ctx.trace = dict(result.get("trace") or ctx.trace)
+    return result
 
 
 def resume_action(ctx, messages: list, pending: dict, approve: bool) -> dict:
-    """Resume a persisted specialist handoff through the confirmation node."""
-    return _invoke({"ctx": ctx, "messages": list(messages), "steps": 0,
-                    "pending": pending, "action": pending.get("action"),
-                    "resume": True, "approve": bool(approve)})
+    """Exercise a confirmation in isolation; production resumes its DB checkpoint."""
+    graph = build_graph(InMemorySaver())
+    graph_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    _invoke(graph, initial_state(ctx, messages, pending), graph_config)
+    result = _invoke(graph, Command(resume=bool(approve)), graph_config)
+    ctx.citations = list(result.get("citations") or [])
+    ctx.trace = dict(result.get("trace") or ctx.trace)
+    return result
+
+
+def invoke(graph, graph_config: dict, state: ChatState) -> dict:
+    return _invoke(graph, state, graph_config)
+
+
+def resume(graph, graph_config: dict, approve: bool) -> dict:
+    return _invoke(graph, Command(resume=bool(approve)), graph_config)
+
+
+def retry(graph, graph_config: dict) -> dict:
+    return _invoke(graph, None, graph_config)

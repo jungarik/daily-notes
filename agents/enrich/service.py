@@ -13,7 +13,8 @@ import uuid
 from agents.enrich.tools import (
     Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool,
 )
-from agents.enrich.loop import plan_action as run_action_plan, run_loop, resume_write
+from agents import checkpoint
+from agents.enrich import loop
 from agents.enrich import db
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,17 @@ def _shape(thread_id, result):
     return out
 
 
+def _project(thread_id, result):
+    db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+
+
+def _latest_or_projection(graph, graph_config, messages, pending):
+    snapshot = graph.get_state(graph_config)
+    if snapshot.values:
+        return snapshot, list(snapshot.values.get("messages") or []), snapshot.values.get("pending")
+    return snapshot, list(messages), pending
+
+
 def _checkpoint_action_id(thread_id, messages, pending):
     """Upgrade older pending writes and persist their stable id before execution."""
     if pending.get("action_id"):
@@ -73,25 +85,58 @@ def _checkpoint_action_id(thread_id, messages, pending):
 
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user instruction. Returns {thread_id, status, reply|action}."""
-    thread_id, messages, _ = _load(user_id, thread_id)
-    messages = _with_system(messages)
-    messages.append({"role": "user", "content": message})
+    thread_id, messages, pending = _load(user_id, thread_id)
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    result = run_loop(ctx, messages)
-    db.save_thread(thread_id, result["messages"], result.get("pending"))
-    return _shape(thread_id, result)
+    with checkpoint.session(loop.build_graph, "enrich", thread_id) as (graph, graph_config):
+        snapshot, messages, pending = _latest_or_projection(
+            graph, graph_config, messages, pending)
+        if snapshot.values and checkpoint.is_interrupted(snapshot):
+            result = dict(snapshot.values)
+        else:
+            if snapshot.values and snapshot.next:
+                recovered = loop.retry(graph, graph_config)
+                _project(thread_id, recovered)
+                return _shape(thread_id, recovered)
+            if pending:
+                pending = _checkpoint_action_id(thread_id, messages, pending)
+            else:
+                messages = _with_system(messages)
+                messages.append({"role": "user", "content": message})
+            result = loop.invoke(
+                graph, graph_config, loop.initial_state(ctx, messages, pending))
+        _project(thread_id, result)
+        return _shape(thread_id, result)
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
     """Resume a thread paused on a write: execute (or decline) it and continue."""
     t = db.get_thread(user_id, thread_id)
-    if t is None or not t.get("pending"):
+    if t is None:
         return {"thread_id": thread_id, "status": "answer", "reply": "There's nothing to confirm."}
-    pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    result = resume_write(ctx, list(t["messages"]), pending, bool(approve))
-    db.save_thread(thread_id, result["messages"], result.get("pending"))
-    return _shape(thread_id, result)
+    with checkpoint.session(loop.build_graph, "enrich", thread_id) as (graph, graph_config):
+        snapshot = graph.get_state(graph_config)
+        if not snapshot.values:
+            if not t.get("pending"):
+                return {"thread_id": thread_id, "status": "answer",
+                        "reply": "There's nothing to confirm."}
+            pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
+            loop.invoke(
+                graph, graph_config,
+                loop.initial_state(ctx, list(t["messages"]), pending),
+            )
+            snapshot = graph.get_state(graph_config)
+        if checkpoint.is_interrupted(snapshot):
+            result = loop.resume(graph, graph_config, bool(approve))
+        elif snapshot.next:
+            result = loop.retry(graph, graph_config)
+        elif snapshot.values.get("completed_action_id"):
+            result = dict(snapshot.values)
+        else:
+            return {"thread_id": thread_id, "status": "answer",
+                    "reply": "There's nothing to confirm."}
+        _project(thread_id, result)
+        return _shape(thread_id, result)
 
 
 # ----- stateless handoff API (used by the chat agent) ----------------------
@@ -106,7 +151,7 @@ def plan_action(user_id: int, instruction: str, now, tz, locale) -> dict | None:
         {"role": "user", "content": instruction},
     ]
     try:
-        return run_action_plan(messages, _WRITE_SPECS)
+        return loop.plan_action(messages, _WRITE_SPECS)
     except Exception:
         logger.exception("plan_action failed for user %s", user_id)
         return None

@@ -25,12 +25,13 @@ used. `final` provides a tool-free bounded fallback.
 
 1. The selected specialist runs `plan_action(...)` and returns
    `{name, args, summary}` without writing.
-2. Chat persists the provider history and
-   `pending={tool_call_id, agent, action, summary}`, then returns
-   `{status:"confirm", action}`.
-3. `POST /api/chat/confirm` resumes at `resume_action`. Approval calls the
-   recorded specialist's `execute_action(...)`; decline records a tool result
-   without executing. The graph then returns to the model for acknowledgement.
+2. The graph checkpoints the proposal and pauses in `approval` with
+   `interrupt(...)`. `chat_threads` receives a UI/evaluation projection, then
+   the API returns `{status:"confirm", action}`.
+3. `POST /api/chat/confirm` loads the same PostgreSQL checkpoint and sends
+   `Command(resume=approve)`. Approval calls the recorded specialist's
+   `execute_action(...)`; decline records a tool result without executing. The
+   graph then returns to the model for acknowledgement.
 
 Recording `pending.agent` makes resume deterministic. Older pending checkpoints
 without that field default to Enrich for backward compatibility. Only one action
@@ -38,10 +39,12 @@ may be pending at a time.
 
 ## State and memory
 
-`chat_threads` is the durable cross-request store for provider `messages` and
-`pending`; LangGraph owns only in-request orchestration, so there is no competing
-checkpointer. Durable user memory is the note corpus, reached through semantic
-search. Per-turn `Ctx` carries user id, clock, timezone, locale, and citations.
+LangGraph `PostgresSaver` is the durable execution store and supports exact-node
+resume, checkpoint history, and fault recovery. `chat_threads` remains the
+application projection and ownership boundary, not a second execution state
+machine. Durable user memory is the note corpus, reached through semantic
+search. Serializable state carries user id, clock, timezone, locale, citations,
+trace data, messages, and pending action; nodes reconstruct their runtime `Ctx`.
 
 `POST /api/chat` returns `{thread_id, status, reply?, action?, citations}`.
 Citations are `{note_id,title}` chips that open notes in the existing UI.

@@ -1,15 +1,21 @@
 # Agent workflows on LangGraph
 
 Status: **implemented.** Chat, Enrich, and Reminder use compiled LangGraph
-`StateGraph` workflows. Existing API shapes and PostgreSQL thread persistence
-remain unchanged.
+`StateGraph` workflows with PostgreSQL checkpoints and native human interrupts.
+Existing API response shapes remain unchanged.
 
 ## Persistence boundary
 
-LangGraph owns orchestration within one request. `chat_threads.messages` and
-`chat_threads.pending` remain the durable checkpoint across HTTP requests. A
-second LangGraph checkpointer is intentionally not configured, avoiding two
-competing sources of persisted truth.
+`PostgresSaver` is the execution-state source of truth. Each graph uses a scoped
+thread id (`chat:<id>` or `enrich:<id>`), checkpoints every node boundary, and
+resumes failures from the last successful node. The saver schema is installed
+by API startup.
+
+`chat_threads.messages` and `chat_threads.pending` remain an application
+projection for ownership checks, API/UI reads, and evaluation. They no longer
+decide which workflow node resumes. State contains only serializable data;
+runtime tool contexts are reconstructed inside nodes with strict checkpoint
+deserialization enabled.
 
 ## Chat graph
 
@@ -20,23 +26,25 @@ resume flags.
 ```mermaid
 flowchart TD
     S((START)) -->|turn| M[model]
-    S -->|confirmation| R[resume_action]
+    S -->|legacy pending| H[approval / interrupt]
     M -->|no tool| E((END))
     M -->|read| T[read_tool]
     M -->|perform_action| A[enrich_agent]
     M -->|set_reminder| RM[reminder_agent]
     T -->|budget remains| M
     T -->|budget used| F[final]
-    A -->|planned / confirm| E
+    A --> H
     A -->|unresolved| M
-    RM -->|planned / confirm| E
+    RM --> H
     RM -->|unresolved| M
-    R --> M
+    H -->|Command resume| M
     F --> E
 ```
 
-`resume_action` dispatches to the specialist recorded in `pending.agent`; an
-absent value defaults to Enrich for old checkpoints.
+`approval` interrupts with the stable action id and proposal. The confirm API
+uses `Command(resume=approve)`, so planning nodes are not rerun. After approval,
+the node dispatches to the specialist recorded in `pending.agent`; an absent
+value defaults to Enrich for old projections.
 
 ## Enrich graphs
 
@@ -46,14 +54,14 @@ pending write, and confirmation flags.
 ```mermaid
 flowchart TD
     S((START)) -->|turn| M[model]
-    S -->|confirmation| R[resume_write]
+    S -->|legacy pending| H[approval / interrupt]
     M -->|no tool| E((END))
     M -->|read| T[read_tool]
     M -->|write| P[pending_write]
     T -->|budget remains| M
     T -->|budget used| F[final]
-    P --> E
-    R --> M
+    P --> H
+    H -->|Command resume| M
     F --> E
 ```
 

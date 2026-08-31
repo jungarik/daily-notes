@@ -14,7 +14,8 @@ import logging
 import uuid
 
 from agents.chat.tools import Ctx
-from agents.chat.loop import run_loop, resume_action
+from agents import checkpoint
+from agents.chat import loop
 from agents.chat import db as chat_store
 
 logger = logging.getLogger(__name__)
@@ -51,13 +52,26 @@ def _with_system(messages):
     return messages
 
 
-def _shape(thread_id, result, ctx):
-    out = {"thread_id": thread_id, "status": result["status"], "citations": ctx.citations}
+def _shape(thread_id, result):
+    out = {"thread_id": thread_id, "status": result["status"],
+           "citations": result.get("citations") or []}
     if result["status"] == "answer":
         out["reply"] = result["reply"]
     else:
         out["action"] = result["action"]
     return out
+
+
+def _project(thread_id, result):
+    chat_store.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+
+
+def _latest_or_projection(graph, graph_config, messages, pending):
+    """Use the checkpoint as truth, falling back to pre-checkpointer thread data."""
+    snapshot = graph.get_state(graph_config)
+    if snapshot.values:
+        return snapshot, list(snapshot.values.get("messages") or []), snapshot.values.get("pending")
+    return snapshot, list(messages), pending
 
 
 def _checkpoint_action_id(thread_id, messages, pending):
@@ -78,24 +92,63 @@ def _checkpoint_action_id(thread_id, messages, pending):
 
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user message. Returns {thread_id, status, reply|action, citations}."""
-    thread_id, messages, _ = _load(user_id, thread_id)
-    messages = _with_system(messages)
-    messages.append({"role": "user", "content": message})
+    thread_id, messages, pending = _load(user_id, thread_id)
     ctx = _ctx(user_id, now, tz, locale)
-    result = run_loop(ctx, messages)
-    chat_store.save_thread(thread_id, result["messages"], result.get("pending"))
-    return _shape(thread_id, result, ctx)
+    with checkpoint.session(loop.build_graph, "chat", thread_id) as (graph, graph_config):
+        snapshot, messages, pending = _latest_or_projection(
+            graph, graph_config, messages, pending)
+        if snapshot.values and checkpoint.is_interrupted(snapshot):
+            result = dict(snapshot.values)
+        else:
+            if snapshot.values and snapshot.next:
+                # This request is recovering an unfinished prior turn. Return
+                # that turn's result instead of appending the retried message.
+                recovered = loop.retry(graph, graph_config)
+                _project(thread_id, recovered)
+                return _shape(thread_id, recovered)
+            if pending:
+                pending = _checkpoint_action_id(thread_id, messages, pending)
+            else:
+                messages = _with_system(messages)
+                messages.append({"role": "user", "content": message})
+            result = loop.invoke(
+                graph, graph_config, loop.initial_state(ctx, messages, pending))
+        _project(thread_id, result)
+        return _shape(thread_id, result)
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
     """Resume a thread paused on a handed-off action: run (or decline) it via the
     owning specialist and continue to a final reply."""
     t = chat_store.get_thread(user_id, thread_id)
-    if t is None or not t.get("pending"):
+    if t is None:
         return {"thread_id": thread_id, "status": "answer",
                 "reply": "There's nothing to confirm.", "citations": []}
-    pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
     ctx = _ctx(user_id, now, tz, locale)
-    result = resume_action(ctx, list(t["messages"]), pending, bool(approve))
-    chat_store.save_thread(thread_id, result["messages"], result.get("pending"))
-    return _shape(thread_id, result, ctx)
+    with checkpoint.session(loop.build_graph, "chat", thread_id) as (graph, graph_config):
+        snapshot = graph.get_state(graph_config)
+        if not snapshot.values:
+            if not t.get("pending"):
+                return {"thread_id": thread_id, "status": "answer",
+                        "reply": "There's nothing to confirm.", "citations": []}
+            pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
+            loop.invoke(
+                graph, graph_config,
+                loop.initial_state(ctx, list(t["messages"]), pending),
+            )
+            snapshot = graph.get_state(graph_config)
+        if checkpoint.is_interrupted(snapshot):
+            result = loop.resume(graph, graph_config, bool(approve))
+        elif snapshot.next:
+            # The approval was already consumed and a later node failed. Resume
+            # that exact node; the action ledger also protects its side effect.
+            result = loop.retry(graph, graph_config)
+        elif snapshot.values.get("completed_action_id"):
+            # Confirmation response may have been lost after the graph finished.
+            # Return the checkpointed answer without executing anything again.
+            result = dict(snapshot.values)
+        else:
+            return {"thread_id": thread_id, "status": "answer",
+                    "reply": "There's nothing to confirm.", "citations": []}
+        _project(thread_id, result)
+        return _shape(thread_id, result)

@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import config
+from agents import checkpoint as agent_checkpoint
 from migrate import run_migrations
 from api import system
 # Section verticals — each a self-contained endpoints.py → helper.py → db.py.
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
     # brings the database up to date on startup before serving any client.
     logger.info("API starting: %s v%s", config.API_TITLE, config.API_VERSION)
     run_migrations()
+    agent_checkpoint.setup()
     yield
     logger.info("API shutting down")
 
