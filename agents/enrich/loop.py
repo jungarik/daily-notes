@@ -5,18 +5,21 @@ resume-write, and final nodes. Conditional edges enforce that reads may loop but
 writes stop for confirmation. ``ACTION_PLAN_GRAPH`` is the small stateless
 sub-workflow used when the chat agent hands a write instruction to this agent.
 
-Thread messages and pending writes continue to be persisted by the service in
-PostgreSQL; LangGraph is the orchestration layer, not a second state store.
+Thread messages and pending writes are persisted by the service in PostgreSQL.
+Confirmed writes additionally use the shared action-execution ledger so a
+retry cannot repeat a side effect.
 """
 
 import json
 import logging
+import uuid
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 import config
 import openai_client
+from agents import action_execution
 from agents.enrich.tools import Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool, summarize_write
 
 logger = logging.getLogger(__name__)
@@ -100,7 +103,8 @@ def _read_tool_node(state: EnrichState) -> dict:
 def _pending_write_node(state: EnrichState) -> dict:
     call = state["tool_call"]
     summary = summarize_write(call["name"], call["args"])
-    pending = {"tool_call_id": call["id"], "name": call["name"],
+    pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
+               "name": call["name"],
                "args": call["args"], "summary": summary}
     logger.info("enrich agent pausing for confirmation: %s user=%s",
                 call["name"], state["ctx"].user_id)
@@ -118,7 +122,12 @@ def _route_after_read(state: EnrichState):
 def _resume_write_node(state: EnrichState) -> dict:
     pending = state["pending"]
     if state.get("approve"):
-        result = execute_tool(state["ctx"], pending["name"], pending["args"])
+        action = {"name": pending["name"], "args": pending["args"],
+                  "summary": pending["summary"]}
+        result = action_execution.execute_once(
+            pending["action_id"], state["ctx"].user_id, "enrich", action,
+            lambda: execute_tool(state["ctx"], pending["name"], pending["args"]),
+        )
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."
     message = {"role": "tool", "tool_call_id": pending["tool_call_id"],

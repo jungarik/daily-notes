@@ -6,7 +6,9 @@ user's clock/locale. A write pauses the loop; `confirm` resumes it (executing or
 declining), then continues to the reply. Reserved for the web-app capture path.
 """
 
+import json
 import logging
+import uuid
 
 from agents.enrich.tools import (
     Ctx, TOOL_SPECS, WRITE_TOOLS, execute_tool,
@@ -53,6 +55,22 @@ def _shape(thread_id, result):
     return out
 
 
+def _checkpoint_action_id(thread_id, messages, pending):
+    """Upgrade older pending writes and persist their stable id before execution."""
+    if pending.get("action_id"):
+        return pending
+    pending = dict(pending)
+    identity = json.dumps({
+        "thread_id": thread_id,
+        "tool_call_id": pending.get("tool_call_id"),
+        "name": pending.get("name"),
+        "args": pending.get("args"),
+    }, sort_keys=True, separators=(",", ":"), default=str)
+    pending["action_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, identity))
+    db.save_thread(thread_id, messages, pending)
+    return pending
+
+
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user instruction. Returns {thread_id, status, reply|action}."""
     thread_id, messages, _ = _load(user_id, thread_id)
@@ -69,8 +87,9 @@ def confirm(user_id, thread_id, approve, now, tz, locale):
     t = db.get_thread(user_id, thread_id)
     if t is None or not t.get("pending"):
         return {"thread_id": thread_id, "status": "answer", "reply": "There's nothing to confirm."}
+    pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    result = resume_write(ctx, list(t["messages"]), t["pending"], bool(approve))
+    result = resume_write(ctx, list(t["messages"]), pending, bool(approve))
     db.save_thread(thread_id, result["messages"], result.get("pending"))
     return _shape(thread_id, result)
 

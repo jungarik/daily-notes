@@ -66,8 +66,12 @@ class AgentGraphTests(unittest.TestCase):
 
         self.assertEqual("confirm", paused["status"])
         self.assertEqual(action, paused["action"])
+        self.assertIn("action_id", paused["pending"])
 
-        with patch.object(chat_loop.enrich_service, "execute_action", return_value='{"note_id": 9}'), \
+        with patch.object(chat_loop.action_execution, "execute_once",
+                          side_effect=lambda *args: args[-1]()), \
+                patch.object(chat_loop.enrich_service, "execute_action",
+                             return_value='{"note_id": 9}'), \
                 patch.object(chat_loop, "_complete", return_value=completion(content="Created.")):
             resumed = chat_loop.resume_action(
                 context(), paused["messages"], paused["pending"], approve=True)
@@ -93,6 +97,25 @@ class AgentGraphTests(unittest.TestCase):
         tool.assert_not_called()
         self.assertEqual("Cancelled.", resumed["reply"])
 
+    def test_enrich_approval_runs_through_idempotency_ledger(self):
+        with patch.object(enrich_loop, "_complete", return_value=completion(
+                tool_name="create_note", arguments='{"text": "Call tomorrow"}')):
+            paused = enrich_loop.run_loop(
+                context(), [{"role": "user", "content": "Save this"}])
+
+        self.assertIn("action_id", paused["pending"])
+        with patch.object(enrich_loop.action_execution, "execute_once",
+                          return_value='{"note_id": 9}') as execute_once, \
+                patch.object(enrich_loop, "execute_tool") as tool, \
+                patch.object(enrich_loop, "_complete",
+                             return_value=completion(content="Created.")):
+            resumed = enrich_loop.resume_write(
+                context(), paused["messages"], paused["pending"], approve=True)
+
+        self.assertEqual("Created.", resumed["reply"])
+        execute_once.assert_called_once()
+        tool.assert_not_called()  # callback is passed but the mocked ledger does not run it
+
     def test_chat_routes_reminder_handoff_and_resumes_same_agent(self):
         action = {"name": "create_reminder",
                   "args": {"text": "Call tomorrow", "remind_at": "2026-09-01T09:00:00+03:00"},
@@ -106,7 +129,9 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("confirm", paused["status"])
         self.assertEqual("reminder", paused["pending"]["agent"])
 
-        with patch.object(chat_loop.reminder_service, "execute_action",
+        with patch.object(chat_loop.action_execution, "execute_once",
+                          side_effect=lambda *args: args[-1]()), \
+                patch.object(chat_loop.reminder_service, "execute_action",
                           return_value='{"reminder_id": 3}') as reminder_execute, \
                 patch.object(chat_loop.enrich_service, "execute_action") as enrich_execute, \
                 patch.object(chat_loop, "_complete", return_value=completion(content="Scheduled.")):

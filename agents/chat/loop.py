@@ -20,18 +20,21 @@ agent, or END. Tool/handoff nodes loop to ``model`` while budget remains, else
 route to ``final``. Confirmation resumes at ``model`` after its tool result is
 recorded.
 
-PostgreSQL remains the durable thread/checkpoint store at the service boundary;
-the graph owns orchestration only, so there is one source of persisted truth.
+PostgreSQL remains the durable store: thread state is saved at the service
+boundary, while confirmed writes are checkpointed in the action-execution
+ledger before the graph makes its final model call.
 """
 
 import json
 import logging
+import uuid
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 import config
 import openai_client
+from agents import action_execution
 from agents.chat.tools import (
     Ctx, ENRICH_HANDOFF_TOOLS, REMINDER_HANDOFF_TOOLS, TOOL_SPECS, execute_tool,
 )
@@ -130,7 +133,8 @@ def _handoff_node(state: ChatState, agent_name: str, service) -> dict:
         return {"messages": [*state["messages"], message], "tool_call": None,
                 "action": None}
 
-    pending = {"tool_call_id": call["id"], "agent": agent_name, "action": action,
+    pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
+               "agent": agent_name, "action": action,
                "summary": action["summary"]}
     logger.info("chat handing off to %s: %s user=%s",
                 agent_name, action["name"], ctx.user_id)
@@ -159,8 +163,12 @@ def _resume_action_node(state: ChatState) -> dict:
     ctx = state["ctx"]
     if state.get("approve"):
         service = reminder_service if pending.get("agent") == "reminder" else enrich_service
-        result = service.execute_action(
-            ctx.user_id, pending["action"], ctx.now, ctx.tz, ctx.locale)
+        result = action_execution.execute_once(
+            pending["action_id"], ctx.user_id, pending.get("agent", "enrich"),
+            pending["action"],
+            lambda: service.execute_action(
+                ctx.user_id, pending["action"], ctx.now, ctx.tz, ctx.locale),
+        )
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."
     message = {"role": "tool", "tool_call_id": pending["tool_call_id"],
