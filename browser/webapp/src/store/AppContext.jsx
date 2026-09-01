@@ -20,10 +20,10 @@ function saveFilter(sel) {
 }
 
 const initial = {
-  view: "notes",            // notes | browser | map | search | chat
+  view: "notes",            // notes | explorer | map | search | chat
   prevView: "notes",        // last non-input view (for close/back)
   barMode: null,            // "search" | "chat" while the pill shows its input
-  notes: [],                // browser tree + search source
+  notes: [],                // explorer tree + search source
   feed: null,               // full note cards; null = not loaded
   filterSel: loadFilter(),  // Set of included folder keys, or null = all
   stats: { notes: 0, links: 0, reminders: 0 },   // header stats (/api/header/stats)
@@ -32,7 +32,7 @@ const initial = {
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
   searchQuery: "",
-  scoped: null,             // {notes, links} when a browser folder is selected
+  scoped: null,             // {notes, links} when an explorer folder is selected
   chat: { threadId: null, messages: [], busy: false },
 };
 

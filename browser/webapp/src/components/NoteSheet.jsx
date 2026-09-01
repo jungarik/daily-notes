@@ -3,7 +3,7 @@ import { useApp } from "../store/AppContext.jsx";
 import { fetchNote } from "../lib/api.js";
 import NoteCard from "./NoteCard.jsx";
 
-// Bottom-sheet note preview — opened from the feed/browser/search/graph and from
+// Bottom-sheet note preview — opened from the feed/explorer/search/graph and from
 // a linked-note chip. Renders the same NoteCard template.
 export default function NoteSheet() {
   const { state, closeNote } = useApp();

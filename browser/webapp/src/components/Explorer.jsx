@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 
-// --- tree building (mirrors the vanilla browser) ---
+// --- tree building for the explorer view ---
 function buildTree(notes) {
   const root = { folders: {}, files: [] };
   for (const n of notes) {
@@ -74,7 +74,7 @@ function Folder({ name, node, path }) {
   );
 }
 
-export default function Browser({ hidden }) {
+export default function Explorer({ hidden }) {
   const { state } = useApp();
   const notes = state.notes || [];
   const root = useMemo(() => buildTree(notes), [notes]);

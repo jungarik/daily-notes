@@ -42,7 +42,7 @@ export function mediaUrl(u) {
 // Each web-app section calls its own /api/<section> surface (the endpoints.py in
 // the matching api/<section>/ folder). Attachment proxy lives in the notecard
 // section; chat stays at /api/chat.
-export const fetchNotes = () => apiGet("/api/browser").catch(() => []);
+export const fetchNotes = () => apiGet("/api/explorer").catch(() => []);
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));

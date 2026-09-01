@@ -81,7 +81,7 @@ shaping logic), and **`db.py`** (its own SQL). A section owns everything it
 needs and is decoupled from the others — changing one section's logic can't
 ripple into another (the trade-off is deliberately duplicated query/shaping code).
 
-- **Web-app sections** (one per Mini App UI section): `feed`, `browser`,
+- **Web-app sections** (one per Mini App UI section): `feed`, `explorer`,
   `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search`. These are
   fully isolated — they import only shared *infra* (`db`, `api.deps` for auth,
   `api.media_token`, `file_store`). Each serves its own URL prefix
@@ -150,7 +150,7 @@ the dashboard or `.railway/railway.ts` IaC). See `api/README.md`.
 `browser/webapp/` is a **React + Vite** Mini App, deployed as its own static
 host (Caddy) that calls the API cross-origin. It sets `VITE_API_BASE` (the API's
 public origin, baked into the build) and builds with `base: "/"`. It is split by
-section — one component per UI section (`Header`, `Dock`, `Feed`, `Browser`,
+section — one component per UI section (`Header`, `Dock`, `Feed`, `Explorer`,
 `MapView`, `Search`, `Chat`, `NoteSheet`, `ContextMenu`, `FolderFilter`) over a
 small `AppContext` store (`store/AppContext.jsx`), with `lib/` for API access
 (`api.js`), Telegram init (`telegram.js`) and formatting (`format.js`), and
@@ -162,7 +162,7 @@ separate client from the bot and authenticates with Telegram's signed `initData`
 (`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py` via
 `current_user`); it calls its per-section endpoints, which resolve the Telegram
 user to an internal `user_id` and return only that user's data:
-`GET /api/feed` (full note cards, newest first), `GET /api/browser` (tree) +
+`GET /api/feed` (full note cards, newest first), `GET /api/explorer` (tree) +
 `GET /api/notesheet/{id}` (preview), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
 folders can't be moved), `GET /api/mapview/graph` (connections map),
@@ -173,15 +173,15 @@ chat tab** (see below).
 
 UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
 and, on the Notes and Map tabs, a funnel **folder-filter** button. A floating
-glass **dock** holds a center pill (Notes / Map / Browser icons, in that order)
+glass **dock** holds a center pill (Notes / Map / Explorer icons, in that order)
 flanked by two circle buttons — chat (left) and search (right). Tapping a circle
 swaps the pill's icons for a shared input bar (with a Send button) and the pill
 widens toward the borders; the active circle's glyph becomes a ✕ and doubles as
 the close/back control (the opposite circle hides). Views: **Notes** (a feed of
-note cards), **Browser** (folder tree), **Map** (canvas force-directed graph),
+note cards), **Explorer** (folder tree), **Map** (canvas force-directed graph),
 **Search** (client-side filter over loaded notes), **Chat** (conversation view
 over the `/api/chat` seam). One card template (`buildPost`) is shared by the
-feed and the bottom-sheet preview (opened from the browser/search/graph): image
+feed and the bottom-sheet preview (opened from the explorer/search/graph): image
 carousel on top, then title (date at the end of the title line), path, tags, full
 text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
 navigates without recursion). Path/localised-root names are written by the LLM
@@ -201,7 +201,7 @@ overlapping lower-priority cards are culled and a faint folder-coloured dot mark
 every node. Tapping a node opens a **focused card** (title, path, link count,
 tags/snippet fetched lazily) offering three branches: **Neighbors** (rebuild as a
 depth-1 **ego graph** with a "Full graph" reset), **Open note** (the shared
-preview sheet), and **Outline** (jump to the Browser tab, expand the note's
+preview sheet), and **Outline** (jump to the Explorer tab, expand the note's
 ancestor folders, scroll its row into view and flash it). Leaving the Map clears
 the focus/ego state.
 

@@ -68,11 +68,11 @@ export default function MapView({ hidden }) {
   }, []);
   const onOpen = useCallback(() => { if (focus) openNote(focus.id); }, [focus, openNote]);
 
-  // Outline: jump to the Browser tab and flash the note's row. (Ancestor folders
-  // stay collapsed — folder open-state is local to the Browser tree.)
+  // Outline: jump to the Explorer tab and flash the note's row. (Ancestor folders
+  // stay collapsed — folder open-state is local to the Explorer tree.)
   const onOutline = useCallback(() => {
     if (!focus) return;
-    setView("browser");
+    setView("explorer");
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const row = document.querySelector('#tree [data-id="' + focus.id + '"]');
       if (!row) return;

@@ -14,7 +14,7 @@ const CloseGlyph = () => (
 const TABS = [
   { view: "notes", label: "Notes", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="4" y="4" width="16" height="6" rx="1.6" /><rect x="4" y="14" width="16" height="6" rx="1.6" /></svg> },
   { view: "map", label: "Map", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="6" cy="18" r="2.3" /><circle cx="18.5" cy="15" r="2.3" /><circle cx="14" cy="5.5" r="2.3" /><path d="M7.9 16.6 12.4 7.4M16.3 13.4 8.1 17.1" /></svg> },
-  { view: "browser", label: "Browser", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" /></svg> },
+  { view: "explorer", label: "Explorer", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" /></svg> },
 ];
 
 export default function Dock() {

@@ -1,9 +1,9 @@
-"""Response models for the browser section."""
+"""Response models for the explorer section."""
 
 from pydantic import BaseModel
 
 
-class BrowserNote(BaseModel):
+class ExplorerNote(BaseModel):
     id: int
     title: str
     path: str | None = None

@@ -1,7 +1,7 @@
 # Mini App (React + Vite)
 
 The Telegram Mini App: a React + Vite SPA, one component per section (Header,
-Dock, Feed, Browser, MapView, Search, Chat, NoteSheet, ContextMenu,
+Dock, Feed, Explorer, MapView, Search, Chat, NoteSheet, ContextMenu,
 FolderFilter) over a small `AppContext` store, with a single reused `styles.css`.
 It is deployed as its own static host and calls the API cross-origin.
 
@@ -10,7 +10,7 @@ It is deployed as its own static host and calls the API cross-origin.
 ```
 src/
   main.jsx            # entry: initTelegram() + <AppProvider><App/></AppProvider>
-  App.jsx             # shell: Header + views (Feed/Map/Browser/Search/Chat) + Dock + overlays
+  App.jsx             # shell: Header + views (Feed/Map/Explorer/Search/Chat) + Dock + overlays
   styles.css          # app styles
   lib/
     telegram.js       # tg init + INIT_DATA

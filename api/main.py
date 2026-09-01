@@ -28,7 +28,7 @@ from api import system
 # shared `common` domain. There are no more shared services/stores routers.
 from api.feed.endpoints import router as feed_router
 from api.notecard.endpoints import router as notecard_router
-from api.browser.endpoints import router as browser_router
+from api.explorer.endpoints import router as explorer_router
 from api.notesheet.endpoints import router as notesheet_router
 from api.mapview.endpoints import router as mapview_router
 from api.contextmenu.endpoints import router as contextmenu_router
@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     # Section verticals (each on its own /api/<section> surface).
     app.include_router(feed_router)
     app.include_router(notecard_router)
-    app.include_router(browser_router)
+    app.include_router(explorer_router)
     app.include_router(notesheet_router)
     app.include_router(mapview_router)
     app.include_router(contextmenu_router)

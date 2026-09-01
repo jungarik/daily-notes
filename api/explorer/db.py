@@ -1,4 +1,4 @@
-"""Persistence for the browser section (isolated): the user's notes list."""
+"""Persistence for the explorer section (isolated): the user's notes list."""
 
 from db import cursor
 

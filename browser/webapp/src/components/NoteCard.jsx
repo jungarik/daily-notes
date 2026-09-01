@@ -28,7 +28,7 @@ function Carousel({ atts }) {
   );
 }
 
-// THE note card — shared by the feed and the browser's preview sheet.
+// THE note card — shared by the feed and the explorer's preview sheet.
 export default function NoteCard({ detail }) {
   const { openNote, openCtx } = useApp();
   const text = (detail.text || "").trim();

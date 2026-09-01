@@ -5,7 +5,7 @@ import { useApp } from "../store/AppContext.jsx";
 export default function Header() {
   const { state, openFilter } = useApp();
   const stats = state.stats || { notes: 0, links: 0, reminders: 0 };
-  const s = state.scoped;   // folder-scoped counts when a browser folder is selected
+  const s = state.scoped;   // folder-scoped counts when an explorer folder is selected
   const statNotes = s ? s.notes : stats.notes;
   const statLinks = s ? s.links : stats.links;
   const showFilter = state.view === "notes" || state.view === "map";

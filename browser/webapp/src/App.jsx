@@ -2,7 +2,7 @@ import { useApp } from "./store/AppContext.jsx";
 import Header from "./components/Header.jsx";
 import Dock from "./components/Dock.jsx";
 import Feed from "./components/Feed.jsx";
-import Browser from "./components/Browser.jsx";
+import Explorer from "./components/Explorer.jsx";
 import MapView from "./components/MapView.jsx";
 import Search from "./components/Search.jsx";
 import Chat from "./components/Chat.jsx";
@@ -19,7 +19,7 @@ export default function App() {
       <main>
         <Feed hidden={v !== "notes"} />
         <MapView hidden={v !== "map"} />
-        <Browser hidden={v !== "browser"} />
+        <Explorer hidden={v !== "explorer"} />
         <Search hidden={v !== "search"} />
         <Chat hidden={v !== "chat"} />
       </main>
