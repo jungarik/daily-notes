@@ -13,7 +13,7 @@ class AgentStructureTests(unittest.TestCase):
         expected = {
             "conversation/api.py", "conversation/state.py", "conversation/graph.py",
             "conversation/routing.py", "conversation/prompts.py",
-            "conversation/db.py",
+            "conversation/domain.py", "conversation/db.py",
             "conversation/tools/specs.py", "conversation/tools/handlers.py",
             "conversation/tools/db.py",
             "conversation/nodes/model.py", "conversation/nodes/read.py",

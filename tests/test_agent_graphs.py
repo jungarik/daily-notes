@@ -42,7 +42,7 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIsNotNone(chat_loop.CHAT_GRAPH.checkpointer)
         self.assertIsNotNone(enrich_loop.ENRICH_GRAPH.checkpointer)
         self.assertEqual(
-            {"model", "read_tool", "enrich_agent", "reminder_agent",
+            {"pre_route", "model", "read_tool", "enrich_agent", "reminder_agent",
              "approval", "final"},
             set(chat_loop.CHAT_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
@@ -70,14 +70,38 @@ class AgentGraphTests(unittest.TestCase):
 
     def test_chat_model_provider_error_returns_answer(self):
         with patch.object(chat_model, "complete",
-                          side_effect=Exception("429 Too Many Requests")):
+                          side_effect=chat_model.model_gateway.ModelGatewayError(
+                              "model_rate_limited", "429 Too Many Requests")):
             result = chat_api.evaluate_turn(
-                7, [{"role": "user", "content": "Remind me tomorrow"}],
+                7, [{"role": "user", "content": "Please analyze my notes"}],
                 "now", "tz", "en")
 
         self.assertEqual("answer", result["status"])
         self.assertIn("try again", result["reply"])
         self.assertIn("model_error", result["trace"])
+
+    def test_obvious_reminder_pre_routes_without_conversation_model(self):
+        action = {"name": "create_reminder",
+                  "args": {"text": "Remind me tomorrow",
+                           "remind_at": "2026-09-01T09:00:00+00:00"},
+                  "summary": "Create a reminder."}
+        graph = chat_loop.build_graph(InMemorySaver())
+        graph_config = {"configurable": {"thread_id": "chat:pre-route-reminder"}}
+        with patch.object(chat_model, "complete") as complete, \
+                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                             return_value=action) as plan:
+            paused = chat_loop.invoke(
+                graph, graph_config,
+                chat_initial_state(
+                    context(),
+                    [{"role": "user",
+                      "content": "Remind me tomorrow to call Ivan"}]))
+
+        complete.assert_not_called()
+        plan.assert_called_once()
+        self.assertEqual("confirm", paused["status"])
+        self.assertEqual("pre-route-reminder", paused["pending"]["tool_call_id"])
+        self.assertEqual("reminder", paused["trace"]["pre_route"])
 
     def test_chat_handoff_pauses_and_resume_executes_after_approval(self):
         action = {"name": "create_note", "args": {"text": "Idea"},
@@ -191,8 +215,8 @@ class AgentGraphTests(unittest.TestCase):
         with patch.object(enrich_model, "complete", return_value=completion(
                 tool_name="create_reminder",
                 arguments='{"text": "Call tomorrow"}')), \
-                patch.object(enrich_loop.reminder.openai_client, "get_client",
-                             return_value=client):
+                patch.object(enrich_loop.reminder.model_gateway, "chat_completion",
+                             return_value=client.chat.completions.create()):
             paused = enrich_loop.invoke(
                 graph, graph_config,
                 enrich_initial_state(
@@ -240,7 +264,8 @@ class AgentGraphTests(unittest.TestCase):
             chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         specs = [{"type": "function", "function": {"name": "create_note"}}]
 
-        with patch.object(enrich_model.openai_client, "get_client", return_value=client):
+        with patch.object(enrich_model.model_gateway, "chat_completion",
+                          side_effect=client.chat.completions.create):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],
                 "context": enrich_context_data(context()), "tool_specs": specs,
@@ -253,8 +278,9 @@ class AgentGraphTests(unittest.TestCase):
         create.assert_called_once()
 
     def test_enrich_planning_provider_error_returns_no_action(self):
-        with patch.object(enrich_model.openai_client, "get_client",
-                          side_effect=Exception("429 Too Many Requests")):
+        with patch.object(enrich_model.model_gateway, "chat_completion",
+                          side_effect=enrich_model.model_gateway.ModelGatewayError(
+                              "model_rate_limited", "429 Too Many Requests")):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],
                 "context": enrich_context_data(context()),

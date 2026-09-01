@@ -4,7 +4,7 @@ import json
 import logging
 
 import config
-import openai_client
+from agents.runtime import model_gateway
 from agents.enrich.state import ActionPlanState, EnrichState
 from agents.enrich.tools import TOOL_SPECS
 
@@ -46,21 +46,21 @@ def complete(messages, use_tools):
           tool_choice="auto",
           parallel_tool_calls=False
         )
-    return openai_client.get_client().chat.completions.create(**kwargs)
+    return model_gateway.chat_completion(**kwargs)
 
 
 def run(state: EnrichState) -> dict:
     try:
         msg = complete(state["messages"], use_tools=True).choices[0].message
-    except Exception as exc:
-        logger.exception("Enrich model call failed")
+    except model_gateway.ModelGatewayError as exc:
+        logger.warning("Enrich model call failed: %s", exc.kind)
         reply = MODEL_UNAVAILABLE_REPLY
         return {"messages": [*state["messages"],
                              {"role": "assistant", "content": reply}],
                 "steps": state.get("steps", 0) + 1,
                 "tool_call": None, "status": "answer", "reply": reply,
                 "pending": None,
-                "model_error": str(exc)[:500]}
+                "model_error": exc.kind}
     call = parse_tool_call(msg)
     update = {"messages": [*state["messages"], assistant_dict(msg)],
               "steps": state.get("steps", 0) + 1, "tool_call": call}
@@ -71,7 +71,7 @@ def run(state: EnrichState) -> dict:
 
 def plan(state: ActionPlanState) -> dict:
     try:
-        response = openai_client.get_client().chat.completions.create(
+        response = model_gateway.chat_completion(
             model=config.ENRICH_AGENT_MODEL,
             messages=state["messages"],
             temperature=0,
@@ -79,11 +79,11 @@ def plan(state: ActionPlanState) -> dict:
             tool_choice="auto",
             parallel_tool_calls=False,
         )
-    except Exception as exc:
-        logger.exception("Enrich planning model call failed")
+    except model_gateway.ModelGatewayError as exc:
+        logger.warning("Enrich planning model call failed: %s", exc.kind)
         return {"messages": state["messages"], "tool_call": None,
                 "steps": state.get("steps", 0) + 1, "action": None,
-                "model_error": str(exc)[:500]}
+                "model_error": exc.kind}
     msg = response.choices[0].message
     return {"messages": [*state["messages"], assistant_dict(msg)],
             "tool_call": parse_tool_call(msg),

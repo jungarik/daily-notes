@@ -4,7 +4,7 @@ import json
 import logging
 
 import config
-import openai_client
+from agents.runtime import llm_gateway
 from agents.conversation.state import ChatState
 from agents.conversation.tools import TOOL_SPECS
 
@@ -29,7 +29,7 @@ def complete(messages, use_tools):
     kwargs = {"model": config.AGENT_MODEL, "messages": messages, "temperature": 0.2}
     if use_tools:
         kwargs.update(tools=TOOL_SPECS, tool_choice="auto", parallel_tool_calls=False)
-    return openai_client.get_client().chat.completions.create(**kwargs)
+    return llm_gateway.chat_completion(**kwargs)
 
 
 def parse_tool_call(msg) -> dict | None:
@@ -46,8 +46,8 @@ def parse_tool_call(msg) -> dict | None:
 def run(state: ChatState) -> dict:
     try:
         msg = complete(state["messages"], use_tools=True).choices[0].message
-    except Exception as exc:
-        logger.exception("Conversation model call failed")
+    except llm_gateway.ModelGatewayError as exc:
+        logger.warning("Conversation model call failed: %s", exc.kind)
         reply = MODEL_UNAVAILABLE_REPLY
         return {"messages": [*state["messages"],
                              {"role": "assistant", "content": reply}],
@@ -55,7 +55,7 @@ def run(state: ChatState) -> dict:
                 "tool_call": None, "status": "answer", "reply": reply,
                 "pending": None,
                 "trace": {**(state.get("trace") or {}),
-                          "model_error": str(exc)[:500]}}
+                          "model_error": exc.kind}}
     messages = [*state["messages"], assistant_dict(msg)]
     call = parse_tool_call(msg)
     update = {

@@ -23,4 +23,8 @@ def route_after_read(state: ChatState):
 
 
 def entry_route(state: ChatState):
-    return "approval" if state.get("pending") else "model"
+    return "approval" if state.get("pending") else "pre_route"
+
+
+def route_pre(state: ChatState):
+    return "reminder_agent" if state.get("pre_route") == "reminder" else "model"

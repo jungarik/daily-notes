@@ -1,22 +1,25 @@
 # Agentic chat (Web App chat tab)
 
 Status: **Q&A + specialist write handoffs.** Chat answers with owner-scoped read
-tools and delegates writes to Enrich or Reminder. Every write pauses for explicit
-confirmation; Chat never mutates data directly.
+tools and delegates writes to Enrich. Reminder handling is an Enrich capability.
+Every write pauses for explicit confirmation; Chat never mutates data directly.
 
 ## Workflow and tools
 
-`agents/conversation/graph.py` defines the bounded LangGraph `CHAT_GRAPH`. The model emits
-at most one tool call per step (`parallel_tool_calls=False`), and conditional
-edges route it to:
+`agents/conversation/graph.py` defines the bounded LangGraph `CHAT_GRAPH`.
+`pre_route` can detect obvious reminder requests before the model. Otherwise
+the model emits at most one tool call per step (`parallel_tool_calls=False`),
+and conditional edges route it to:
 
 - `read_tool` for `search_notes`, `get_note`, `neighbors`, `list_reminders`,
   `list_agenda`, or
   `list_paths`;
 - `enrich_agent` for `perform_action(instruction)` — create a note, move a note,
   or enrich/classify it;
+- `pre_route` for obvious reminder requests — skip the Conversation model and
+  send `set_reminder(instruction)` directly to Enrich;
 - `reminder_agent` for `set_reminder(instruction)` — resolve and schedule a
-  reminder;
+  reminder through Enrich;
 - END when the model answers without a tool.
 
 Read results loop back to the model until it answers or `AGENT_MAX_STEPS` is

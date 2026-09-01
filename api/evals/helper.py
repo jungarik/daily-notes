@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import config
 import i18n
-import openai_client
+from agents.runtime import model_gateway
 from agents.conversation import api as chat_service
 from agents.enrich import api as enrich_service
 from api.evals import db
@@ -74,7 +74,7 @@ def _judge(case: dict, observed: dict) -> dict:
                     "expected_behavior": case["expected_behavior"],
                     "answer": observed["answer"], "trace": observed["trace"]},
                    ensure_ascii=False, default=str))
-    response = openai_client.get_client().chat.completions.create(
+    response = model_gateway.chat_completion(
         model=config.AGENT_EVAL_JUDGE_MODEL, temperature=0,
         response_format={"type": "json_object"},
         messages=[{"role": "system", "content": "You are a strict software evaluation judge."},

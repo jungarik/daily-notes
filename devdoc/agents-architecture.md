@@ -8,6 +8,7 @@ capabilities of those agents, not separately registered workflows.
 agents/
 ├── contracts/                 shared typed handoff/result contracts
 ├── runtime/                   checkpoint and idempotent execution services
+│                               plus model gateway retry/error handling
 ├── conversation/
 │   ├── api.py                 public chat and read facade
 │   ├── graph.py               stateful Chat workflow composition
@@ -15,7 +16,7 @@ agents/
 │   ├── routing.py
 │   ├── prompts.py
 │   ├── db.py                  thread projection persistence for the API
-│   ├── nodes/                 model, read, dispatch, approval, final
+│   ├── nodes/                 pre_route, model, read, dispatch, approval, final
 │   └── tools/                 schemas, handlers, and tool-owned read queries
 ├── enrich/
 │   ├── api.py                 public plan/execute facade
@@ -33,4 +34,6 @@ agents/
 Conversation executes its reads through tool handlers. Both `perform_action` and
 `set_reminder` dispatch to Enrich; a typed mode tells Enrich whether to use its
 general note planner or its reminder capability. Confirmation and idempotent
-execution remain in the Conversation workflow. Telegram is unchanged.
+execution remain in the Conversation workflow. Obvious reminder requests are
+pre-routed before the Conversation model to save one model call. Telegram is
+unchanged.

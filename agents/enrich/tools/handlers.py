@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 
 import config
+import i18n
+from openai_client import get_client
 from agents.enrich import domain as d
 from agents.enrich import db
 
@@ -21,6 +23,30 @@ class Ctx:
 
 def _json(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+def _embed(text: str) -> str:
+    response = get_client().embeddings.create(model=config.EMBED_MODEL, input=text)
+    return str(response.data[0].embedding)
+
+
+def _all_root_names() -> set[str]:
+    return {i18n.t(locale, key)
+            for key in config.ROOT_FOLDERS for locale in i18n.SUPPORTED}
+
+
+def _clean_root_path(path: str) -> str | None:
+    if not path:
+        return None
+    parts = [part.strip() for part in str(path).replace("\\", "/").split("/")]
+    parts = [part for part in parts if part and part not in (".", "..")]
+    if not parts:
+        return None
+    roots = {name.lower(): name for name in _all_root_names()}
+    canonical = roots.get(parts[0].lower())
+    if canonical is None:
+        return None
+    return "/".join([canonical] + parts[1:])
 
 
 def _list_paths(ctx: Ctx, _args: dict) -> str:
@@ -50,7 +76,7 @@ def _find_related_notes(ctx: Ctx, args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not text:
         return "Error: text is required."
-    embedding = d.embed(text)
+    embedding = _embed(text)
     note_id = args.get("exclude_note_id")
     rows = (db.similar_notes(ctx.user_id, embedding, int(note_id),
                              limit=config.ENRICH_SIMILAR_LIMIT)
@@ -63,18 +89,24 @@ def _create_note(ctx: Ctx, args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not text:
         return "Error: text is required."
-    return _json({"note_id": d.capture_note(ctx.user_id, text)})
+    note_id = db.save_note(ctx.user_id, text)
+    db.save_chunks(note_id, d._build_chunks(text))
+    logger.info("Enrich agent captured note %s (user %s)", note_id, ctx.user_id)
+    return _json({"note_id": note_id})
 
 
 def _set_note_path(ctx: Ctx, args: dict) -> str:
     note_id, path = args.get("note_id"), (args.get("path") or "").strip()
     if note_id is None or not path:
         return "Error: note_id and path are required."
-    status, meta = d.move_note(ctx.user_id, int(note_id), path)
-    if status == "invalid":
+    cleaned = _clean_root_path(path)
+    if cleaned is None:
         return "Error: path must start with a root folder."
-    if status == "not_found":
+    note_id = int(note_id)
+    if db.get_note_for_user(ctx.user_id, note_id) is None:
         return "Error: note not found."
+    db.set_path(note_id, cleaned)
+    meta = db.get_meta(note_id)
     return _json({"ok": True, "path": (meta or {}).get("path")})
 
 
@@ -85,8 +117,17 @@ def _enrich_note(ctx: Ctx, args: dict) -> str:
     required = {"type", "title", "path", "tags", "priority"}
     if not required.issubset(args):
         return "Error: enrichment proposal is missing approved metadata; regenerate it."
-    meta = d.enrich_note(ctx.user_id, int(note_id), args)
-    return _json(meta) if meta is not None else "Error: note not found or empty."
+    note_id = int(note_id)
+    note = db.get_note_for_user(ctx.user_id, note_id)
+    if not note or not (note.get("text") or "").strip():
+        return "Error: note not found or empty."
+    root_folders, default_root = d.localized_roots(ctx.user_id)
+    metadata = d.normalize(args, note["text"], root_folders, default_root)
+    db.set_metadata(note_id, metadata["type"], metadata["title"],
+                    metadata["priority"], metadata["tags"], metadata["path"])
+    logger.info("Enriched note %s -> %s '%s' @ %s", note_id,
+                metadata["type"], metadata["title"], metadata["path"])
+    return _json(metadata)
 
 
 def _create_reminder(ctx: Ctx, args: dict) -> str:

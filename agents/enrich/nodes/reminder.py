@@ -3,12 +3,12 @@
 import json
 
 import config
-import openai_client
 from agents.enrich import domain
 from agents.enrich.prompts import reminder_extraction_prompt
 from agents.enrich.state import (
     EnrichState, ReminderPlanState, context_from_state,
 )
+from agents.runtime import model_gateway
 
 
 def _latest_user_text(messages: list[dict]) -> str:
@@ -60,7 +60,7 @@ def extract_time(state: ReminderPlanState | EnrichState) -> dict:
         return {"reminder_raw": {"is_reminder": False, "remind_at": None},
                 "reminder_trace": trace}
     try:
-        response = openai_client.get_client().chat.completions.create(
+        response = model_gateway.chat_completion(
             model=config.REMINDER_LLM_MODEL,
             temperature=0,
             response_format={"type": "json_object"},

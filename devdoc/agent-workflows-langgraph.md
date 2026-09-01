@@ -23,11 +23,16 @@ deserialization enabled.
 `ChatState` carries provider messages, per-turn context, step count, current tool
 call, terminal response, pending action, specialist identity, and an ordered
 cross-turn `reference_notes` list. Response citations remain turn-local.
+Before the model node, `pre_route` deterministically detects obvious reminder
+requests and sends them to Enrich as `set_reminder`, avoiding one LLM routing
+call.
 
 ```mermaid
 flowchart TD
-    S((START)) -->|turn| M[model]
+    S((START)) -->|turn| PR[pre_route]
     S -->|legacy pending| H[approval / interrupt]
+    PR -->|obvious reminder| RM[reminder_agent]
+    PR -->|otherwise| M
     M -->|no tool| E((END))
     M -->|read| T[read_tool]
     M -->|perform_action| A[enrich_agent]
@@ -95,6 +100,7 @@ reminder detection, creation, delivery, claiming, list, cancel, and snooze logic
 - Chat has no direct write handler.
 - Every Chat write requires explicit confirmation.
 - Enrich owns all confirmed writes, including reminders.
+- Agent chat-completion calls go through `agents/runtime/model_gateway.py`.
 - Tool selection is single-call and loops are bounded.
 - Reminder attachment is scoped by both note id and user id.
 - Existing `/api/chat` and `/api/chat/confirm` contracts are unchanged.

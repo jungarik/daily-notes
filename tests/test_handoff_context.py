@@ -121,7 +121,8 @@ class HandoffContextTests(unittest.TestCase):
         create = Mock(side_effect=replies)
         client = SimpleNamespace(chat=SimpleNamespace(
             completions=SimpleNamespace(create=create)))
-        with patch.object(enrich_model.openai_client, "get_client", return_value=client), \
+        with patch.object(enrich_model.model_gateway, "chat_completion",
+                          side_effect=client.chat.completions.create), \
                 patch.object(enrich_read, "execute_tool",
                              return_value='{"id": 4, "title": "Roadmap"}') as read, \
                 patch.object(enrich_write.db, "get_note_for_user",
@@ -147,7 +148,8 @@ class HandoffContextTests(unittest.TestCase):
         ]
         client = SimpleNamespace(chat=SimpleNamespace(
             completions=SimpleNamespace(create=Mock(side_effect=replies))))
-        with patch.object(enrich_model.openai_client, "get_client", return_value=client), \
+        with patch.object(enrich_model.model_gateway, "chat_completion",
+                          side_effect=client.chat.completions.create), \
                 patch.object(enrich_write.db, "get_note_for_user", return_value=None):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich that note"}],

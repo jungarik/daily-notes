@@ -144,6 +144,16 @@ AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
+# Shared OpenAI chat-completion gateway retry budget for agent nodes.
+
+OPENAI_GATEWAY_MAX_ATTEMPTS = int(os.environ.get("OPENAI_GATEWAY_MAX_ATTEMPTS", "2"))
+
+OPENAI_GATEWAY_BASE_BACKOFF_SECONDS = float(
+    os.environ.get("OPENAI_GATEWAY_BASE_BACKOFF_SECONDS", "0.5"))
+
+OPENAI_GATEWAY_MAX_BACKOFF_SECONDS = float(
+    os.environ.get("OPENAI_GATEWAY_MAX_BACKOFF_SECONDS", "2.0"))
+
 
 # --- Enrichment agent (runs at capture time) ---
 

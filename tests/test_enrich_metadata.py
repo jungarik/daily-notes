@@ -31,7 +31,7 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertNotIn("find_related_notes", exposed)
         self.assertIn("find_related_notes", METADATA_CONTEXT_TOOLS)
         ctx = Ctx(7, "now", tz="UTC", locale="en")
-        with patch.object(tool_handlers.d, "embed", return_value="vector"), \
+        with patch.object(tool_handlers, "_embed", return_value="vector"), \
                 patch.object(tool_handlers.db, "related_notes", return_value=[]) as related:
             result = tool_handlers.execute_context_tool(
                 ctx, "find_related_notes", {"text": "Garden", "exclude_note_id": None})
@@ -54,7 +54,8 @@ class EnrichMetadataTests(unittest.TestCase):
         context_tool = Mock(side_effect=lambda _ctx, name, _args:
                             json.dumps(context_results[name]))
         with patch.object(metadata_nodes, "execute_context_tool", context_tool), \
-                patch.object(metadata_nodes.openai_client, "get_client", return_value=client):
+                patch.object(metadata_nodes.model_gateway, "chat_completion",
+                             side_effect=client.chat.completions.create):
             result = enrich_graph.METADATA_GRAPH.invoke({
                 "user_id": 7,
                 "metadata_text": "Build a pocket garden",
@@ -99,7 +100,8 @@ class EnrichMetadataTests(unittest.TestCase):
         context_tool = Mock(side_effect=lambda _ctx, name, _args:
                             json.dumps(context_results[name]))
         with patch.object(metadata_nodes, "execute_context_tool", context_tool), \
-                patch.object(metadata_nodes.openai_client, "get_client", return_value=client), \
+                patch.object(metadata_nodes.model_gateway, "chat_completion",
+                             side_effect=client.chat.completions.create), \
                 patch("agents.enrich.nodes.write.db.get_note_for_user", return_value=note):
             result = enrich_graph.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich note 4"}],
@@ -124,7 +126,8 @@ class EnrichMetadataTests(unittest.TestCase):
                 patch.object(domain.db, "set_metadata") as save, \
                 patch.object(domain, "get_client",
                              side_effect=AssertionError("LLM during confirmation")):
-            result = domain.enrich_note(7, 4, proposed)
+            result = json.loads(tool_handlers._enrich_note(
+            Ctx(7, "now"), {"note_id": 4, **proposed}))
 
         self.assertEqual("Ship release", result["title"])
         save.assert_called_once_with(

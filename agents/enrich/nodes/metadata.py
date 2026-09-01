@@ -5,10 +5,10 @@ import logging
 import time
 
 import config
-import openai_client
 from agents.enrich import domain
 from agents.enrich.prompts import enrichment_prompt
 from agents.enrich.tools import Ctx, execute_context_tool
+from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def propose(state: dict) -> dict:
             context["known_paths"], context["known_tags"],
             context["related_notes"], context["root_folders"],
             context["default_root"], config.ENRICH_SIMILAR_MAX_DISTANCE)
-        response = openai_client.get_client().chat.completions.create(
+        response = model_gateway.chat_completion(
             model=config.ENRICH_LLM_MODEL, temperature=0,
             response_format={"type": "json_object"},
             messages=[{"role": "system", "content": system},

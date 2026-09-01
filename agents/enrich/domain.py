@@ -27,7 +27,6 @@ _ORDINALS = (
 _REFERENCE = re.compile(
     r"\b(that|this|it|one|note)\b|\b(цей|ця|це|цю|той|та|те|його|її|нотатк)\w*\b",
     re.IGNORECASE)
-
 _REL_UNITS = (r"хвилин|хвил|секунд|годин|тижн|тиждень|дн(і|ів|я)|день|"
               r"seconds?|minutes?|\bmin\b|hours?|\bhr\b|days?|weeks?")
 _TIME_HINT = re.compile(
@@ -40,8 +39,6 @@ _TIME_HINT = re.compile(
     r"пізніше|later|кілька|декілька|пару|couple|few|через|"
     rf"{_REL_UNITS}|\bin\s+\d|\bat\s+\d|\d{{1,2}}:\d{{2}}|"
     r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)", re.IGNORECASE)
-
-
 # ===== user language + roots ===============================================
 
 def _language(user_id: int) -> str:
@@ -53,24 +50,6 @@ def localized_roots(user_id: int) -> tuple[dict[str, str], str]:
     roots = {i18n.t(locale, key): definition for key, definition in config.ROOT_FOLDERS.items()}
     default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
     return roots, default
-
-
-def _all_root_names() -> set[str]:
-    return {i18n.t(loc, key) for key in config.ROOT_FOLDERS for loc in i18n.SUPPORTED}
-
-
-def clean_root_path(path: str) -> str | None:
-    if not path:
-        return None
-    parts = [p.strip() for p in str(path).replace("\\", "/").split("/")]
-    parts = [p for p in parts if p and p not in (".", "..")]
-    if not parts:
-        return None
-    roots = {name.lower(): name for name in _all_root_names()}
-    canonical = roots.get(parts[0].lower())
-    if canonical is None:
-        return None
-    return "/".join([canonical] + parts[1:])
 
 
 # ===== embeddings ==========================================================
@@ -86,25 +65,15 @@ def _chunk_text(text: str, size: int = config.CHUNK_SIZE, overlap: int = config.
     return chunks
 
 
-def embed(text: str) -> str:
+def _embed(text: str) -> str:
     resp = get_client().embeddings.create(model=config.EMBED_MODEL, input=text)
     return str(resp.data[0].embedding)
 
 
 def _build_chunks(text: str) -> list[dict]:
     return [{"index": i, "content": c, "token_count": len(c.split()),
-             "metadata": {"char_len": len(c)}, "embedding": embed(c)}
+             "metadata": {"char_len": len(c)}, "embedding": _embed(c)}
             for i, c in enumerate(_chunk_text(text))]
-
-
-# ===== note capture (create_note tool) =====================================
-
-def capture_note(user_id: int, text: str) -> int:
-    """Persist a text note (chunk + embed). Text-only (the agent captures no media)."""
-    note_id = db.save_note(user_id, text)
-    db.save_chunks(note_id, _build_chunks(text))
-    logger.info("Enrich agent captured note %s (user %s)", note_id, user_id)
-    return note_id
 
 
 def execute_capture(user_id: int, args: dict) -> dict:
@@ -123,18 +92,6 @@ def execute_capture(user_id: int, args: dict) -> dict:
     linked_note_ids = [int(note_id) for note_id in args.get("linked_note_ids") or []]
     return db.save_captured_thought(
         user_id, text, metadata, _build_chunks(text), linked_note_ids)
-
-
-# ===== move (set_note_path tool) ===========================================
-
-def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | None]:
-    cleaned = clean_root_path(raw_path)
-    if cleaned is None:
-        return ("invalid", None)
-    if db.get_note_for_user(user_id, note_id) is None:
-        return ("not_found", None)
-    db.set_path(note_id, cleaned)
-    return ("ok", db.get_meta(note_id))
 
 
 # ===== metadata normalization and deterministic persistence ================
@@ -172,19 +129,6 @@ def normalize(data: dict, text: str, root_folders=None, default_root_folder=None
     path = _clean_path(data.get("path")) or default_root_folder
     path = _enforce_root(path, root_folders, default_root_folder)
     return {"type": note_type, "title": title, "path": path, "tags": tags, "priority": priority}
-
-
-def enrich_note(user_id: int, note_id: int, proposed: dict) -> dict | None:
-    """Persist already-proposed metadata after user confirmation; no LLM calls."""
-    note = db.get_note_for_user(user_id, note_id)
-    if not note or not (note.get("text") or "").strip():
-        return None
-    root_folders, default_root = localized_roots(user_id)
-    meta = normalize(proposed, note["text"], root_folders, default_root)
-    db.set_metadata(note_id, meta["type"], meta["title"], meta["priority"],
-                    meta["tags"], meta["path"])
-    logger.info("Enriched note %s -> %s '%s' @ %s", note_id, meta["type"], meta["title"], meta["path"])
-    return meta
 
 
 # ===== reminders ===========================================================
