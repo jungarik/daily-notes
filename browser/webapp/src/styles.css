@@ -87,8 +87,7 @@
   /* Shared input (search / chat) embedded in the floating pill */
   .tab-icons { display: flex; gap: 4px; }
   .tab-icons.hidden, .tab-input.hidden { display: none; }
-  .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; }
-  .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
+  .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; }
   .tab-input input, .tab-input textarea { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
   .tab-input textarea {
     display: block; min-height: 32px; max-height: 142px; line-height: 22px;
@@ -97,6 +96,7 @@
     scrollbar-width: thin;
   }
   /* Input mode: let the pill stretch toward the borders and the field fill it. */
+  .dock.input { align-items: flex-end; }
   .dock.input .tabbar { flex: 1; align-items: flex-end; border-radius: 27px; }
   .dock.input .tab-input { width: 100%; align-items: flex-end; }
   .dock.input .tab-input input, .dock.input .tab-input textarea { flex: 1; width: auto; max-width: none; }

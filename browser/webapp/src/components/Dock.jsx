@@ -64,9 +64,6 @@ export default function Dock() {
           </div>
         ) : (
           <div className="tab-input">
-            {barMode === "chat"
-              ? <svg className="ts-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5v-9Z" /></svg>
-              : <svg className="ts-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>}
             {barMode === "chat" ? (
               <textarea ref={inputRef} rows={1} value={text}
                 placeholder="Ask about your notes…"
