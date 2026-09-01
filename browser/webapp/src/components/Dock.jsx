@@ -30,8 +30,10 @@ export default function Dock() {
     if (!input || input.tagName !== "TEXTAREA") return;
 
     input.style.height = "auto";
-    const lineHeight = parseFloat(window.getComputedStyle(input).lineHeight) || 22;
-    const maxHeight = lineHeight * 6;
+    const style = window.getComputedStyle(input);
+    const lineHeight = parseFloat(style.lineHeight) || 22;
+    const paddingY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    const maxHeight = lineHeight * 6 + paddingY;
     input.style.height = `${Math.min(input.scrollHeight, maxHeight)}px`;
     input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [text, barMode]);

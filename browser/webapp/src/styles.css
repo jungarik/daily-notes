@@ -91,7 +91,8 @@
   .tab-input .ts-ico { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
   .tab-input input, .tab-input textarea { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
   .tab-input textarea {
-    display: block; min-height: 1.5em; max-height: 9em; line-height: 1.5;
+    display: block; min-height: 32px; max-height: 142px; line-height: 22px;
+    padding: 5px 0;
     resize: none; overflow-y: hidden; overflow-wrap: anywhere;
     scrollbar-width: thin;
   }
