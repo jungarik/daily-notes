@@ -51,15 +51,14 @@ class ReminderAgentTests(unittest.TestCase):
             "text": "Follow up on roadmap", "note_id": 20,
             "remind_at": "2026-09-01T09:00:00+00:00",
         }}
-        attached = {"note_id": 20, "reminder_id": 3,
-                    "remind_at": "2026-09-01T09:00:00+00:00"}
-        with patch.object(handlers.d, "attach_reminder", return_value=attached) as attach, \
+        with patch.object(handlers.db, "attach_reminder", return_value=3) as attach, \
                 patch.object(handlers.d, "create_reminder") as create:
             result = enrich_service.execute_action(
                 7, action, datetime.now(timezone.utc), timezone.utc, "en")
 
         self.assertIn('"note_id": 20', result)
-        attach.assert_called_once()
+        attach.assert_called_once_with(
+            7, 20, datetime.fromisoformat("2026-09-01T09:00:00+00:00"))
         create.assert_not_called()
 
 if __name__ == "__main__":

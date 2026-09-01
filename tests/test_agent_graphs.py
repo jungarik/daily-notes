@@ -1,5 +1,6 @@
 """Focused regression tests for the LangGraph agent routing."""
 
+import json
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+import config
 from agents.conversation import api as chat_api
 from agents.conversation import graph as chat_loop
 from agents.conversation.nodes import approval as chat_approval
@@ -152,6 +154,31 @@ class AgentGraphTests(unittest.TestCase):
 
         tool.assert_not_called()
         self.assertEqual("Cancelled.", resumed["reply"])
+
+    def test_enrich_create_note_proposal_is_atomic_before_confirmation(self):
+        graph = enrich_loop.build_graph(InMemorySaver())
+        graph_config = {"configurable": {"thread_id": "enrich:atomic-note"}}
+        verbose = (
+            "Atomic idea one. Useful supporting detail. Final relevant nuance. "
+            "This fourth sentence is expansion that should not be part of the "
+            "atomic note proposal."
+        )
+        with patch.object(config, "ATOMIC_NOTE_MAX_SENTENCES", 3), \
+                patch.object(config, "ATOMIC_NOTE_MAX_CHARS", 700), \
+                patch.object(enrich_model, "complete", return_value=completion(
+                    tool_name="create_note",
+                    arguments=json.dumps({"text": verbose}))):
+            paused = enrich_loop.invoke(
+                graph, graph_config,
+                enrich_initial_state(
+                    context(), [{"role": "user", "content": "Save this"}]))
+
+        text = paused["action"]["args"]["text"]
+        self.assertEqual(
+            "Atomic idea one. Useful supporting detail. Final relevant nuance.",
+            text,
+        )
+        self.assertEqual(text, paused["pending"]["args"]["text"])
 
     def test_enrich_approval_runs_through_idempotency_ledger(self):
         graph = enrich_loop.build_graph(InMemorySaver())

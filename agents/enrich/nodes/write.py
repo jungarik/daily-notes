@@ -3,6 +3,7 @@
 import logging
 import uuid
 
+from agents.enrich import domain
 from agents.enrich import db
 from agents.enrich.state import ActionPlanState, EnrichState, context_from_state
 from agents.enrich.tools import summarize_write
@@ -10,8 +11,17 @@ from agents.enrich.tools import summarize_write
 logger = logging.getLogger(__name__)
 
 
+def _guardrail_call(call: dict) -> dict:
+    """Normalize write-tool arguments that must be safe before confirmation."""
+    if call["name"] != "create_note":
+        return call
+    args = dict(call.get("args") or {})
+    args["text"] = domain.atomic_note_text(args.get("text") or "")
+    return {**call, "args": args}
+
+
 def prepare(state: EnrichState) -> dict:
-    call = state["tool_call"]
+    call = _guardrail_call(state["tool_call"])
     summary = summarize_write(call["name"], call["args"])
     pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
                "name": call["name"], "args": call["args"], "summary": summary}
@@ -23,7 +33,7 @@ def prepare(state: EnrichState) -> dict:
 
 
 def validate(state: ActionPlanState) -> dict:
-    call = state["tool_call"]
+    call = _guardrail_call(state["tool_call"])
     if call["name"] in {"set_note_path", "enrich_note"}:
         try:
             note_id = int(call["args"].get("note_id"))

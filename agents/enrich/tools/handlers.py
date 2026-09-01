@@ -86,7 +86,7 @@ def _find_related_notes(ctx: Ctx, args: dict) -> str:
 
 
 def _create_note(ctx: Ctx, args: dict) -> str:
-    text = (args.get("text") or "").strip()
+    text = d.atomic_note_text(args.get("text") or "")
     if not text:
         return "Error: text is required."
     note_id = db.save_note(ctx.user_id, text)
@@ -137,9 +137,17 @@ def _create_reminder(ctx: Ctx, args: dict) -> str:
         return "Error: text and remind_at are required."
     remind_at = datetime.fromisoformat(raw_time)
     note_id = args.get("note_id")
-    result = (d.attach_reminder(ctx.user_id, int(note_id), remind_at)
-              if note_id is not None
-              else d.create_reminder(ctx.user_id, text, remind_at))
+    if note_id is not None:
+        note_id = int(note_id)
+        reminder_id = db.attach_reminder(ctx.user_id, note_id, remind_at)
+        if reminder_id is None:
+            return "Error: referenced note not found."
+        logger.info("Enrich attached reminder %s to note %s (user %s)",
+                    reminder_id, note_id, ctx.user_id)
+        result = {"note_id": note_id, "reminder_id": reminder_id,
+                  "remind_at": remind_at.isoformat()}
+    else:
+        result = d.create_reminder(ctx.user_id, text, remind_at)
     return _json(result) if result is not None else "Error: referenced note not found."
 
 

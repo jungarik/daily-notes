@@ -39,6 +39,7 @@ _TIME_HINT = re.compile(
     r"пізніше|later|кілька|декілька|пару|couple|few|через|"
     rf"{_REL_UNITS}|\bin\s+\d|\bat\s+\d|\d{{1,2}}:\d{{2}}|"
     r"\d{1,2}\s*(am|pm)|(?<![а-яіїєґ])[оo]\s+\d)", re.IGNORECASE)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
 # ===== user language + roots ===============================================
 
 def _language(user_id: int) -> str:
@@ -74,6 +75,22 @@ def _build_chunks(text: str) -> list[dict]:
     return [{"index": i, "content": c, "token_count": len(c.split()),
              "metadata": {"char_len": len(c)}, "embedding": _embed(c)}
             for i, c in enumerate(_chunk_text(text))]
+
+
+def atomic_note_text(text: str) -> str:
+    """Keep agent-created notes small and atomic before confirmation/execution."""
+    value = " ".join(line.strip() for line in str(text or "").splitlines()
+                     if line.strip())
+    if not value:
+        return ""
+
+    sentences = _SENTENCE_SPLIT.split(value)
+    value = " ".join(sentences[:config.ATOMIC_NOTE_MAX_SENTENCES]).strip()
+    if len(value) <= config.ATOMIC_NOTE_MAX_CHARS:
+        return value
+
+    shortened = value[:config.ATOMIC_NOTE_MAX_CHARS].rsplit(" ", 1)[0].strip()
+    return shortened.rstrip(" ,.;:-") + "..."
 
 
 def execute_capture(user_id: int, args: dict) -> dict:
@@ -176,16 +193,5 @@ def create_reminder(user_id: int, text: str, remind_at: datetime) -> dict:
     note_id, reminder_id = db.create_note_with_reminder(
         user_id, text, _build_chunks(text), remind_at)
     logger.info("Enrich created reminder %s for user %s", reminder_id, user_id)
-    return {"note_id": note_id, "reminder_id": reminder_id,
-            "remind_at": remind_at.isoformat()}
-
-
-def attach_reminder(user_id: int, note_id: int, remind_at: datetime) -> dict | None:
-    """Attach a reminder to an existing user-owned note."""
-    reminder_id = db.attach_reminder(user_id, note_id, remind_at)
-    if reminder_id is None:
-        return None
-    logger.info("Enrich attached reminder %s to note %s (user %s)",
-                reminder_id, note_id, user_id)
     return {"note_id": note_id, "reminder_id": reminder_id,
             "remind_at": remind_at.isoformat()}

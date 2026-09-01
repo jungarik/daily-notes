@@ -23,7 +23,10 @@ TOOL_SPECS = [
     _fn("list_tags", "List the user's existing tags (with counts) so you can reuse them.", {}, []),
     _fn("get_note_context", "Read one user-owned note before moving or enriching it.",
         {"note_id": {"type": "integer"}}, ["note_id"]),
-    _fn("create_note", "Create a new note from the given text (chunked + embedded). "
+    _fn("create_note", "Create one atomic Zettelkasten note from the given text "
+        "(chunked + embedded). The text must contain one idea only, 1-3 short "
+        "sentences, without expanded explanation or invented description. If the "
+        "user gives several independent ideas, ask for clarification instead. "
         "Requires user confirmation.", {"text": {"type": "string"}}, ["text"]),
     _fn("set_note_path", "Move a note to a different vault path (must start with a root "
         "folder). Requires user confirmation.",

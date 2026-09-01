@@ -165,6 +165,12 @@ ENRICH_AGENT_MODEL = os.environ.get("ENRICH_AGENT_MODEL", ENRICH_LLM_MODEL)
 
 ENRICH_AGENT_MAX_STEPS = int(os.environ.get("ENRICH_AGENT_MAX_STEPS", "4"))
 
+# Guardrail for agent-created Zettelkasten notes. This affects only generated
+# create_note proposals; raw capture flow still preserves the user's input.
+ATOMIC_NOTE_MAX_CHARS = int(os.environ.get("ATOMIC_NOTE_MAX_CHARS", "700"))
+
+ATOMIC_NOTE_MAX_SENTENCES = int(os.environ.get("ATOMIC_NOTE_MAX_SENTENCES", "3"))
+
 
 # --- Agent evaluation / observability ---
 
