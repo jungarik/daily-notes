@@ -50,7 +50,7 @@ def prepare(state: EnrichState) -> dict:
 
 def validate(state: ActionPlanState) -> dict:
     call = _guardrail_call(state["tool_call"])
-    if call["name"] in {"set_note_path", "enrich_note"}:
+    if call["name"] in {"set_note_path", "enrich_note", "add_note_tags"}:
         try:
             note_id = int(call["args"].get("note_id"))
         except (TypeError, ValueError):

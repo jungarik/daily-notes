@@ -147,6 +147,12 @@ def set_path(note_id: int, path: str) -> None:
         cur.execute("UPDATE notes SET path = %s WHERE id = %s;", (path, note_id))
 
 
+def set_tags(note_id: int, tags: list[str]) -> None:
+    with cursor() as cur:
+        cur.execute("UPDATE notes SET tags = %s WHERE id = %s;",
+                    (Json(tags or []), note_id))
+
+
 def set_metadata(note_id, note_type, title, priority, tags, path) -> None:
     with cursor() as cur:
         cur.execute(

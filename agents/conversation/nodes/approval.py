@@ -8,7 +8,10 @@ from agents.runtime import execution_ledger
 
 
 def run(state: ChatState) -> dict:
-    pending = state["pending"]
+    pending = state.get("pending")
+    if not pending:
+        return {"status": "answer", "reply": "There is no action to confirm.",
+                "action": None, "tool_call": None}
     approved = bool(interrupt({
         "action_id": pending["action_id"],
         "agent": pending.get("agent", "enrich"),

@@ -22,6 +22,7 @@ from agents.enrich.nodes import approval as enrich_approval
 from agents.enrich.nodes import model as enrich_model
 from agents.enrich.state import context_data as enrich_context_data
 from agents.enrich.state import initial_state as enrich_initial_state
+from agents.enrich.tools import handlers as enrich_handlers
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -133,6 +134,27 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("answer", resumed["status"])
         self.assertEqual("Created.", resumed["reply"])
         self.assertIsNone(resumed["pending"])
+
+    def test_chat_handoff_without_action_returns_to_model(self):
+        graph = chat_loop.build_graph(InMemorySaver())
+        graph_config = {"configurable": {"thread_id": "chat:no-action"}}
+        replies = [
+            completion(tool_name="perform_action",
+                       arguments='{"instruction": "add a tag to that note"}'),
+            completion(content="Which note should I update?"),
+        ]
+        with patch.object(chat_model, "complete", side_effect=replies), \
+                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                             return_value=None):
+            result = chat_loop.invoke(
+                graph, graph_config,
+                chat_initial_state(
+                    context(),
+                    [{"role": "user", "content": "Add a tag to that note"}]))
+
+        self.assertEqual("answer", result["status"])
+        self.assertEqual("Which note should I update?", result["reply"])
+        self.assertIsNone(result.get("pending"))
 
     def test_enrich_write_pauses_and_decline_does_not_execute(self):
         graph = enrich_loop.build_graph(InMemorySaver())
@@ -283,6 +305,20 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIn("create_reminder", enrich_tools.WRITE_TOOLS)
         names = {spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS}
         self.assertIn("create_reminder", names)
+
+    def test_enrich_add_note_tags_merges_existing_tags(self):
+        with patch.object(enrich_handlers.db, "get_note_for_user",
+                          return_value={"id": 4, "tags": ["old", "keep"]}), \
+                patch.object(enrich_handlers.db, "set_tags") as set_tags:
+            result = json.loads(enrich_handlers.execute_tool(
+                enrich_handlers.Ctx(7, "now", "tz", "en"),
+                "add_note_tags",
+                {"note_id": 4, "tags": ["New", "old", ""]},
+            ))
+
+        self.assertEqual({"ok": True, "note_id": 4,
+                          "tags": ["old", "keep", "new"]}, result)
+        set_tags.assert_called_once_with(4, ["old", "keep", "new"])
 
     def test_chat_handoff_action_is_planned_by_enrich_subgraph(self):
         create = Mock(return_value=completion(

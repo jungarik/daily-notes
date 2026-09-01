@@ -29,8 +29,10 @@ def build_graph(checkpointer):
                                    "reminder_agent": "reminder_agent", END: END})
     builder.add_conditional_edges("read_tool", routing.route_after_read,
                                   {"model": "model", "final": "final"})
-    builder.add_edge("enrich_agent", "approval")
-    builder.add_edge("reminder_agent", "approval")
+    builder.add_conditional_edges("enrich_agent", routing.route_after_handoff,
+                                  {"approval": "approval", "model": "model"})
+    builder.add_conditional_edges("reminder_agent", routing.route_after_handoff,
+                                  {"approval": "approval", "model": "model"})
     builder.add_edge("approval", "model")
     builder.add_edge("final", END)
     return builder.compile(checkpointer=checkpointer)

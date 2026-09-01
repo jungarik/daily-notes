@@ -22,6 +22,10 @@ def route_after_read(state: ChatState):
     return "final" if state.get("steps", 0) >= config.AGENT_MAX_STEPS else "model"
 
 
+def route_after_handoff(state: ChatState):
+    return "approval" if state.get("pending") else "model"
+
+
 def entry_route(state: ChatState):
     return "approval" if state.get("pending") else "pre_route"
 

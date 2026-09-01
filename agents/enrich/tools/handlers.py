@@ -125,6 +125,36 @@ def _set_note_path(ctx: Ctx, args: dict) -> str:
     return _json({"ok": True, "path": (meta or {}).get("path")})
 
 
+def _clean_tags(tags) -> list[str]:
+    cleaned = []
+    seen = set()
+    for tag in tags or []:
+        value = str(tag or "").strip().lower()
+        if not value or value in seen:
+            continue
+        cleaned.append(value)
+        seen.add(value)
+    return cleaned
+
+
+def _add_note_tags(ctx: Ctx, args: dict) -> str:
+    note_id, tags = args.get("note_id"), args.get("tags")
+    if note_id is None or not tags:
+        return "Error: note_id and tags are required."
+    note_id = int(note_id)
+    note = db.get_note_for_user(ctx.user_id, note_id)
+    if not note:
+        return "Error: note not found."
+    additions = _clean_tags(tags)
+    if not additions:
+        return "Error: at least one non-empty tag is required."
+    current = _clean_tags(note.get("tags") or [])
+    current_set = set(current)
+    merged = current + [tag for tag in additions if tag not in current_set]
+    db.set_tags(note_id, merged)
+    return _json({"ok": True, "note_id": note_id, "tags": merged})
+
+
 def _enrich_note(ctx: Ctx, args: dict) -> str:
     note_id = args.get("note_id")
     if note_id is None:
@@ -175,6 +205,7 @@ HANDLERS = {
     "find_related_notes": _find_related_notes,
     "create_note": _create_note,
     "set_note_path": _set_note_path, 
+    "add_note_tags": _add_note_tags,
     "enrich_note": _enrich_note,
     "create_reminder": _create_reminder,
 }
@@ -190,6 +221,8 @@ def summarize_write(name: str, args: dict) -> str:
         return "Create a note: “%s”." % args.get("text", "").strip()
     if name == "set_note_path":
         return "Move note %s to “%s”." % (args.get("note_id"), args.get("path", "").strip())
+    if name == "add_note_tags":
+        return "Add tags %s to note %s." % (args.get("tags") or [], args.get("note_id"))
     if name == "enrich_note":
         if args.get("title"):
             return "Apply metadata to note %s: “%s” (%s) at “%s”, tags %s." % (

@@ -1,6 +1,9 @@
 """OpenAI tool schemas and write classification for the enrichment agent."""
 
-WRITE_TOOLS = {"create_note", "set_note_path", "enrich_note", "create_reminder"}
+WRITE_TOOLS = {
+    "create_note", "set_note_path", "enrich_note", "create_reminder",
+    "add_note_tags",
+}
 
 
 def _fn(name, description, properties, required):
@@ -32,6 +35,12 @@ TOOL_SPECS = [
         "folder). Requires user confirmation.",
         {"note_id": {"type": "integer"}, "path": {"type": "string"}},
         ["note_id", "path"]),
+    _fn("add_note_tags", "Add one or more tags to an existing note without replacing "
+        "its current tags. Use get_note_context if the target note needs resolving, "
+        "and list_tags to reuse existing tag names when possible. Requires user confirmation.",
+        {"note_id": {"type": "integer"},
+         "tags": {"type": "array", "items": {"type": "string"}}},
+        ["note_id", "tags"]),
     _fn("enrich_note", "Analyze a note and propose exact metadata (type, title, vault "
         "path, tags, priority). The proposed values require user confirmation before saving.",
         {"note_id": {"type": "integer"}}, ["note_id"]),

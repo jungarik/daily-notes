@@ -12,7 +12,7 @@ def _fn(name, description, properties, required):
 
 
 HANDOFF_TOOL_SPECS = [
-    _fn("perform_action", "Create a note, move a note, or classify/enrich a note. "
+    _fn("perform_action", "Create a note, move a note, add tags, or classify/enrich a note. "
         "Pass the request verbatim; a specialist proposes it for confirmation.",
         {"instruction": {"type": "string"},
          "referenced_note_ids": {"type": "array", "items": {"type": "integer"}},
