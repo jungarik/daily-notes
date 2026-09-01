@@ -5,7 +5,7 @@ import logging
 import time
 
 import config
-from agents.enrich import domain
+from agents.enrich import helper
 from agents.enrich.prompts import enrichment_prompt
 from agents.enrich.tools import Ctx, execute_context_tool
 from agents.runtime import model_gateway
@@ -114,7 +114,7 @@ def propose(state: dict) -> dict:
 
 def validate(state: dict) -> dict:
     context = state.get("metadata_context") or {}
-    metadata = domain.normalize(
+    metadata = helper.normalize(
         state.get("raw_metadata") or {}, state.get("metadata_text") or "",
         context.get("root_folders"), context.get("default_root"))
     trace = [*(state.get("metadata_trace") or []),

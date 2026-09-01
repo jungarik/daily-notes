@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from agents.enrich import domain
 from agents.enrich import api as enrich_service
 from agents.enrich.nodes import reminder
 from agents.enrich.tools import handlers
@@ -51,15 +50,35 @@ class ReminderAgentTests(unittest.TestCase):
             "text": "Follow up on roadmap", "note_id": 20,
             "remind_at": "2026-09-01T09:00:00+00:00",
         }}
-        with patch.object(handlers.db, "attach_reminder", return_value=3) as attach, \
-                patch.object(handlers.d, "create_reminder") as create:
+        with patch.object(handlers.db, "save_note") as save_note, \
+                patch.object(handlers.db, "attach_reminder",
+                             return_value=3) as attach:
             result = enrich_service.execute_action(
                 7, action, datetime.now(timezone.utc), timezone.utc, "en")
 
         self.assertIn('"note_id": 20', result)
         attach.assert_called_once_with(
             7, 20, datetime.fromisoformat("2026-09-01T09:00:00+00:00"))
-        create.assert_not_called()
+        save_note.assert_not_called()
+
+    def test_standalone_reminder_creates_note_before_attaching_reminder(self):
+        action = {"name": "create_reminder", "args": {
+            "text": "Call mom tomorrow",
+            "remind_at": "2026-09-01T09:00:00+00:00",
+        }}
+        with patch.object(handlers.db, "save_note", return_value=30) as save_note, \
+                patch.object(handlers.db, "save_chunks") as save_chunks, \
+                patch.object(handlers, "_build_chunks", return_value=[]) as chunks, \
+                patch.object(handlers.db, "attach_reminder", return_value=4) as attach:
+            result = enrich_service.execute_action(
+                7, action, datetime.now(timezone.utc), timezone.utc, "en")
+
+        self.assertIn('"note_id": 30', result)
+        save_note.assert_called_once_with(7, "Call mom tomorrow")
+        chunks.assert_called_once_with("Call mom tomorrow")
+        save_chunks.assert_called_once_with(30, [])
+        attach.assert_called_once_with(
+            7, 30, datetime.fromisoformat("2026-09-01T09:00:00+00:00"))
 
 if __name__ == "__main__":
     unittest.main()

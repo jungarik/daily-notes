@@ -2,15 +2,19 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 
 import config
 import i18n
 from openai_client import get_client
-from agents.enrich import domain as d
 from agents.enrich import db
 
 logger = logging.getLogger(__name__)
+
+TYPES = ("idea", "task", "reminder", "note", "question", "link")
+PRIORITIES = ("low", "med", "high")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
 
 
 class Ctx:
@@ -28,6 +32,37 @@ def _json(obj) -> str:
 def _embed(text: str) -> str:
     response = get_client().embeddings.create(model=config.EMBED_MODEL, input=text)
     return str(response.data[0].embedding)
+
+
+def _chunk_text(text: str, size: int = config.CHUNK_SIZE,
+                overlap: int = config.CHUNK_OVERLAP):
+    text = text.strip()
+    if len(text) <= size:
+        return [text]
+    chunks, start = [], 0
+    while start < len(text):
+        chunks.append(text[start:start + size])
+        start += size - overlap
+    return chunks
+
+
+def _build_chunks(text: str) -> list[dict]:
+    return [{"index": i, "content": c, "token_count": len(c.split()),
+             "metadata": {"char_len": len(c)}, "embedding": _embed(c)}
+            for i, c in enumerate(_chunk_text(text))]
+
+
+def _atomic_note_text(text: str) -> str:
+    value = " ".join(line.strip() for line in str(text or "").splitlines()
+                     if line.strip())
+    if not value:
+        return ""
+    sentences = _SENTENCE_SPLIT.split(value)
+    value = " ".join(sentences[:config.ATOMIC_NOTE_MAX_SENTENCES]).strip()
+    if len(value) <= config.ATOMIC_NOTE_MAX_CHARS:
+        return value
+    shortened = value[:config.ATOMIC_NOTE_MAX_CHARS].rsplit(" ", 1)[0].strip()
+    return shortened.rstrip(" ,.;:-") + "..."
 
 
 def _all_root_names() -> set[str]:
@@ -49,6 +84,52 @@ def _clean_root_path(path: str) -> str | None:
     return "/".join([canonical] + parts[1:])
 
 
+def _localized_roots(user_id: int) -> tuple[dict[str, str], str]:
+    locale = i18n.normalize(db.get_language(user_id)) or i18n.DEFAULT_LOCALE
+    roots = {i18n.t(locale, key): definition
+             for key, definition in config.ROOT_FOLDERS.items()}
+    default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
+    return roots, default
+
+
+def _clean_path(raw) -> str | None:
+    if not raw:
+        return None
+    parts = [p.strip() for p in str(raw).replace("\\", "/").split("/")]
+    parts = [p for p in parts if p and p not in (".", "..")][:2]
+    return "/".join(parts) or None
+
+
+def _enforce_root(path, root_folders, default_root_folder):
+    if not path:
+        return default_root_folder
+    if not root_folders:
+        return path
+    roots = {name.lower(): name for name in root_folders}
+    parts = path.split("/")
+    canonical = roots.get(parts[0].lower())
+    if canonical is None:
+        return default_root_folder
+    return "/".join([canonical] + parts[1:])
+
+
+def _normalize_metadata(data: dict, text: str, root_folders=None,
+                        default_root_folder=None) -> dict:
+    note_type = str(data.get("type", "note")).lower()
+    if note_type not in TYPES:
+        note_type = "note"
+    title = (data.get("title") or text.strip()[:80]).strip() or text.strip()[:80]
+    tags = [str(g).strip().lower() for g in (data.get("tags") or [])
+            if str(g).strip()][:5]
+    priority = str(data.get("priority", "low")).lower()
+    if priority not in PRIORITIES:
+        priority = "low"
+    path = _clean_path(data.get("path")) or default_root_folder
+    path = _enforce_root(path, root_folders, default_root_folder)
+    return {"type": note_type, "title": title, "path": path,
+            "tags": tags, "priority": priority}
+
+
 def _list_paths(ctx: Ctx, _args: dict) -> str:
     rows = db.list_paths(ctx.user_id)
     return _json([{"path": p, "count": c} for p, c in rows]) if rows else "No existing paths."
@@ -68,7 +149,7 @@ def _get_note_context(ctx: Ctx, args: dict) -> str:
 
 
 def _get_vault_context(ctx: Ctx, _args: dict) -> str:
-    roots, default_root = d.localized_roots(ctx.user_id)
+    roots, default_root = _localized_roots(ctx.user_id)
     return _json({"root_folders": roots, "default_root": default_root})
 
 
@@ -86,11 +167,11 @@ def _find_related_notes(ctx: Ctx, args: dict) -> str:
 
 
 def _create_note(ctx: Ctx, args: dict) -> str:
-    text = d.atomic_note_text(args.get("text") or "")
+    text = _atomic_note_text(args.get("text") or "")
     if not text:
         return "Error: text is required."
     note_id = db.save_note(ctx.user_id, text)
-    db.save_chunks(note_id, d._build_chunks(text))
+    db.save_chunks(note_id, _build_chunks(text))
     logger.info("Enrich agent captured note %s (user %s)", note_id, ctx.user_id)
     return _json({"note_id": note_id})
 
@@ -121,8 +202,8 @@ def _enrich_note(ctx: Ctx, args: dict) -> str:
     note = db.get_note_for_user(ctx.user_id, note_id)
     if not note or not (note.get("text") or "").strip():
         return "Error: note not found or empty."
-    root_folders, default_root = d.localized_roots(ctx.user_id)
-    metadata = d.normalize(args, note["text"], root_folders, default_root)
+    root_folders, default_root = _localized_roots(ctx.user_id)
+    metadata = _normalize_metadata(args, note["text"], root_folders, default_root)
     db.set_metadata(note_id, metadata["type"], metadata["title"],
                     metadata["priority"], metadata["tags"], metadata["path"])
     logger.info("Enriched note %s -> %s '%s' @ %s", note_id,
@@ -137,17 +218,18 @@ def _create_reminder(ctx: Ctx, args: dict) -> str:
         return "Error: text and remind_at are required."
     remind_at = datetime.fromisoformat(raw_time)
     note_id = args.get("note_id")
-    if note_id is not None:
-        note_id = int(note_id)
-        reminder_id = db.attach_reminder(ctx.user_id, note_id, remind_at)
-        if reminder_id is None:
-            return "Error: referenced note not found."
-        logger.info("Enrich attached reminder %s to note %s (user %s)",
-                    reminder_id, note_id, ctx.user_id)
-        result = {"note_id": note_id, "reminder_id": reminder_id,
-                  "remind_at": remind_at.isoformat()}
+    if note_id is None:
+        note_text = _atomic_note_text(text)
+        note_id = db.save_note(ctx.user_id, note_text)
+        db.save_chunks(note_id, _build_chunks(note_text))
+        logger.info("Enrich created backing note %s for reminder (user %s)",
+                    note_id, ctx.user_id)
     else:
-        result = d.create_reminder(ctx.user_id, text, remind_at)
+        note_id = int(note_id)
+    reminder_id = db.attach_reminder(ctx.user_id, note_id, remind_at)
+    result = ({"note_id": note_id, "reminder_id": reminder_id,
+               "remind_at": remind_at.isoformat()}
+              if reminder_id is not None else None)
     return _json(result) if result is not None else "Error: referenced note not found."
 
 

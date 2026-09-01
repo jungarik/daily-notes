@@ -1,14 +1,30 @@
 """Write proposal and validation nodes for Enrich workflows."""
 
 import logging
+import re
 import uuid
 
-from agents.enrich import domain
+import config
 from agents.enrich import db
 from agents.enrich.state import ActionPlanState, EnrichState, context_from_state
 from agents.enrich.tools import summarize_write
 
 logger = logging.getLogger(__name__)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
+
+
+def _atomic_note_text(text: str) -> str:
+    """Keep generated create_note proposals small and atomic before confirmation."""
+    value = " ".join(line.strip() for line in str(text or "").splitlines()
+                     if line.strip())
+    if not value:
+        return ""
+    sentences = _SENTENCE_SPLIT.split(value)
+    value = " ".join(sentences[:config.ATOMIC_NOTE_MAX_SENTENCES]).strip()
+    if len(value) <= config.ATOMIC_NOTE_MAX_CHARS:
+        return value
+    shortened = value[:config.ATOMIC_NOTE_MAX_CHARS].rsplit(" ", 1)[0].strip()
+    return shortened.rstrip(" ,.;:-") + "..."
 
 
 def _guardrail_call(call: dict) -> dict:
@@ -16,7 +32,7 @@ def _guardrail_call(call: dict) -> dict:
     if call["name"] != "create_note":
         return call
     args = dict(call.get("args") or {})
-    args["text"] = domain.atomic_note_text(args.get("text") or "")
+    args["text"] = _atomic_note_text(args.get("text") or "")
     return {**call, "args": args}
 
 

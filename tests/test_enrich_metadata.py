@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import config
-from agents.enrich import domain, graph as enrich_graph
+from agents.enrich import graph as enrich_graph
 from agents.enrich.nodes import metadata as metadata_nodes
 from agents.enrich.state import context_data
 from agents.enrich.tools import Ctx, METADATA_CONTEXT_TOOLS, TOOL_SPECS
@@ -120,11 +120,10 @@ class EnrichMetadataTests(unittest.TestCase):
         proposed = {"type": "task", "title": "Ship release", "path": "Projects/App",
                     "tags": ["release"], "priority": "high"}
         note = {"id": 4, "text": "Ship the app release"}
-        with patch.object(domain.db, "get_note_for_user", return_value=note), \
-                patch.object(domain, "localized_roots",
-                             return_value=({"Projects": "projects"}, "Projects")), \
-                patch.object(domain.db, "set_metadata") as save, \
-                patch.object(domain, "get_client",
+        with patch.object(tool_handlers.db, "get_note_for_user", return_value=note), \
+                patch.object(tool_handlers.db, "get_language", return_value="en"), \
+                patch.object(tool_handlers.db, "set_metadata") as save, \
+                patch.object(tool_handlers, "get_client",
                              side_effect=AssertionError("LLM during confirmation")):
             result = json.loads(tool_handlers._enrich_note(
             Ctx(7, "now"), {"note_id": 4, **proposed}))

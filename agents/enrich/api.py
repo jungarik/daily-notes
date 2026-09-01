@@ -18,7 +18,7 @@ from agents.contracts import handoff
 from agents.runtime import checkpoint
 from agents.runtime import execution_ledger
 from agents.enrich import graph as loop
-from agents.enrich import db, domain
+from agents.enrich import db, helper
 from agents.enrich.graph import METADATA_GRAPH
 from agents.enrich.prompts import SYSTEM_PROMPT, planning_messages, with_system
 from agents.enrich.state import context_data
@@ -224,17 +224,35 @@ def revise_capture(user_id: int, proposal: CaptureProposal,
     text = (args.get("text") or "").strip()
     if not text:
         raise ValueError("text is required")
-    roots, default_root = domain.localized_roots(user_id)
-    metadata = domain.normalize(args, text, roots, default_root)
+    roots, default_root = helper.localized_roots(user_id)
+    metadata = helper.normalize(args, text, roots, default_root)
     linked_ids = list(dict.fromkeys(int(value)
                                     for value in args.get("linked_note_ids") or []))
     missing = [note_id for note_id in linked_ids
-               if domain.db.get_note_for_user(user_id, note_id) is None]
+               if db.get_note_for_user(user_id, note_id) is None]
     if missing:
         raise ValueError("Linked notes were not found for this user: " +
                          ", ".join(str(note_id) for note_id in missing))
     args = {"text": text, **metadata, "linked_note_ids": linked_ids}
     return _capture_proposal(args, list(proposal.get("related_notes") or []))
+
+
+def _execute_capture(user_id: int, args: dict) -> dict:
+    """Validate and persist an approved fast-capture proposal."""
+    text = (args.get("text") or "").strip()
+    if not text:
+        raise ValueError("text is required")
+    roots, default_root = helper.localized_roots(user_id)
+    metadata = helper.normalize({
+        "type": args.get("type"),
+        "title": args.get("title"),
+        "path": args.get("path"),
+        "tags": args.get("tags"),
+        "priority": args.get("priority"),
+    }, text, roots, default_root)
+    linked_note_ids = [int(note_id) for note_id in args.get("linked_note_ids") or []]
+    return db.save_captured_thought(
+        user_id, text, metadata, helper._build_chunks(text), linked_note_ids)
 
 
 def confirm_capture(user_id: int, proposal: CaptureProposal) -> dict:
@@ -245,7 +263,7 @@ def confirm_capture(user_id: int, proposal: CaptureProposal) -> dict:
     args = action.get("args") or {}
     result = execution_ledger.execute_once(
         proposal["action_id"], user_id, "enrich", action,
-        lambda: json.dumps(domain.execute_capture(user_id, args), ensure_ascii=False),
+        lambda: json.dumps(_execute_capture(user_id, args), ensure_ascii=False),
     )
     try:
         data = json.loads(result)

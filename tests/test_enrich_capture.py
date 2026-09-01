@@ -32,9 +32,9 @@ class EnrichCaptureTests(unittest.TestCase):
     def test_revision_is_validated_and_gets_a_new_action_id(self):
         with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
             original = enrich.propose_capture(7, "Build a pocket garden")
-        with patch.object(enrich.domain, "localized_roots",
+        with patch.object(enrich.helper, "localized_roots",
                           return_value=({"Projects": "projects"}, "Projects")), \
-                patch.object(enrich.domain.db, "get_note_for_user",
+                patch.object(enrich.db, "get_note_for_user",
                              return_value={"id": 9}):
             revised = enrich.revise_capture(
                 7, original, {"path": "Projects/Garden", "linked_note_ids": [9]})
@@ -46,9 +46,9 @@ class EnrichCaptureTests(unittest.TestCase):
     def test_revision_rejects_another_users_link(self):
         with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
             proposal = enrich.propose_capture(7, "Build a pocket garden")
-        with patch.object(enrich.domain, "localized_roots",
+        with patch.object(enrich.helper, "localized_roots",
                           return_value=({"Projects": "projects"}, "Projects")), \
-                patch.object(enrich.domain.db, "get_note_for_user", return_value=None):
+                patch.object(enrich.db, "get_note_for_user", return_value=None):
             with self.assertRaises(ValueError):
                 enrich.revise_capture(7, proposal, {"linked_note_ids": [99]})
 

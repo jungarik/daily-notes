@@ -19,7 +19,7 @@ class AgentStructureTests(unittest.TestCase):
             "conversation/nodes/model.py", "conversation/nodes/read.py",
             "conversation/nodes/dispatch.py", "conversation/nodes/approval.py",
             "conversation/nodes/final.py", "enrich/api.py", "enrich/state.py",
-            "enrich/graph.py", "enrich/routing.py", "enrich/domain.py",
+            "enrich/graph.py", "enrich/routing.py", "enrich/helper.py",
             "enrich/db.py",
             "enrich/prompts.py",
             "enrich/tools/specs.py", "enrich/tools/handlers.py",
