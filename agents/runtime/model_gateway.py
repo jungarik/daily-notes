@@ -1,4 +1,4 @@
-"""Shared OpenAI model gateway with bounded retry and typed failures."""
+"""Shared OpenAI model gateway with bounded retries and typed failures."""
 
 import logging
 import time
