@@ -89,6 +89,9 @@
   .tab-icons.hidden, .tab-input.hidden { display: none; }
   .tab-input { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; }
   .tab-input input, .tab-input textarea { width: 150px; max-width: 38vw; background: transparent; border: none; outline: none; color: var(--text); font: inherit; font-size: 15px; }
+  .tab-input input {
+    height: 32px; line-height: 22px; padding: 5px 0;
+  }
   .tab-input textarea {
     display: block; min-height: 32px; max-height: 142px; line-height: 22px;
     padding: 5px 0;
