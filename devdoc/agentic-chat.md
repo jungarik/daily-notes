@@ -6,11 +6,12 @@ confirmation; Chat never mutates data directly.
 
 ## Workflow and tools
 
-`agents/chat/loop.py` defines the bounded LangGraph `CHAT_GRAPH`. The model emits
+`agents/conversation/graph.py` defines the bounded LangGraph `CHAT_GRAPH`. The model emits
 at most one tool call per step (`parallel_tool_calls=False`), and conditional
 edges route it to:
 
-- `read_tool` for `search_notes`, `get_note`, `neighbors`, `list_reminders`, or
+- `read_tool` for `search_notes`, `get_note`, `neighbors`, `list_reminders`,
+  `list_agenda`, or
   `list_paths`;
 - `enrich_agent` for `perform_action(instruction)` — create a note, move a note,
   or enrich/classify it;
@@ -19,7 +20,9 @@ edges route it to:
 - END when the model answers without a tool.
 
 Read results loop back to the model until it answers or `AGENT_MAX_STEPS` is
-used. `final` provides a tool-free bounded fallback.
+used. `search_notes` returns structured evidence rather than calling another
+LLM; the Conversation model produces the grounded answer on the next graph step.
+`final` provides a tool-free bounded fallback.
 
 ## Specialist handoff and confirmation
 

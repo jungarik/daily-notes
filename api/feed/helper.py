@@ -6,7 +6,6 @@ media_token (core infra).
 """
 
 from api import media_token
-from api.feed import db
 
 # The image proxy lives in the notecard section; an <img> can't send the auth
 # header, so the signed token in the URL is the auth. Path is relative (same
@@ -25,7 +24,7 @@ def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
     return snippet[:limit] + "…" if len(snippet) > limit else snippet
 
 
-def _attachment_views(rows: list[dict]) -> list[dict]:
+def attachment_views(rows: list[dict]) -> list[dict]:
     """Client-facing attachments with a signed proxy URL: [{id, kind, mime, url}]."""
     out = []
     for a in rows:
@@ -36,15 +35,14 @@ def _attachment_views(rows: list[dict]) -> list[dict]:
     return out
 
 
-def feed_for_user(user_id: int) -> list[dict]:
-    """Full note cards for the feed (newest first). Links/backlinks and
-    attachments are resolved in bulk (no per-note round trips)."""
-    notes = db.list_notes(user_id)
-    edges = db.all_links(user_id)
-    ids = {i for e in edges for i in e}
-    briefs = {b["id"]: b for b in db.notes_brief(user_id, ids)}
-    attachments = db.attachments_for_notes([n["id"] for n in notes])
-
+def feed_for_user(
+    notes: list[dict],
+    edges: list[tuple[int, int]],
+    briefs: list[dict],
+    attachments: dict[int, list[dict]],
+) -> list[dict]:
+    """Map bulk-loaded note data to full feed cards (newest first)."""
+    briefs_by_id = {brief["id"]: brief for brief in briefs}
     out_map: dict[int, list[int]] = {}
     in_map: dict[int, list[int]] = {}
     for f, t in edges:
@@ -52,7 +50,7 @@ def feed_for_user(user_id: int) -> list[dict]:
         in_map.setdefault(t, []).append(f)
 
     def chip(nid: int) -> dict:
-        b = briefs.get(nid)
+        b = briefs_by_id.get(nid)
         return {"id": nid, "title": _display_title(b["title"], b["text"]) if b else str(nid)}
 
     feed = []
@@ -68,6 +66,6 @@ def feed_for_user(user_id: int) -> list[dict]:
             "created_at": created.isoformat() if created else None,
             "links": [chip(t) for t in out_map.get(n["id"], [])],
             "backlinks": [chip(f) for f in in_map.get(n["id"], [])],
-            "attachments": _attachment_views(attachments.get(n["id"], [])),
+            "attachments": attachments.get(n["id"], []),
         })
     return feed

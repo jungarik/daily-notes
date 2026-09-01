@@ -11,11 +11,8 @@ from zoneinfo import ZoneInfo
 import config
 import i18n
 import openai_client
-from agents.chat import loop as chat_loop
-from agents.chat import service as chat_service
-from agents.chat.tools import Ctx
-from agents.enrich import service as enrich_service
-from agents.reminder import service as reminder_service
+from agents.conversation import api as chat_service
+from agents.enrich import api as enrich_service
 from api.evals import db
 
 logger = logging.getLogger(__name__)
@@ -34,25 +31,28 @@ def _settings(user_id: int):
 
 
 def _chat_case(user_id: int, messages: list[dict], now, tz, locale) -> dict:
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    result = chat_loop.run_loop(ctx, messages)
+    result = chat_service.evaluate_turn(user_id, messages, now, tz, locale)
     if result["status"] == "confirm":
         answer = json.dumps(result["action"], ensure_ascii=False, default=str)
     else:
         answer = result.get("reply") or ""
-    routes = ctx.trace["routes"]
+    trace = result.get("trace") or {"tools": [], "retrieved_chunks": [], "routes": []}
+    routes = trace["routes"]
     if "rag" in routes:
         mode = "RAG"
-    elif ctx.trace["tools"]:
+    elif trace["tools"]:
         mode = "tool" if result["status"] == "confirm" else "clarification"
     else:
         mode = "fallback"
-    return {"answer": answer, "route_or_mode": mode, "trace": ctx.trace}
+    return {"answer": answer, "route_or_mode": mode, "trace": trace}
 
 
 def _planner_case(agent: str, user_id: int, question: str, now, tz, locale) -> dict:
-    service = enrich_service if agent == "enrich" else reminder_service
-    action = service.plan_action(user_id, question, now, tz, locale)
+    request = question
+    if agent == "reminder":
+        request = {"instruction": question, "resolved_entities": {
+            "specialist_mode": "reminder"}}
+    action = enrich_service.plan_action(user_id, request, now, tz, locale)
     trace = {"tools": [], "retrieved_chunks": [], "routes": [agent]}
     if action:
         trace["tools"].append({"name": action["name"], "args": action.get("args") or {}})
@@ -138,8 +138,7 @@ def _handoff_instruction(turn: dict, agent: str) -> str:
 def _replay_messages(messages: list[dict], turn: dict) -> list[dict]:
     prior = [message for message in messages[:turn["start"]]
              if message.get("role") != "system"]
-    return [{"role": "system", "content": chat_service.SYSTEM_PROMPT},
-            *prior, {"role": "user", "content": turn["question"]}]
+    return [*prior, {"role": "user", "content": turn["question"]}]
 
 
 def _run_case(case: dict, user_id: int, now, tz, locale,

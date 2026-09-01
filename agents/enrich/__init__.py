@@ -12,8 +12,16 @@ Public entry points:
 - `plan_action(user_id, handoff, now, tz, locale)` — one-shot: read context as
   needed and return the validated write a typed Chat handoff implies.
 - `execute_action(user_id, action, now, tz, locale)` — run a planned write.
+- `propose_capture` / `revise_capture` / `confirm_capture` / `cancel_capture`
+  — standalone fast-capture flow.
 """
 
-from agents.enrich.service import start_turn, confirm, plan_action, execute_action
+from agents.enrich.api import (
+    cancel_capture, confirm, confirm_capture, execute_action, plan_action,
+    propose_capture, revise_capture, start_turn,
+)
 
-__all__ = ["start_turn", "confirm", "plan_action", "execute_action"]
+__all__ = [
+    "start_turn", "confirm", "plan_action", "execute_action",
+    "propose_capture", "revise_capture", "confirm_capture", "cancel_capture",
+]

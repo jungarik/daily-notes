@@ -91,7 +91,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat`** — the agentic chat tab (`POST /api/chat`, `/api/chat/confirm`).
   Thin: it resolves the caller's clock/locale (its own `db`) and delegates to
-  the self-contained `agents.chat` reasoning engine.
+  the self-contained `agents.conversation` controller.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
   `/api/telegram_bot` (capture text/voice/media, enrich, atomize, polish, delete,
   link-candidates/toggle, reminders + dispatcher, user resolve/settings, RAG
@@ -100,8 +100,8 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
 
 There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
-`api/telegram_bot` in its `helper.py`/`db.py`; `agents/chat` and `agents/enrich`
-each in a self-contained `domain.py` (their `tools/loop/service` import it). Only
+`api/telegram_bot` in its `helper.py`/`db.py`; `agents/conversation` owns reads
+and orchestration, while `agents/enrich` owns confirmed writes. Only
 true infra is shared, at the repo root — `config`, `db`, `openai_client`, `i18n`,
 `migrate`, and `file_store` (the S3 client) — plus `api/deps.py` (auth, incl. the
 identity resolve) and `api/media_token.py`. `capture/Telegram_Bot` (the bot) and
@@ -208,27 +208,26 @@ the focus/ego state.
 ## Agentic chat
 
 The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
-`agents/chat/`) — see `devdoc/agentic-chat.md`. A bounded LangGraph
-single-tool-call ReAct workflow (`agents/chat/loop.py`, `AGENT_MAX_STEPS`) drives a **tool registry**
-(`agents/chat/tools.py`): read tools wrap `agents/chat/domain.py` (RAG) and
-`agents/chat/db.py` (`search_notes`, `get_note`, `neighbors`, `list_reminders`,
-`list_paths`) and explicit specialist handoffs: `perform_action(instruction)`
-for note actions and `set_reminder(instruction)` for scheduling. The chat agent
-**never mutates data itself**: the loop routes to the **enrich agent**
-(`agents/enrich/`) or **reminder agent** (`agents/reminder/`) — the specialist
+`agents/conversation/`) — see `devdoc/agentic-chat.md`. A bounded LangGraph
+single-tool-call ReAct workflow (`agents/conversation/graph.py`, `AGENT_MAX_STEPS`) drives
+read tools from `agents/conversation/tools/`: schemas and handlers wrap its RAG
+and database modules (`search_notes`, `get_note`, `neighbors`,
+`list_reminders`, `list_agenda`, `list_paths`). Conversation owns the explicit specialist handoffs:
+`perform_action(instruction)` for note actions and `set_reminder(instruction)` for
+scheduling. The chat agent
+**never mutates data itself**: the loop routes every write to the **enrich agent**
+(`agents/enrich/`), whose reminder capability also plans reminder actions. Enrich
 proposes the concrete write, and the loop pauses
 (`{status:"confirm", action}`), and `POST /api/chat/confirm {approve}` resumes,
-running it through the same specialist. The Reminder agent is used only by the
-Web App chat; `api/telegram_bot` retains its independent reminder detection,
+running it through the same specialist. `api/telegram_bot` retains its independent reminder detection,
 creation, and delivery implementation. Conversation state lives in `chat_threads`
-(`agents/chat/db.py`, migration `0019`) as the running message list plus a
+(`agents/conversation/db.py`, migration `0019`) as the application projection plus a
 `pending` handed-off action. `POST /api/chat` returns `{status:"answer", reply,
 citations}` or `{status:"confirm", action}`.
 
 **Citations.** Answers are grounded in the notes they drew on: `search_notes`
-calls `domain.answer_with_sources` — which retrieves once and returns the answer
-text *plus* the source note ids (retrieval and answer are split so it isn't run
-twice) — and the tool cites
+uses its tool handler to retrieve structured note evidence and trace chunks. The
+Conversation model builds the answer after the tool returns, and the tool cites
 the distinct source notes (with a title, or a text snippet for un-enriched notes)
 via `Ctx.cite`. `get_note` cites the note it opened. The API returns these as
 `citations:[{note_id,title}]`; the chat UI renders them as chips that open the
@@ -258,6 +257,6 @@ tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
 `devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
 tools + specialist write handoffs shipped; streaming deferred);
 `devdoc/agentic-enrich.md` (the note action/enrichment agent);
-`devdoc/agentic-reminder.md` (the reminder specialist);
+`devdoc/agentic-reminder.md` (the reminder capability);
 `devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
 and `devdoc/agent-evaluation-observability.md` (evaluation runs and metrics).

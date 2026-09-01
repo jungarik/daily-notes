@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 
-from agents.chat.tools import Ctx
+from agents.conversation.state import ConversationContext as Ctx
 from api.evals import helper
 from api.evals import endpoints
 from api.evals import db as eval_db
@@ -38,7 +38,7 @@ class EvaluationTests(unittest.TestCase):
                   "summary": "Create reminder"}
         now = datetime(2026, 8, 31, tzinfo=timezone.utc)
         with patch.object(helper.config, "AGENT_EVAL_JUDGE_ENABLED", False), \
-                patch.object(helper.reminder_service, "plan_action", return_value=action):
+                patch.object(helper.enrich_service, "plan_action", return_value=action):
             result = helper._run_case(case, 7, now, timezone.utc, "en")
 
         self.assertIsNone(result["task_success"])

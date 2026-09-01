@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import Mock, call, patch
 
-from agents import action_execution
+from agents.runtime import execution_ledger as action_execution
 
 
 class ActionExecutionTests(unittest.TestCase):

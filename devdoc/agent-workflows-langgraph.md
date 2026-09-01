@@ -1,7 +1,8 @@
 # Agent workflows on LangGraph
 
-Status: **implemented.** Chat, Enrich, and Reminder use compiled LangGraph
-`StateGraph` workflows with PostgreSQL checkpoints and native human interrupts.
+Status: **implemented.** Conversation and Enrich use compiled LangGraph
+`StateGraph` workflows. Knowledge is a Conversation capability and Reminder is
+an Enrich capability; neither is a separately registered agent.
 Existing API response shapes remain unchanged.
 
 ## Persistence boundary
@@ -41,10 +42,10 @@ flowchart TD
     F --> E
 ```
 
-`approval` interrupts with the stable action id and proposal. The confirm API
+Both handoff branches plan through Enrich; `reminder_agent` names the reminder
+mode, not a separately registered agent. `approval` interrupts with the stable action id and proposal. The confirm API
 uses `Command(resume=approve)`, so planning nodes are not rerun. After approval,
-the node dispatches to the specialist recorded in `pending.agent`; an absent
-value defaults to Enrich for old projections.
+the node executes through Enrich. Old projections also default to Enrich.
 
 ## Enrich graphs
 
@@ -57,9 +58,17 @@ flowchart TD
     S -->|legacy pending| H[approval / interrupt]
     M -->|no tool| E((END))
     M -->|read| T[read_tool]
-    M -->|write| P[pending_write]
+    M -->|metadata write| MC[metadata_context]
+    M -->|reminder write| RM[reminder_model]
+    M -->|simple write| P[pending_write]
     T -->|budget remains| M
     T -->|budget used| F[final]
+    MC --> MM[metadata_model]
+    MM --> MV[metadata_validation]
+    MV --> P
+    RM --> RV[reminder_validation]
+    RV -->|resolved| P
+    RV -->|unresolved| F
     P --> H
     H -->|Command resume| M
     F --> E
@@ -70,30 +79,22 @@ The stateless Chat handoff uses `ACTION_PLAN_GRAPH`:
 It can read note context, paths, and tags, but only returns a validated write
 proposal. The handoff itself is typed and includes conversation and entities.
 
-## Reminder graph
+## Reminder capability
 
-`ReminderState` carries the typed handoff, resolved referenced-note text,
-caller-local `now`, parsed `remind_at`, and proposed action.
-
-```mermaid
-flowchart LR
-    S((START)) --> R[resolve_reference]
-    R --> P[parse_time]
-    P -->|resolved| A[prepare_action]
-    P -->|unresolved| E((END))
-    A --> E
-```
-
-`parse_time` uses a cheap multilingual hint gate followed by structured LLM
-extraction. `prepare_action` freezes the resolved ISO time before confirmation.
-This graph is used only by the Web App chat. Telegram keeps its previous local
+The main Enrich graph and `REMINDER_PLAN_GRAPH` both use
+`reminder_model -> reminder_validation`. The model node resolves
+natural-language time; validation uses deterministic domain logic to resolve
+referenced notes and return a frozen `create_reminder` proposal. The standalone
+plan graph is used for Chat handoff evaluation and has no loop, checkpoint, or
+independent approval boundary.
+Telegram keeps its previous local
 reminder detection, creation, delivery, claiming, list, cancel, and snooze logic.
 
 ## Invariants
 
 - Chat has no direct write handler.
 - Every Chat write requires explicit confirmation.
-- Chat reminder interpretation/persistence is isolated from Enrich.
+- Enrich owns all confirmed writes, including reminders.
 - Tool selection is single-call and loops are bounded.
 - Reminder attachment is scoped by both note id and user id.
 - Existing `/api/chat` and `/api/chat/confirm` contracts are unchanged.

@@ -3,8 +3,8 @@
 import unittest
 from unittest.mock import patch
 
-from agents.chat import service as chat_service
-from agents.enrich import service as enrich_service
+from agents.conversation import api as chat_service
+from agents.enrich import api as enrich_service
 
 
 class ActionCheckpointTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class ActionCheckpointTests(unittest.TestCase):
             "agent": "reminder",
             "action": {"name": "create_reminder", "args": {"text": "Call"}},
         }
-        with patch.object(chat_service.chat_store, "save_thread") as save:
+        with patch.object(chat_service.db, "save_thread") as save:
             first = chat_service._checkpoint_action_id(12, [], pending)
             second = chat_service._checkpoint_action_id(12, [], pending)
 

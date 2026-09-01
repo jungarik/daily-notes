@@ -1,4 +1,4 @@
-"""Persistence for the enrichment/action agent (isolated SQL).
+"""Database adapter for the enrichment specialist.
 
 Context reads (path/tag vocabulary, similar notes, user language), the writes the
 agent's tools perform (create note + chunks, move, set metadata),
@@ -9,6 +9,41 @@ table). `domain.py` holds the logic that calls these.
 from psycopg.types.json import Json
 
 from db import cursor
+
+
+def attach_reminder(user_id: int, note_id: int, remind_at) -> int | None:
+    with cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO reminders (note_id, user_id, remind_at)
+            SELECT id, %s, %s FROM notes WHERE id = %s AND user_id = %s
+            RETURNING id;
+            """, (user_id, remind_at, note_id, user_id))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def create_note_with_reminder(user_id: int, text: str, chunks: list[dict],
+                              remind_at) -> tuple[int, int]:
+    with cursor() as cur:
+        cur.execute(
+            "INSERT INTO notes (user_id, text, source_type) "
+            "VALUES (%s, %s, 'text') RETURNING id;", (user_id, text))
+        note_id = cur.fetchone()[0]
+        for chunk in chunks:
+            cur.execute(
+                """
+                INSERT INTO note_chunks
+                    (note_id, chunk_index, content, token_count, metadata, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s::vector);
+                """, (note_id, chunk["index"], chunk["content"],
+                       chunk["token_count"], Json(chunk["metadata"]),
+                       chunk["embedding"]))
+        cur.execute(
+            "INSERT INTO reminders (note_id, user_id, remind_at) "
+            "VALUES (%s, %s, %s) RETURNING id;",
+            (note_id, user_id, remind_at))
+        return note_id, cur.fetchone()[0]
 
 
 # ----- context reads -----
@@ -44,7 +79,7 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
     with cursor() as cur:
         cur.execute(
             """
-            SELECT m.note_type, m.title, m.path, m.tags,
+            SELECT m.id, m.note_type, m.title, m.path, m.tags,
                    MIN(mc.embedding <=> %s::vector) AS distance
             FROM note_chunks mc JOIN notes m ON m.id = mc.note_id
             WHERE m.user_id = %s AND m.id <> %s AND m.title IS NOT NULL
@@ -53,8 +88,28 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
             """,
             (query_embedding, user_id, exclude_note_id, limit),
         )
-        return [{"note_type": r[0], "title": r[1], "path": r[2], "tags": r[3],
-                 "distance": float(r[4])} for r in cur.fetchall()]
+        return [{"note_id": r[0], "note_type": r[1], "title": r[2],
+                 "path": r[3], "tags": r[4], "distance": float(r[5])}
+                for r in cur.fetchall()]
+
+
+def related_notes(user_id: int, query_embedding: str, limit: int = 5) -> list[dict]:
+    """Return user-owned notes that may be linked to a new captured thought."""
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT n.id, n.note_type, n.title, n.path, n.tags,
+                   MIN(c.embedding <=> %s::vector) AS distance
+            FROM note_chunks c JOIN notes n ON n.id = c.note_id
+            WHERE n.user_id = %s AND n.title IS NOT NULL
+            GROUP BY n.id, n.note_type, n.title, n.path, n.tags
+            ORDER BY distance LIMIT %s;
+            """,
+            (query_embedding, user_id, limit),
+        )
+        return [{"note_id": r[0], "note_type": r[1], "title": r[2],
+                 "path": r[3], "tags": r[4] or [], "distance": float(r[5])}
+                for r in cur.fetchall()]
 
 
 def get_language(user_id: int) -> str | None:
@@ -140,6 +195,53 @@ def set_metadata(note_id, note_type, title, priority, tags, path) -> None:
             """,
             (note_type, title, priority, Json(tags or []), path, note_id),
         )
+
+
+def save_captured_thought(user_id: int, text: str, metadata: dict,
+                          chunks: list[dict], linked_note_ids: list[int]) -> dict:
+    """Persist a captured thought, its chunks, metadata and links atomically."""
+    linked_note_ids = list(dict.fromkeys(linked_note_ids))
+    with cursor() as cur:
+        if linked_note_ids:
+            cur.execute(
+                "SELECT id FROM notes WHERE user_id = %s AND id = ANY(%s);",
+                (user_id, linked_note_ids),
+            )
+            owned_ids = {row[0] for row in cur.fetchall()}
+            if owned_ids != set(linked_note_ids):
+                raise ValueError("Every linked note must belong to the user")
+
+        cur.execute(
+            """
+            INSERT INTO notes
+                (user_id, text, source_type, note_type, title, priority, tags, path)
+            VALUES (%s, %s, 'text', %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (user_id, text, metadata["type"], metadata["title"],
+             metadata["priority"], Json(metadata["tags"]), metadata["path"]),
+        )
+        note_id = cur.fetchone()[0]
+        for chunk in chunks:
+            cur.execute(
+                """
+                INSERT INTO note_chunks
+                    (note_id, chunk_index, content, token_count, metadata, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s::vector);
+                """,
+                (note_id, chunk["index"], chunk["content"], chunk["token_count"],
+                 Json(chunk["metadata"]), chunk["embedding"]),
+            )
+        for linked_note_id in linked_note_ids:
+            cur.execute(
+                """
+                INSERT INTO note_links (from_note_id, to_note_id, kind, source)
+                VALUES (%s, %s, 'related', 'user')
+                ON CONFLICT (from_note_id, to_note_id) DO NOTHING;
+                """,
+                (note_id, linked_note_id),
+            )
+    return {"note_id": note_id, "linked_note_ids": linked_note_ids}
 
 
 # ----- thread state (shared chat_threads table) -----

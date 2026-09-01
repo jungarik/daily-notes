@@ -8,10 +8,16 @@ from unittest.mock import patch
 
 from langgraph.checkpoint.memory import InMemorySaver
 
-from agents import checkpoint
-from agents.chat import loop as chat_loop
-from agents.chat import service as chat_service
-from agents.enrich import loop as enrich_loop
+from agents.runtime import checkpoint
+from agents.conversation import graph as chat_loop
+from agents.conversation import api as chat_service
+from agents.conversation.nodes import approval as chat_approval
+from agents.conversation.nodes import dispatch as chat_dispatch
+from agents.conversation.nodes import model as chat_model
+from agents.conversation.state import initial_state as chat_initial_state
+from agents.enrich import graph as enrich_loop
+from agents.enrich.nodes import approval as enrich_approval
+from agents.enrich.nodes import model as enrich_model
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -46,16 +52,16 @@ class LangGraphPersistenceTests(unittest.TestCase):
                        arguments='{"instruction": "save Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(chat_loop, "_complete", side_effect=replies), \
-                patch.object(chat_loop.enrich_service, "plan_action",
+        with patch.object(chat_model, "complete", side_effect=replies), \
+                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
                              return_value=action) as plan, \
-                patch.object(chat_loop.action_execution, "execute_once",
+                patch.object(chat_approval.execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_loop.enrich_service, "execute_action",
+                patch.object(chat_approval.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}') as execute:
             paused = chat_loop.invoke(
                 graph, graph_config,
-                chat_loop.initial_state(
+                chat_initial_state(
                     context(), [{"role": "user", "content": "Save Idea"}]),
             )
             snapshot = graph.get_state(graph_config)
@@ -76,8 +82,8 @@ class LangGraphPersistenceTests(unittest.TestCase):
             completion(tool_name="create_note", arguments='{"text": "Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(enrich_loop, "_complete", side_effect=replies), \
-                patch.object(enrich_loop.action_execution, "execute_once",
+        with patch.object(enrich_model, "complete", side_effect=replies), \
+                patch.object(enrich_approval.execution_ledger, "execute_once",
                              return_value='{"note_id": 10}') as execute_once:
             paused = enrich_loop.invoke(
                 graph, graph_config,
@@ -115,16 +121,17 @@ class LangGraphPersistenceTests(unittest.TestCase):
         ]
         now = datetime(2026, 8, 31, tzinfo=timezone.utc)
         with patch.object(chat_service.checkpoint, "session", side_effect=session), \
-                patch.object(chat_service.chat_store, "create_thread", return_value=51), \
-                patch.object(chat_service.chat_store, "get_thread",
+                patch.object(chat_service.db, "create_thread", return_value=51), \
+                patch.object(chat_service.db, "get_thread",
                              side_effect=lambda user_id, thread_id: dict(projection)), \
-                patch.object(chat_service.chat_store, "save_thread",
+                patch.object(chat_service.db, "save_thread",
                              side_effect=save_thread), \
-                patch.object(chat_loop, "_complete", side_effect=replies), \
-                patch.object(chat_loop.enrich_service, "plan_action", return_value=action), \
-                patch.object(chat_loop.action_execution, "execute_once",
+                patch.object(chat_model, "complete", side_effect=replies), \
+                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                             return_value=action), \
+                patch.object(chat_approval.execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_loop.enrich_service, "execute_action",
+                patch.object(chat_approval.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 11}') as execute:
             paused = chat_service.start_turn(7, "Save Idea", None, now, timezone.utc, "en")
             resumed = chat_service.confirm(7, 51, True, now, timezone.utc, "en")

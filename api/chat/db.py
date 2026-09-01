@@ -1,6 +1,6 @@
 """Persistence for the chat section (isolated): the caller's settings.
 
-Chat thread state is the agent's own (in agents/chat); this section only needs
+Conversation state is owned under agents/conversation; this section only needs
 the user's timezone/language to build per-turn context.
 """
 

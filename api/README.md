@@ -64,6 +64,66 @@ dispatcher calls `POST /api/reminders/claim-due` to atomically claim due
 rows, sends each message, then calls `.../{id}/done` on success or
 `.../{id}/retry` to hand a failed send back for the next poll.
 
+## Section boundary: strict pure mappers
+
+For read endpoints that load rows and shape a response, keep orchestration in
+the section's `endpoints.py` and make the shaping function in `helper.py` a
+strict pure mapper. The mapper must receive every value it needs as an argument
+and return a value determined only by those arguments.
+
+A strict pure mapper must not:
+
+- import or call the section's `db` module;
+- read the clock, generate randomness, sign tokens, or call external services;
+- mutate its arguments or shared state;
+- hide additional queries inside loops or nested helper functions.
+
+The endpoint is the impure boundary. It resolves authentication, performs DB
+queries, calls clock-/secret-/network-dependent functions, and passes their
+results into the mapper. Keep bulk loading at this boundary to avoid N+1
+queries. When one query depends on another result, make that dependency visible
+in the endpoint: load primary rows, derive IDs, then bulk-load related rows.
+
+The feed section is the reference implementation:
+
+```python
+def feed(user_id: int = Depends(current_user)) -> list[FeedCard]:
+  notes = db.list_notes(user_id)
+  edges = db.all_links(user_id)
+  linked_note_ids = {note_id for edge in edges for note_id in edge}
+  briefs = db.notes_brief(user_id, linked_note_ids)
+  attachment_rows = db.attachments_for_notes([note["id"] for note in notes])
+  attachments = {
+    note_id: helper.attachment_views(rows)
+    for note_id, rows in attachment_rows.items()
+  }
+  return [
+    FeedCard(**item)
+    for item in helper.feed_for_user(notes, edges, briefs, attachments)
+  ]
+```
+
+Here `attachment_views` is intentionally called before `feed_for_user` because
+URL signing reads the current time and a secret. `feed_for_user` itself only
+maps the supplied notes, links, briefs, and already-signed attachment views.
+Calling it twice with equivalent inputs therefore produces equivalent output.
+
+Use this sequence when purifying another read endpoint:
+
+1. List every DB query and non-deterministic dependency used by the helper.
+2. Move those operations to `endpoints.py`, preserving authorization and bulk
+   query behavior.
+3. Pass loaded rows and precomputed values explicitly to the mapper.
+4. Remove the helper's `db` import and user ID if they are no longer needed.
+5. Test the mapper with plain in-memory inputs, including empty and missing
+   related-data cases; separately test endpoint orchestration with mocked DB
+   calls.
+
+Do not force write workflows, transactions, or agent execution into this
+pattern. Those helpers coordinate domain effects by design. Apply strict
+purification to functions whose responsibility is response shaping,
+normalization, filtering, grouping, or other deterministic transformation.
+
 ## Run locally
 
 ```bash

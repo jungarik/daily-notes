@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import config
-from agents import checkpoint as agent_checkpoint
+from agents.runtime import checkpoint as agent_checkpoint
 from migrate import run_migrations
 from api import system
 # Section verticals — each a self-contained endpoints.py → helper.py → db.py.
