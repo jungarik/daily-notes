@@ -123,8 +123,8 @@ class EnrichMetadataTests(unittest.TestCase):
         with patch.object(tool_handlers.db, "get_note_for_user", return_value=note), \
                 patch.object(tool_handlers.db, "get_language", return_value="en"), \
                 patch.object(tool_handlers.db, "set_metadata") as save, \
-                patch.object(tool_handlers, "get_client",
-                             side_effect=AssertionError("LLM during confirmation")):
+                patch.object(tool_handlers.embedings, "embed",
+                             side_effect=AssertionError("Embedding during confirmation")):
             result = json.loads(tool_handlers._enrich_note(
             Ctx(7, "now"), {"note_id": 4, **proposed}))
 

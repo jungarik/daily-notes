@@ -17,8 +17,10 @@ from agents.enrich.tools import (
 from agents.contracts import handoff
 from agents.runtime import checkpoint
 from agents.runtime import execution_ledger
+from common import embedings
+from common import helper
 from agents.enrich import graph as loop
-from agents.enrich import db, helper
+from agents.enrich import db
 from agents.enrich.graph import METADATA_GRAPH
 from agents.enrich.prompts import SYSTEM_PROMPT, planning_messages, with_system
 from agents.enrich.state import context_data
@@ -199,8 +201,10 @@ def _capture_proposal(args: dict, related_notes: list[dict]) -> CaptureProposal:
 def propose_capture(user_id: int, text: str) -> CaptureProposal:
     """Analyze a thought and return an editable preview. Nothing is persisted."""
     text = text.strip()
+
     if not text:
         raise ValueError("text is required")
+
     result = METADATA_GRAPH.invoke({
         "user_id": user_id,
         "metadata_text": text,
@@ -209,6 +213,7 @@ def propose_capture(user_id: int, text: str) -> CaptureProposal:
     })
     args = {"text": text, **result["metadata"], "linked_note_ids": []}
     related = (result.get("metadata_context") or {}).get("related_notes") or []
+
     return _capture_proposal(args, related)
 
 
@@ -224,7 +229,7 @@ def revise_capture(user_id: int, proposal: CaptureProposal,
     text = (args.get("text") or "").strip()
     if not text:
         raise ValueError("text is required")
-    roots, default_root = helper.localized_roots(user_id)
+    roots, default_root = helper.localized_root_folders(db.get_language(user_id))
     metadata = helper.normalize(args, text, roots, default_root)
     linked_ids = list(dict.fromkeys(int(value)
                                     for value in args.get("linked_note_ids") or []))
@@ -242,7 +247,7 @@ def _execute_capture(user_id: int, args: dict) -> dict:
     text = (args.get("text") or "").strip()
     if not text:
         raise ValueError("text is required")
-    roots, default_root = helper.localized_roots(user_id)
+    roots, default_root = helper.localized_root_folders(db.get_language(user_id))
     metadata = helper.normalize({
         "type": args.get("type"),
         "title": args.get("title"),
@@ -252,7 +257,7 @@ def _execute_capture(user_id: int, args: dict) -> dict:
     }, text, roots, default_root)
     linked_note_ids = [int(note_id) for note_id in args.get("linked_note_ids") or []]
     return db.save_captured_thought(
-        user_id, text, metadata, helper._build_chunks(text), linked_note_ids)
+        user_id, text, metadata, embedings.build_chunks(text), linked_note_ids)
 
 
 def confirm_capture(user_id: int, proposal: CaptureProposal) -> dict:

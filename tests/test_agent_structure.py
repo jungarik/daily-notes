@@ -19,15 +19,17 @@ class AgentStructureTests(unittest.TestCase):
             "conversation/nodes/model.py", "conversation/nodes/read.py",
             "conversation/nodes/dispatch.py", "conversation/nodes/approval.py",
             "conversation/nodes/final.py", "enrich/api.py", "enrich/state.py",
-            "enrich/graph.py", "enrich/routing.py", "enrich/helper.py",
+            "enrich/graph.py", "enrich/routing.py",
             "enrich/db.py",
             "enrich/prompts.py",
             "enrich/tools/specs.py", "enrich/tools/handlers.py",
+            "enrich/tools/db.py",
             "enrich/nodes/model.py", "enrich/nodes/read.py",
             "enrich/nodes/metadata.py",
             "enrich/nodes/reminder.py",
             "enrich/nodes/write.py", "enrich/nodes/approval.py",
             "enrich/nodes/final.py", "bootstrap.py",
+            "../common/__init__.py", "../common/embedings.py", "../common/helper.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))

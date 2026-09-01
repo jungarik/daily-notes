@@ -68,7 +68,7 @@ class ReminderAgentTests(unittest.TestCase):
         }}
         with patch.object(handlers.db, "save_note", return_value=30) as save_note, \
                 patch.object(handlers.db, "save_chunks") as save_chunks, \
-                patch.object(handlers, "_build_chunks", return_value=[]) as chunks, \
+                patch.object(handlers.embedings, "build_chunks", return_value=[]) as chunks, \
                 patch.object(handlers.db, "attach_reminder", return_value=4) as attach:
             result = enrich_service.execute_action(
                 7, action, datetime.now(timezone.utc), timezone.utc, "en")

@@ -5,7 +5,7 @@ import re
 import uuid
 
 import config
-from agents.enrich import db
+from agents.enrich.tools import db
 from agents.enrich.state import ActionPlanState, EnrichState, context_from_state
 from agents.enrich.tools import summarize_write
 
