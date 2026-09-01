@@ -68,6 +68,17 @@ class AgentGraphTests(unittest.TestCase):
         tool.assert_called_once()
         self.assertEqual("tool", result["messages"][-2]["role"])
 
+    def test_chat_model_provider_error_returns_answer(self):
+        with patch.object(chat_model, "complete",
+                          side_effect=Exception("429 Too Many Requests")):
+            result = chat_api.evaluate_turn(
+                7, [{"role": "user", "content": "Remind me tomorrow"}],
+                "now", "tz", "en")
+
+        self.assertEqual("answer", result["status"])
+        self.assertIn("try again", result["reply"])
+        self.assertIn("model_error", result["trace"])
+
     def test_chat_handoff_pauses_and_resume_executes_after_approval(self):
         action = {"name": "create_note", "args": {"text": "Idea"},
                   "summary": "Create a note: “Idea”."}
@@ -240,6 +251,19 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("create_note", action["name"])
         self.assertEqual({"text": "Graph idea"}, action["args"])
         create.assert_called_once()
+
+    def test_enrich_planning_provider_error_returns_no_action(self):
+        with patch.object(enrich_model.openai_client, "get_client",
+                          side_effect=Exception("429 Too Many Requests")):
+            result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
+                "messages": [{"role": "user", "content": "Save Graph idea"}],
+                "context": enrich_context_data(context()),
+                "tool_specs": enrich_tools.TOOL_SPECS,
+                "steps": 0, "tool_call": None, "action": None,
+            })
+
+        self.assertIsNone(result.get("action"))
+        self.assertIn("model_error", result)
 
     def test_step_budget_routes_to_tool_free_final_node(self):
         replies = [

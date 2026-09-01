@@ -15,6 +15,7 @@ class EnrichState(TypedDict, total=False):
     status: Literal["answer", "confirm"]
     reply: str
     action: dict | None
+    model_error: str | None
     pending: dict | None
     completed_action_id: str | None
     metadata_text: str
@@ -36,6 +37,7 @@ class ActionPlanState(TypedDict, total=False):
     steps: int
     tool_call: dict | None
     action: dict | None
+    model_error: str | None
     metadata_text: str
     metadata_note_id: int | None
     metadata_context: dict
