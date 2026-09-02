@@ -47,6 +47,14 @@ def invoke(
 
     source_ids = list(dict.fromkeys(hit["note_id"] for hit in hits))
     briefs = {b["id"]: b for b in db.notes_brief(user_id, source_ids[:4])}
+    created = {}
+
+    for hit in hits:
+        value = hit.get("created_at")
+
+        if hit["note_id"] not in created and value is not None:
+            created[hit["note_id"]] = value.isoformat() if hasattr(value, "isoformat") else value
+
     citations = []
 
     for note_id in source_ids[:4]:
@@ -59,6 +67,8 @@ def invoke(
                     brief.get("title"),
                     brief.get("text"),
                 ),
+                "path": brief.get("path"),
+                "date": created.get(note_id),
             })
 
     evidence = []

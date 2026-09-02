@@ -19,12 +19,14 @@ class ConversationContext:
         self._cited: set[int] = set()
         self.trace: dict = {"tools": [], "retrieved_chunks": [], "routes": []}
 
-    def cite(self, note_id: int, title: str) -> None:
+    def cite(self, note_id: int, title: str, path=None, date=None) -> None:
         if note_id not in self._cited:
             self._cited.add(note_id)
             self.citations.append({
                 "note_id": note_id,
                 "title": title or "note",
+                "path": path,
+                "date": date,
             })
 
     def record_tool(self, name: str, args: dict, result=None) -> None:
@@ -78,6 +80,8 @@ def apply_tool_result(ctx: Ctx, result: ToolResult) -> None:
         ctx.cite(
             citation["note_id"],
             citation.get("title") or "note",
+            citation.get("path"),
+            citation.get("date"),
         )
 
     if result.retrieved_chunks:

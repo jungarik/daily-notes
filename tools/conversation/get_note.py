@@ -26,6 +26,8 @@ def invoke(
     if not note:
         return ToolResult({"error": "Error: note not found."})
 
+    created = note.get("created_at")
+
     return ToolResult(
         {
             "id": note["id"],
@@ -40,5 +42,7 @@ def invoke(
                 note.get("title"),
                 note.get("text"),
             ),
+            "path": note.get("path"),
+            "date": created.isoformat() if hasattr(created, "isoformat") else created,
         }],
     )

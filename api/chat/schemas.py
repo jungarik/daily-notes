@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 class ChatCitation(BaseModel):
     note_id: int
     title: str
+    path: str | None = None
+    date: str | None = None
 
 
 class ChatAction(BaseModel):

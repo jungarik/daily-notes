@@ -16,14 +16,23 @@ def invoke(context: dict, args: dict) -> ToolResult:
     note_id = args.get("note_id")
     rows = db.links_of_for_user(user_id, int(note_id))
     result = []
+    citations = []
 
     for row in rows:
+        neighbour_id, title, text, path, created, direction = row
         result.append({
-            "id": row[0],
-            "title": row[1] or "untitled",
-            "direction": row[3],
+            "id": neighbour_id,
+            "title": title or "untitled",
+            "direction": direction,
+        })
+        citations.append({
+            "note_id": neighbour_id,
+            "title": helper.note_label(title, text),
+            "path": path,
+            "date": created.isoformat() if hasattr(created, "isoformat") else created,
         })
 
     return ToolResult(
         {"notes": result} if result else {"message": "No linked notes."},
+        citations=citations,
     )

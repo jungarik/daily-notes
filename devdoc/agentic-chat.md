@@ -67,7 +67,14 @@ search. Serializable state carries user id, clock, timezone, locale, citations,
 trace data, messages, and pending action; nodes reconstruct their runtime `Ctx`.
 
 `POST /api/chat` returns `{thread_id, status, reply?, action?, citations}`.
-Citations are `{note_id,title}` chips that open notes in the existing UI.
+Citations are `{note_id,title,path,date}` — the read tools (`search_notes`,
+`get_note`, `neighbors`) populate title/path/date when they surface a note. The
+model references notes inline with `[[note:ID]]` markers (prompted, not quoting
+titles/bodies); the chat UI replaces each marker with a compact note card
+(title, path, date) that opens the full preview sheet. Markers the model emits
+for a note no tool cited are resolved client-side via `GET /api/notesheet/{id}`.
+If the model omits markers, the cited notes still render as cards below the
+reply, so references are never lost.
 
 ## Safety and extension
 

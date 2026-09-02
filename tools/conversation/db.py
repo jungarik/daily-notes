@@ -19,14 +19,15 @@ def notes_brief(user_id: int, ids) -> list[dict]:
 def get_note_for_user(user_id: int, note_id: int) -> dict | None:
     with cursor() as cur:
         cur.execute(
-            "SELECT id, text, title, path, tags FROM notes WHERE id = %s AND user_id = %s;",
+            "SELECT id, text, title, path, tags, created_at "
+            "FROM notes WHERE id = %s AND user_id = %s;",
             (note_id, user_id),
         )
         row = cur.fetchone()
         if not row:
             return None
         return {"id": row[0], "text": row[1], "title": row[2], "path": row[3],
-                "tags": row[4] or []}
+                "tags": row[4] or [], "created_at": row[5]}
 
 
 def list_paths(user_id: int, limit: int = 30) -> list[tuple[str, int]]:
@@ -46,11 +47,11 @@ def links_of_for_user(user_id: int, note_id: int, limit: int = 100):
     with cursor() as cur:
         cur.execute(
             """
-            SELECT n.id, n.title, n.text, 'out' AS direction
+            SELECT n.id, n.title, n.text, n.path, n.created_at, 'out' AS direction
             FROM note_links l JOIN notes n ON n.id = l.to_note_id
             WHERE l.from_note_id = %s AND n.user_id = %s
             UNION
-            SELECT n.id, n.title, n.text, 'in' AS direction
+            SELECT n.id, n.title, n.text, n.path, n.created_at, 'in' AS direction
             FROM note_links l JOIN notes n ON n.id = l.from_note_id
             WHERE l.to_note_id = %s AND n.user_id = %s
             ORDER BY direction LIMIT %s;

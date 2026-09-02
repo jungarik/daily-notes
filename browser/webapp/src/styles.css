@@ -151,6 +151,17 @@
   .chat-empty { color: var(--text-muted); text-align: center; padding: 24px 12px; font-size: 14px; }
   .msg .cite-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .msg .cite-chip { border: 1px solid var(--border); background: rgba(255,255,255,.06); color: var(--text); font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 999px; cursor: pointer; }
+  .msg-text { white-space: pre-wrap; }
+  .msg-text + .note-mini { margin-top: 6px; }
+  .note-mini + .msg-text { margin-top: 6px; }
+  .note-mini-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .note-mini { display: flex; flex-direction: column; gap: 2px; width: 100%; margin: 4px 0; padding: 8px 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .note-mini:first-child { margin-top: 0; }
+  .note-mini:hover { border-color: #2f6feb; }
+  .note-mini-title { font-size: 14px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+  .note-mini-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); }
+  .note-mini-path { overflow-wrap: anywhere; }
+  .note-mini-date { flex: none; }
   .msg.confirm { background: var(--bg-alt); border: 1px solid var(--border); }
   .confirm-text { font-size: 14px; color: var(--text); }
   .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
