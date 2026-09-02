@@ -5,6 +5,7 @@ import re
 
 import config
 from common import embedings, helper
+from agents.contracts import ToolResult
 from tools.enrich import db
 
 logger = logging.getLogger(__name__)
@@ -33,21 +34,21 @@ def _atomic_note_text(text: str) -> str:
     return shortened.rstrip(" ,.;:-") + "..."
 
 
-def invoke(context: dict, args: dict) -> str:
+def invoke(context: dict, args: dict) -> ToolResult:
     error = helper.required_values_error(context, "context", ["user_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     error = helper.required_values_error(args, "args", ["text"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     text = _atomic_note_text(args.get("text") or "")
 
     if not text:
-        return "Error: text is required."
+        return ToolResult({"error": "Error: text is required."})
 
     note_id = db.save_note(context["user_id"], text)
     db.save_chunks(
@@ -60,6 +61,6 @@ def invoke(context: dict, args: dict) -> str:
         context["user_id"],
     )
 
-    return helper.json_text({
+    return ToolResult({
         "note_id": note_id,
     })

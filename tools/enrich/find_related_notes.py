@@ -2,24 +2,25 @@
 
 import config
 from common import embedings, helper
+from agents.contracts import ToolResult
 from tools.enrich import db
 
 
-def invoke(context: dict, args: dict) -> str:
+def invoke(context: dict, args: dict) -> ToolResult:
     error = helper.required_values_error(context, "context", ["user_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     error = helper.required_values_error(args, "args", ["text"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     text = (args.get("text") or "").strip()
 
     if not text:
-        return "Error: text is required."
+        return ToolResult({"error": "Error: text is required."})
 
     embedding = embedings.embed(text)
     note_id = args.get("exclude_note_id")
@@ -38,4 +39,4 @@ def invoke(context: dict, args: dict) -> str:
         )
     )
 
-    return helper.json_text(rows)
+    return ToolResult({"notes": rows})

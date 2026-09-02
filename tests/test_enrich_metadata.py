@@ -43,7 +43,7 @@ class EnrichMetadataTests(unittest.TestCase):
                 {"text": "Garden", "exclude_note_id": None},
                 "enrich",
             )
-        self.assertEqual([], json.loads(result))
+        self.assertEqual([], result.data["notes"])
         related.assert_called_once_with(7, "vector", config.ENRICH_SIMILAR_LIMIT)
 
     def test_capture_metadata_runs_as_three_named_graph_nodes(self):
@@ -133,10 +133,10 @@ class EnrichMetadataTests(unittest.TestCase):
                 patch.object(enrich_note.db, "set_metadata") as save, \
                 patch.object(find_related_notes.embedings, "embed",
                              side_effect=AssertionError("Embedding during confirmation")):
-            result = json.loads(enrich_note.invoke(
+            result = enrich_note.invoke(
                 context_to_dict(Ctx(7, "now")),
                 {"note_id": 4, **proposed},
-            ))
+            ).data
 
         self.assertEqual("Ship release", result["title"])
         save.assert_called_once_with(

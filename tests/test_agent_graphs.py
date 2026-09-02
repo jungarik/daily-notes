@@ -312,13 +312,13 @@ class AgentGraphTests(unittest.TestCase):
         with patch.object(add_note_tags.db, "get_note_for_user",
                           return_value={"id": 4, "tags": ["old", "keep"]}), \
                 patch.object(add_note_tags.db, "set_tags") as set_tags:
-            result = json.loads(execute_enrich_tool(
+            result = execute_enrich_tool(
                 enrich_tools.TOOLS,
                 enrich_context_data(EnrichCtx(7, "now", "tz", "en")),
                 "add_note_tags",
                 {"note_id": 4, "tags": ["New", "old", ""]},
                 "enrich",
-            ))
+            ).data
 
         self.assertEqual({"ok": True, "note_id": 4,
                           "tags": ["old", "keep", "new"]}, result)
@@ -330,15 +330,15 @@ class AgentGraphTests(unittest.TestCase):
                 patch.object(list_paths.db, "list_paths") as paths:
             self.assertEqual(
                 "Error: context is missing required values: user_id.",
-                add_note_tags.invoke({}, {"note_id": 4, "tags": ["new"]}),
+                add_note_tags.invoke({}, {"note_id": 4, "tags": ["new"]}).data["error"],
             )
             self.assertEqual(
                 "Error: args is missing required values: text.",
-                create_note.invoke({"user_id": 7}, {"text": ""}),
+                create_note.invoke({"user_id": 7}, {"text": ""}).data["error"],
             )
             self.assertEqual(
                 "Error: args must be an object.",
-                list_paths.invoke({"user_id": 7}, None),
+                list_paths.invoke({"user_id": 7}, None).data["error"],
             )
 
         get_note.assert_not_called()

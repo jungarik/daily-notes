@@ -30,11 +30,13 @@ def build_graph(checkpointer):
     builder.add_conditional_edges(START, routing.entry,
                                   {"model": "model", "approval": "approval"})
 
-    builder.add_conditional_edges("model", routing.after_model,
-                                  {"read_tool": "read_tool",
-                                   "metadata_context": "metadata_context",
-                                   "reminder_model": "reminder_model",
-                                   "pending_write": "pending_write", END: END})
+    builder.add_conditional_edges("model", routing.after_model, {
+                                    "read_tool": "read_tool",
+                                    "metadata_context": "metadata_context",
+                                    "reminder_model": "reminder_model",
+                                    "pending_write": "pending_write", 
+                                    END: END
+                                  })
 
     builder.add_conditional_edges("read_tool", routing.after_read,
                                   {"model": "model", "final": "final"})

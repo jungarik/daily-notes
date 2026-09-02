@@ -6,6 +6,7 @@ from datetime import datetime
 
 import config
 from common import embedings, helper
+from agents.contracts import ToolResult
 from tools.enrich import db
 
 logger = logging.getLogger(__name__)
@@ -34,22 +35,22 @@ def _atomic_note_text(text: str) -> str:
     return shortened.rstrip(" ,.;:-") + "..."
 
 
-def invoke(context: dict, args: dict) -> str:
+def invoke(context: dict, args: dict) -> ToolResult:
     error = helper.required_values_error(context, "context", ["user_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     error = helper.required_values_error(args, "args", ["text", "remind_at"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     text = (args.get("text") or "").strip()
     raw_time = args.get("remind_at")
 
     if not text or not raw_time:
-        return "Error: text and remind_at are required."
+        return ToolResult({"error": "Error: text and remind_at are required."})
 
     remind_at = datetime.fromisoformat(raw_time)
     note_id = args.get("note_id")
@@ -72,9 +73,9 @@ def invoke(context: dict, args: dict) -> str:
     reminder_id = db.attach_reminder(context["user_id"], note_id, remind_at)
 
     if reminder_id is None:
-        return "Error: referenced note not found."
+        return ToolResult({"error": "Error: referenced note not found."})
 
-    return helper.json_text({
+    return ToolResult({
         "note_id": note_id,
         "reminder_id": reminder_id,
         "remind_at": remind_at.isoformat(),

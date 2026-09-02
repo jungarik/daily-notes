@@ -244,10 +244,12 @@ citations}` or `{status:"confirm", action}`.
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
 package, not inside `agents/*/tools`. Use `tools/conversation/` for chat read
 tools and `tools/enrich/` for note write/enrichment/reminder tools. Each tool
-file exposes `invoke(context: dict, args: dict)`. Tool specs stay with their
-tool namespace as `tools/conversation/specs.py` and `tools/enrich/specs.py`.
-Agents import tool registries/specs from these packages and execute them through
-`agents/runtime/execute_tool.py`.
+file exposes `invoke(context: dict, args: dict)` and returns `ToolResult` with
+typed `data: dict`. Tool specs stay with their tool namespace as
+`tools/conversation/specs.py` and `tools/enrich/specs.py`. Agents import tool
+registries/specs from these packages and execute them through
+`agents/runtime/execute_tool.py`; callers render `ToolResult.data` to JSON text
+only at graph/API boundaries.
 
 **Citations.** Answers are grounded in the notes they drew on: `search_notes`
 retrieves structured note evidence and returns a `ToolResult` with `data`,

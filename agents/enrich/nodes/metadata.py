@@ -35,19 +35,28 @@ def _context(state: dict, user_id: int) -> Ctx:
 
 def _tool(ctx: Ctx, name: str, args: dict, trace: list[dict]):
     started = time.perf_counter()
-    result = _tool_text(execute_allowed_tool(
+    raw_result = execute_allowed_tool(
         tools.TOOLS,
         tools.METADATA_CONTEXT_TOOLS,
         context_to_dict(ctx),
         name,
         args,
         "enrich",
-    ))
+    )
+    result = _tool_text(raw_result)
     latency_ms = round((time.perf_counter() - started) * 1000)
-    if result.startswith("Error:") or result.startswith("Error running"):
+    error = None
+
+    if isinstance(raw_result, ToolResult):
+        error = raw_result.data.get("error")
+    elif result.startswith("Error:") or result.startswith("Error running"):
+        error = result
+
+    if error:
         trace.append({"kind": "tool", "tool": name, "status": "error",
-                      "latency_ms": latency_ms, "error": result[:500]})
-        raise RuntimeError(result)
+                      "latency_ms": latency_ms, "error": str(error)[:500]})
+        raise RuntimeError(error)
+
     trace.append({"kind": "tool", "tool": name, "status": "ok",
                   "latency_ms": latency_ms})
     try:
@@ -71,12 +80,27 @@ def load_context(state: dict) -> dict:
         if not text:
             raise ValueError("note not found or empty")
 
-        paths = _tool(ctx, "list_paths", {}, trace)
-        tags = _tool(ctx, "list_tags", {}, trace)
+        paths_data = _tool(ctx, "list_paths", {}, trace)
+        tags_data = _tool(ctx, "list_tags", {}, trace)
         vault = _tool(ctx, "get_vault_context", {}, trace)
-        related = _tool(ctx, "find_related_notes", {
+        related_data = _tool(ctx, "find_related_notes", {
             "text": text, "exclude_note_id": int(note_id) if note_id is not None else None,
         }, trace)
+        paths = (
+            paths_data.get("paths", paths_data)
+            if isinstance(paths_data, dict)
+            else paths_data
+        )
+        tags = (
+            tags_data.get("tags", tags_data)
+            if isinstance(tags_data, dict)
+            else tags_data
+        )
+        related = (
+            related_data.get("notes", related_data)
+            if isinstance(related_data, dict)
+            else related_data
+        )
         known_paths = ([(item["path"], item["count"]) for item in paths]
                        if isinstance(paths, list) else [])
         known_tags = ([(item["tag"], item["count"]) for item in tags]
@@ -88,18 +112,39 @@ def load_context(state: dict) -> dict:
             "default_root": vault["default_root"],
         }
     except Exception as exc:
-        trace.append({"kind": "node", "node": "metadata_context",
-                      "status": "error", "error": str(exc)[:500]})
-        return {"metadata_text": "", "metadata_note_id": note_id,
-                "metadata_context": {}, "metadata_error": str(exc),
-                "metadata_trace": trace}
-    trace.append({"kind": "node", "node": "metadata_context", "status": "ok",
-                  "related_note_ids": [item.get("note_id")
-                                       for item in context["related_notes"]
-                                       if item.get("note_id") is not None]})
-    return {"metadata_text": text, "metadata_note_id": note_id,
-            "metadata_context": context, "metadata_error": None,
-            "metadata_trace": trace}
+        trace.append({
+            "kind": "node",
+            "node": "metadata_context",
+            "status": "error",
+            "error": str(exc)[:500],
+        })
+
+        return {
+            "metadata_text": "",
+            "metadata_note_id": note_id,
+            "metadata_context": {},
+            "metadata_error": str(exc),
+            "metadata_trace": trace,
+        }
+
+    trace.append({
+        "kind": "node",
+        "node": "metadata_context",
+        "status": "ok",
+        "related_note_ids": [
+            item.get("note_id")
+            for item in context["related_notes"]
+            if item.get("note_id") is not None
+        ],
+    })
+
+    return {
+        "metadata_text": text,
+        "metadata_note_id": note_id,
+        "metadata_context": context,
+        "metadata_error": None,
+        "metadata_trace": trace,
+    }
 
 
 def propose(state: dict) -> dict:

@@ -12,14 +12,14 @@ def entry(state: EnrichState):
 
 
 def after_model(state: EnrichState):
-    call = state.get("tool_call")
-    if call is None:
+    tool_call = state.get("tool_call")
+    if tool_call is None:
         return END
-    if call["name"] == "enrich_note":
+    if tool_call["name"] == "enrich_note":
         return "metadata_context"
-    if call["name"] == "create_reminder":
+    if tool_call["name"] == "create_reminder":
         return "reminder_model"
-    return "pending_write" if call["name"] in WRITE_TOOLS else "read_tool"
+    return "pending_write" if tool_call["name"] in WRITE_TOOLS else "read_tool"
 
 
 def after_read(state: EnrichState):

@@ -3,26 +3,27 @@
 import logging
 
 from common import helper
+from agents.contracts import ToolResult
 from tools.enrich import db
 
 logger = logging.getLogger(__name__)
 
 
-def invoke(context: dict, args: dict) -> str:
+def invoke(context: dict, args: dict) -> ToolResult:
     error = helper.required_values_error(context, "context", ["user_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     error = helper.required_values_error(args, "args", ["note_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     note_id = args.get("note_id")
 
     if note_id is None:
-        return "Error: note_id is required."
+        return ToolResult({"error": "Error: note_id is required."})
 
     required = {
         "type",
@@ -33,13 +34,15 @@ def invoke(context: dict, args: dict) -> str:
     }
 
     if not required.issubset(args):
-        return "Error: enrichment proposal is missing approved metadata; regenerate it."
+        return ToolResult({
+            "error": "Error: enrichment proposal is missing approved metadata; regenerate it.",
+        })
 
     note_id = int(note_id)
     note = db.get_note_for_user(context["user_id"], note_id)
 
     if not note or not (note.get("text") or "").strip():
-        return "Error: note not found or empty."
+        return ToolResult({"error": "Error: note not found or empty."})
 
     root_folders, default_root = helper.localized_root_folders(
         db.get_language(context["user_id"])
@@ -66,4 +69,4 @@ def invoke(context: dict, args: dict) -> str:
         metadata["path"],
     )
 
-    return helper.json_text(metadata)
+    return ToolResult(metadata)

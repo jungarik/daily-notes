@@ -3,6 +3,7 @@
 import config
 import i18n
 from common import helper
+from agents.contracts import ToolResult
 from tools.enrich import db
 
 
@@ -43,37 +44,37 @@ def _clean_root_path(path: str) -> str | None:
     return "/".join([canonical] + parts[1:])
 
 
-def invoke(context: dict, args: dict) -> str:
+def invoke(context: dict, args: dict) -> ToolResult:
     error = helper.required_values_error(context, "context", ["user_id"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     error = helper.required_values_error(args, "args", ["note_id", "path"])
 
     if error:
-        return error
+        return ToolResult({"error": error})
 
     note_id = args.get("note_id")
     path = (args.get("path") or "").strip()
 
     if note_id is None or not path:
-        return "Error: note_id and path are required."
+        return ToolResult({"error": "Error: note_id and path are required."})
 
     cleaned = _clean_root_path(path)
 
     if cleaned is None:
-        return "Error: path must start with a root folder."
+        return ToolResult({"error": "Error: path must start with a root folder."})
 
     note_id = int(note_id)
 
     if db.get_note_for_user(context["user_id"], note_id) is None:
-        return "Error: note not found."
+        return ToolResult({"error": "Error: note not found."})
 
     db.set_path(note_id, cleaned)
     meta = db.get_meta(note_id)
 
-    return helper.json_text({
+    return ToolResult({
         "ok": True,
         "path": (meta or {}).get("path"),
     })

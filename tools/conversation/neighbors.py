@@ -6,14 +6,10 @@ from tools.conversation import db
 
 
 def invoke(context: dict, args: dict) -> ToolResult:
-    error = helper.required_values_error(context, "context", ["user_id"])
-
-    if error:
+    if error := helper.required_values_error(context, "context", ["user_id"]):
         return ToolResult({"error": error})
 
-    error = helper.required_values_error(args, "args", ["note_id"])
-
-    if error:
+    if error := helper.required_values_error(args, "args", ["note_id"]):
         return ToolResult({"error": error})
 
     user_id = context["user_id"]
