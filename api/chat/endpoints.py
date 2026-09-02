@@ -31,7 +31,8 @@ def chat_confirm(req: ChatConfirmRequest,
                  user_id: int = Depends(current_user)) -> ChatResponse:
     """Approve or decline the action the agent handed off, then continue the turn."""
     tz, locale = helper.settings(*db.get_settings(user_id))
-    result = chat_agent.confirm(user_id, req.thread_id, req.approve, datetime.now(tz), tz, locale)
+    result = chat_agent.confirm(user_id, req.thread_id, req.approve, datetime.now(tz), tz, locale,
+                                selection=req.selection)
     logger.info("chat confirm user=%s thread=%s approve=%s -> %s",
                 user_id, req.thread_id, req.approve, result["status"])
     return ChatResponse(**result)

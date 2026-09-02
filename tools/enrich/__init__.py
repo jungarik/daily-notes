@@ -8,6 +8,7 @@ from tools.enrich import (
     find_related_notes,
     get_note_context,
     get_vault_context,
+    link_notes,
     list_paths,
     list_tags,
     set_note_path,
@@ -25,6 +26,7 @@ TOOLS = {
     "add_note_tags": add_note_tags.invoke,
     "enrich_note": enrich_note.invoke,
     "create_reminder": create_reminder.invoke,
+    "link_notes": link_notes.invoke,
 }
 
 

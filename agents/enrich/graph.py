@@ -23,6 +23,7 @@ def build_graph(checkpointer):
     builder.add_node("metadata_validation", metadata.validate)
     builder.add_node("reminder_model", reminder.extract_time)
     builder.add_node("reminder_validation", reminder.validate)
+    builder.add_node("link_context", write.link_context)
     builder.add_node("pending_write", write.prepare)
     builder.add_node("approval", approval.run)
     builder.add_node("final", final.run)
@@ -34,7 +35,8 @@ def build_graph(checkpointer):
                                     "read_tool": "read_tool",
                                     "metadata_context": "metadata_context",
                                     "reminder_model": "reminder_model",
-                                    "pending_write": "pending_write", 
+                                    "link_context": "link_context",
+                                    "pending_write": "pending_write",
                                     END: END
                                   })
 
@@ -49,6 +51,7 @@ def build_graph(checkpointer):
                                   routing.after_reminder_validation,
                                   {"pending_write": "pending_write",
                                    "final": "final"})
+    builder.add_edge("link_context", "pending_write")
     builder.add_edge("pending_write", "approval")
     builder.add_edge("approval", "model")
     builder.add_edge("final", END)
@@ -63,13 +66,16 @@ def _build_action_plan_graph():
     builder.add_node("metadata_context", metadata.load_context)
     builder.add_node("metadata_model", metadata.propose)
     builder.add_node("metadata_validation", metadata.validate)
+    builder.add_node("link_context", write.link_context)
     builder.add_node("validate_write", write.validate)
     builder.add_edge(START, "plan_model")
     builder.add_conditional_edges("plan_model", routing.after_plan_model,
                                   {"plan_read": "plan_read",
                                    "metadata_context": "metadata_context",
-                                   "validate_write": "validate_write", 
+                                   "link_context": "link_context",
+                                   "validate_write": "validate_write",
                                    END: END})
+    builder.add_edge("link_context", "validate_write")
     builder.add_conditional_edges("plan_read", routing.after_plan_read,
                                   {"plan_model": "plan_model", END: END})
     builder.add_edge("metadata_context", "metadata_model")

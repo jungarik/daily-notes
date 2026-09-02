@@ -51,4 +51,5 @@ export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
 export const chatSend = (message, thread_id) => apiPost("/api/chat", { message, thread_id });
-export const chatConfirm = (thread_id, approve) => apiPost("/api/chat/confirm", { thread_id, approve });
+export const chatConfirm = (thread_id, approve, selection) =>
+  apiPost("/api/chat/confirm", { thread_id, approve, selection: selection ?? null });

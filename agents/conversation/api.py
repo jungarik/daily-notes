@@ -114,9 +114,16 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
         return _shape(thread_id, result)
 
 
-def confirm(user_id, thread_id, approve, now, tz, locale):
+def confirm(user_id, thread_id, approve, now, tz, locale, selection=None):
     """Resume a thread paused on a handed-off action: run (or decline) it via the
-    owning specialist and continue to a final reply."""
+    owning specialist and continue to a final reply. `selection` carries the note
+    ids the user picked for a select action (link_notes)."""
+    decision = ({
+          "approve": bool(approve),
+          "selection": selection
+        } if selection is not None
+          else bool(approve)
+    )
     t = db.get_thread(user_id, thread_id)
     if t is None:
         return {
@@ -145,7 +152,7 @@ def confirm(user_id, thread_id, approve, now, tz, locale):
             )
             snapshot = graph.get_state(graph_config)
         if checkpoint.is_interrupted(snapshot):
-            result = loop.resume(graph, graph_config, bool(approve))
+            result = loop.resume(graph, graph_config, decision)
         elif snapshot.next:
             # The approval was already consumed and a later node failed. Resume
             # that exact node; the action ledger also protects its side effect.

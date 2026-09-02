@@ -43,6 +43,20 @@ Recording `pending.agent` makes resume deterministic. Older pending checkpoints
 without that field default to Enrich for backward compatibility. Only one action
 may be pending at a time.
 
+### Select actions (pick-which confirmations)
+
+Most actions confirm with a plain yes/no. A proposal can instead ask the user to
+*choose* — the action carries `kind:"select"` (default `"confirm"`). `link_notes`
+uses this: `plan_action` resolves the source note, computes its nearest semantic
+neighbours, and puts `args.candidates` (`{note_id,title,path,tags,distance}`) plus
+a preselected `args.linked_note_ids` into the proposal. The chat client renders a
+checklist and posts the chosen ids as `POST /api/chat/confirm {approve, selection}`.
+`confirm` forwards them as `Command(resume={"approve", "selection"})`; the approval
+node merges `selection` into the paused action's `linked_note_ids` before running
+it, so the user's pick — not the model's guess — is what the specialist writes.
+Links are inserted directed (one edge source→target); the `note_links` table is
+read as bidirectional.
+
 ## State and memory
 
 LangGraph `PostgresSaver` is the durable execution store and supports exact-node

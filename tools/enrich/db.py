@@ -81,6 +81,43 @@ def related_notes(user_id: int, query_embedding: str, limit: int = 5) -> list[di
                 for r in cur.fetchall()]
 
 
+def owned_note_ids(user_id: int, note_ids: list[int]) -> set[int]:
+    """Return the subset of note_ids that belong to the user."""
+    if not note_ids:
+        return set()
+
+    with cursor() as cur:
+        cur.execute(
+            "SELECT id FROM notes WHERE user_id = %s AND id = ANY(%s);",
+            (user_id, list(note_ids)),
+        )
+
+        return {row[0] for row in cur.fetchall()}
+
+
+def create_links(from_note_id: int, to_note_ids: list[int]) -> list[int]:
+    """Insert directed related-links from one note to each target. Skips
+    self-links and existing edges (note_links is read as bidirectional)."""
+    linked = []
+
+    with cursor() as cur:
+        for to_note_id in to_note_ids:
+            if to_note_id == from_note_id:
+                continue
+
+            cur.execute(
+                """
+                INSERT INTO note_links (from_note_id, to_note_id, kind, source)
+                VALUES (%s, %s, 'related', 'user')
+                ON CONFLICT (from_note_id, to_note_id) DO NOTHING;
+                """,
+                (from_note_id, to_note_id),
+            )
+            linked.append(to_note_id)
+
+    return linked
+
+
 def get_language(user_id: int) -> str | None:
     with cursor() as cur:
         cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))

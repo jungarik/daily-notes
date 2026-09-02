@@ -22,8 +22,10 @@ def _fn(name, description, properties, required):
 HANDOFF_TOOL_SPECS = [
     _fn(
         "perform_action",
-        "Create a note, move a note, add tags, or classify/enrich a note. "
-        "Pass the request verbatim; a specialist proposes it for confirmation.",
+        "Create a note, move a note, add tags, link a note to related notes, or "
+        "classify/enrich a note. Pass the request verbatim, and include the id of "
+        "any note the user is acting on in referenced_note_ids; a specialist "
+        "proposes it for confirmation.",
         {
             "instruction": {"type": "string"},
             "referenced_note_ids": {

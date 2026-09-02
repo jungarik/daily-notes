@@ -7,6 +7,34 @@ from agents.conversation.state import ChatState, context_from_state, context_upd
 from agents.runtime import execution_ledger
 
 
+def _decision(raw) -> tuple:
+    """Split a resume value into (approved, selection). The client may send a
+    bare bool, or a dict carrying a selection of note ids for a select action."""
+    if isinstance(raw, dict):
+        return bool(raw.get("approve")), raw.get("selection")
+
+    return bool(raw), None
+
+
+def _apply_selection(action: dict, selection) -> dict:
+    """For a select action (link_notes), replace its target ids with the user's pick."""
+    if selection is None or action.get("name") != "link_notes":
+        return action
+
+    chosen = []
+
+    for value in selection:
+        try:
+            note_id = int(value)
+        except (TypeError, ValueError):
+            continue
+
+        if note_id not in chosen:
+            chosen.append(note_id)
+
+    return {**action, "args": {**action.get("args", {}), "linked_note_ids": chosen}}
+
+
 def run(state: ChatState) -> dict:
     pending = state.get("pending")
 
@@ -18,13 +46,14 @@ def run(state: ChatState) -> dict:
             "tool_call": None,
         }
 
-    approved = bool(interrupt({
+    approved, selection = _decision(interrupt({
         "action_id": pending["action_id"],
         "agent": pending.get("agent", "enrich"),
         "action": pending["action"],
         "summary": pending.get("summary"),
     }))
     ctx = context_from_state(state)
+    action = _apply_selection(pending["action"], selection)
 
     if approved:
         agent_name = "enrich"
@@ -33,10 +62,10 @@ def run(state: ChatState) -> dict:
             pending["action_id"],
             ctx.user_id,
             agent_name,
-            pending["action"],
+            action,
             lambda: service.execute_action(
                 ctx.user_id,
-                pending["action"],
+                action,
                 ctx.now,
                 ctx.tz,
                 ctx.locale,

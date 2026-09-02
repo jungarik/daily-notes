@@ -18,6 +18,8 @@ class ChatAction(BaseModel):
     name: str
     args: dict = {}
     summary: str
+    # "confirm" = plain yes/no; "select" = the user picks ids (args.candidates).
+    kind: str = "confirm"
 
 
 class ChatRequest(BaseModel):
@@ -28,6 +30,8 @@ class ChatRequest(BaseModel):
 class ChatConfirmRequest(BaseModel):
     thread_id: int
     approve: bool
+    # For a select action: the note ids the user chose to link.
+    selection: list[int] | None = None
 
 
 class ChatResponse(BaseModel):

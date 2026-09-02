@@ -8,7 +8,14 @@ moving notes, enriching metadata, and planning/creating reminders through
 
 `agents/enrich/graph.py` defines `ENRICH_GRAPH`, a bounded LangGraph workflow.
 Read tools (`get_note_context`, `list_paths`, `list_tags`) loop to the model.
-`create_note` and `set_note_path` route to `pending_write`. `enrich_note` first
+`create_note`, `set_note_path`, and `add_note_tags` route to `pending_write`.
+`link_notes` is a *select* action and first runs a dedicated `link_context`
+node (mirroring `enrich_note`'s `metadata_context`): retrieval — resolving the
+source note and computing its nearest neighbours — lives there, not in the
+write node, which stays a plain check. `link_context` attaches `args.candidates`
++ a preselected `args.linked_note_ids` so Chat can render a checklist; the
+user's picked ids are merged into the action at approval time and inserted as
+directed `note_links` edges (read as bidirectional). `enrich_note` first
 runs the explicit `metadata_context -> metadata_model -> metadata_validation`
 nodes. `create_reminder` first runs
 `reminder_model -> reminder_validation`, so reminder time extraction is part of

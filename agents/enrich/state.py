@@ -24,6 +24,7 @@ class EnrichState(TypedDict, total=False):
     model_error: str | None
     pending: dict | None
     completed_action_id: str | None
+    link_proposal: dict
     metadata_text: str
     metadata_note_id: int | None
     metadata_context: dict
@@ -44,6 +45,7 @@ class ActionPlanState(TypedDict, total=False):
     tool_call: dict | None
     action: dict | None
     model_error: str | None
+    link_proposal: dict
     metadata_text: str
     metadata_note_id: int | None
     metadata_context: dict

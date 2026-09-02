@@ -50,8 +50,10 @@ def invoke(graph, graph_config: dict, state: ChatState) -> dict:
     return _invoke(graph, state, graph_config)
 
 
-def resume(graph, graph_config: dict, approve: bool) -> dict:
-    return _invoke(graph, Command(resume=bool(approve)), graph_config)
+def resume(graph, graph_config: dict, decision) -> dict:
+    """Resume a paused approval. `decision` is a bool (approve) or a dict
+    carrying the approval plus a selection, e.g. {"approve": bool, "selection": [...]}."""
+    return _invoke(graph, Command(resume=decision), graph_config)
 
 
 def retry(graph, graph_config: dict) -> dict:

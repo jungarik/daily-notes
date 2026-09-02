@@ -156,7 +156,15 @@
   .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
   .confirm-btn { flex: 1; font: inherit; font-size: 13px; padding: 8px; border-radius: 9px; cursor: pointer; border: 1px solid var(--border); }
   .confirm-btn.yes { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+  .confirm-btn.yes:disabled { background: var(--bg-alt); color: var(--text-muted); border-color: var(--border); cursor: default; }
   .confirm-btn.no { background: transparent; color: var(--text-muted); }
+  .link-picker { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .link-opt { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; }
+  .link-opt.on { border-color: #2f6feb; background: rgba(47, 111, 235, 0.08); }
+  .link-opt input { margin: 2px 0 0; accent-color: #2f6feb; flex: none; }
+  .link-opt-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .link-opt-title { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+  .link-opt-path { font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
   .typing { display: inline-flex; gap: 3px; }
   .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: blink 1.2s infinite both; }
   .typing i:nth-child(2) { animation-delay: .2s; }

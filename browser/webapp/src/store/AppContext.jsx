@@ -126,9 +126,9 @@ export function AppProvider({ children }) {
     runChat(() => api.chatSend(text, threadRef.current), { role: "user", text });
   }, [runChat]);
 
-  const confirmChat = useCallback((approve) => {
+  const confirmChat = useCallback((approve, selection) => {
     if (threadRef.current == null) return;
-    runChat(() => api.chatConfirm(threadRef.current, approve), null);
+    runChat(() => api.chatConfirm(threadRef.current, approve, selection), null);
   }, [runChat]);
 
   // ----- boot -----
