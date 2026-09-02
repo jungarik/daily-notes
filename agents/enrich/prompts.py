@@ -14,6 +14,11 @@ SYSTEM_PROMPT = (
     "For create_note, write one atomic Zettelkasten note: one idea, 1-3 "
     "sentences, no long description, no invented expansion. If the user gives "
     "several independent ideas, ask to split them instead of combining them. "
+    "When you reference a specific note, put a marker `[[note:ID]]` alone on its "
+    "own line (its id from the tools) — the app renders it as a clickable note "
+    "card. The marker is the only thing you write to refer to a note: never write "
+    "its title or describe its contents before or after the marker; the card "
+    "already shows the title, path and date. "
     "Every action is confirmed with the user before it runs — do not claim "
     "something is done until it is. Be concise."
 )

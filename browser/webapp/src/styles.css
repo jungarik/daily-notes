@@ -162,6 +162,7 @@
   .note-mini-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); }
   .note-mini-path { overflow-wrap: anywhere; }
   .note-mini-date { flex: none; }
+  .note-mini-count { flex: none; }
   .msg.confirm { background: var(--bg-alt); border: 1px solid var(--border); }
   .confirm-text { font-size: 14px; color: var(--text); }
   .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }

@@ -38,42 +38,56 @@ def _guardrail_call(call: dict) -> dict:
     return {**call, "args": args}
 
 
+def _marker(note_id) -> str:
+    """A note reference the web app renders as a clickable preview card."""
+    return "[[note:%s]]" % note_id
+
+
 def summarize_write(name: str, args: dict) -> str:
     if name == "create_note":
         return "Create a note: “%s”." % args.get("text", "").strip()
 
     if name == "set_note_path":
-        return "Move note %s to “%s”." % (
-            args.get("note_id"),
+        return "Move this note to “%s”:\n%s" % (
             args.get("path", "").strip(),
+            _marker(args.get("note_id")),
         )
 
     if name == "add_note_tags":
-        return "Add tags %s to note %s." % (
+        return "Add tags %s to this note:\n%s" % (
             args.get("tags") or [],
-            args.get("note_id"),
+            _marker(args.get("note_id")),
         )
 
     if name == "enrich_note":
         if args.get("title"):
-            return "Apply metadata to note %s: “%s” (%s) at “%s”, tags %s." % (
-                args.get("note_id"),
+            return "Apply metadata “%s” (%s) at “%s”, tags %s to this note:\n%s" % (
                 args.get("title"),
                 args.get("type"),
                 args.get("path"),
                 args.get("tags") or [],
+                _marker(args.get("note_id")),
             )
 
-        return "Enrich note %s (classify type/title/path/tags)." % args.get("note_id")
+        return "Enrich this note (classify type/title/path/tags):\n%s" % (
+            _marker(args.get("note_id")),
+        )
 
     if name == "create_reminder":
-        return "Create a reminder for %s: “%s”." % (
+        base = "Create a reminder for %s: “%s”." % (
             args.get("remind_at"),
             (args.get("text") or "").strip(),
         )
 
+        if args.get("note_id"):
+            return "%s\n%s" % (base, _marker(args.get("note_id")))
+
+        return base
+
     if name == "link_notes":
-        return "Link note %s to the notes you select below." % args.get("note_id")
+        return "Link this note to the notes you select below:\n%s" % (
+            _marker(args.get("note_id")),
+        )
 
     return "Run %s with %s." % (name, args)
 

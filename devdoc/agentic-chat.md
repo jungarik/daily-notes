@@ -74,7 +74,10 @@ titles/bodies); the chat UI replaces each marker with a compact note card
 (title, path, date) that opens the full preview sheet. Markers the model emits
 for a note no tool cited are resolved client-side via `GET /api/notesheet/{id}`.
 If the model omits markers, the cited notes still render as cards below the
-reply, so references are never lost.
+reply, so references are never lost. Confirmation/select action summaries carry
+the same `[[note:ID]]` markers (the deterministic `summarize_write` emits them
+for the note being acted on), so the confirm card also shows a preview card for
+its target note, resolved the same way.
 
 ## Safety and extension
 

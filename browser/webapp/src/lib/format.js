@@ -6,6 +6,15 @@ export function fmtDate(iso) {
   return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+// Compact dd/mm/yy for tight spots like the chat note card.
+export function fmtDateShort(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
+}
+
 // A note's folder key for the filter (its path, or a bucket for unsorted notes).
 export const notePathKey = (d) => (d && d.path) || "(unsorted)";
 

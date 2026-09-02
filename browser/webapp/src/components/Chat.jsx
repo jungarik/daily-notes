@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { fmtDate } from "../lib/format.js";
+import { fmtDateShort, linkedItems } from "../lib/format.js";
 import * as api from "../lib/api.js";
 
 const NOTE_MARKER = /\[\[note:(\d+)\]\]/g;
 
-function ConfirmMsg({ action, onConfirm }) {
+function ConfirmMsg({ action, onConfirm, resolve, onOpen }) {
   const [done, setDone] = useState(false);
   const act = (approve) => { if (done) return; setDone(true); onConfirm(approve); };
   return (
     <div className="msg bot confirm">
-      <div className="confirm-text">{action.summary}</div>
+      <div className="confirm-text">{renderReply(action.summary || "", resolve, onOpen)}</div>
       {!done && (
         <div className="confirm-actions">
           <button className="confirm-btn yes" onClick={() => act(true)}>Confirm</button>
@@ -22,7 +22,7 @@ function ConfirmMsg({ action, onConfirm }) {
 }
 
 // A select action (link_notes): the user checks which candidate notes to link.
-function SelectMsg({ action, onConfirm }) {
+function SelectMsg({ action, onConfirm, resolve, onOpen }) {
   const candidates = (action.args && action.args.candidates) || [];
   const [sel, setSel] = useState(() => new Set((action.args && action.args.linked_note_ids) || []));
   const [done, setDone] = useState(false);
@@ -38,7 +38,7 @@ function SelectMsg({ action, onConfirm }) {
   };
   return (
     <div className="msg bot confirm select">
-      <div className="confirm-text">{action.summary}</div>
+      <div className="confirm-text">{renderReply(action.summary || "", resolve, onOpen)}</div>
       <div className="link-picker">
         {candidates.map((c) => (
           <label key={c.note_id} className={"link-opt" + (sel.has(c.note_id) ? " on" : "")}>
@@ -68,14 +68,19 @@ function SelectMsg({ action, onConfirm }) {
 function NoteMiniCard({ id, note, onOpen }) {
   const title = (note && note.title) || ("Note #" + id);
   const path = note && note.path;
-  const date = note && note.date ? fmtDate(note.date) : "";
+  const date = note && note.date ? fmtDateShort(note.date) : "";
+  const links = note && Number.isFinite(note.links) ? note.links : 0;
+  const attachments = note && Number.isFinite(note.attachments) ? note.attachments : 0;
+  const hasMeta = path || date || links > 0 || attachments > 0;
   return (
     <button className="note-mini" onClick={() => onOpen(id)}>
       <span className="note-mini-title">{title}</span>
-      {(path || date) && (
+      {hasMeta && (
         <span className="note-mini-meta">
           {path && <span className="note-mini-path">{path}</span>}
           {date && <span className="note-mini-date">{date}</span>}
+          {links > 0 && <span className="note-mini-count" title="linked notes">🔗 {links}</span>}
+          {attachments > 0 && <span className="note-mini-count" title="attachments">📎 {attachments}</span>}
         </span>
       )}
     </button>
@@ -113,8 +118,8 @@ function Message({ m, onConfirm, onCite, resolve }) {
   }
   if (m.action) {
     return m.action.kind === "select"
-      ? <SelectMsg action={m.action} onConfirm={onConfirm} />
-      : <ConfirmMsg action={m.action} onConfirm={onConfirm} />;
+      ? <SelectMsg action={m.action} onConfirm={onConfirm} resolve={resolve} onOpen={onCite} />
+      : <ConfirmMsg action={m.action} onConfirm={onConfirm} resolve={resolve} onOpen={onCite} />;
   }
   const cls = "msg " + (m.role === "user" ? "user" : "bot") + (m.muted ? " muted" : "");
   const text = m.text || "";
@@ -144,28 +149,42 @@ export default function Chat({ hidden }) {
   const msgs = state.chat.messages;
   const [cache, setCache] = useState({});
 
-  // Citations across the thread give title/path/date for referenced notes.
+  // Citations give an instant title/path/date; the fetched detail (cache) adds
+  // link/attachment counts and takes precedence once it lands.
   const citeMap = {};
   for (const m of msgs) {
     for (const c of m.citations || []) citeMap[c.note_id] = c;
   }
-  const resolve = (id) => citeMap[id] || cache[id] || null;
+  const resolve = (id) => cache[id] || citeMap[id] || null;
 
-  // Any marker id the model emitted that isn't cited is fetched on demand.
+  // Every referenced note (marker or citation) is fetched once for its full
+  // detail — title, path, date, and link/attachment counts — and cached.
   useEffect(() => {
     const ids = new Set();
     for (const m of msgs) {
-      if (m.role === "user" || !m.text) continue;
-      let match;
-      NOTE_MARKER.lastIndex = 0;
-      while ((match = NOTE_MARKER.exec(m.text))) ids.add(Number(match[1]));
+      const sources = [];
+      if (m.role !== "user" && m.text) sources.push(m.text);
+      if (m.action && m.action.summary) sources.push(m.action.summary);
+      for (const src of sources) {
+        let match;
+        NOTE_MARKER.lastIndex = 0;
+        while ((match = NOTE_MARKER.exec(src))) ids.add(Number(match[1]));
+      }
+      for (const c of m.citations || []) ids.add(Number(c.note_id));
     }
-    const missing = [...ids].filter((id) => !citeMap[id] && !cache[id]);
+    const missing = [...ids].filter((id) => !cache[id]);
     if (!missing.length) return;
     let alive = true;
     Promise.all(missing.map((id) =>
       api.fetchNote(id)
-        .then((n) => (n ? { note_id: id, title: n.title, path: n.path, date: n.created_at } : null))
+        .then((n) => (n ? {
+          note_id: id,
+          title: n.title,
+          path: n.path,
+          date: n.created_at,
+          links: linkedItems(n).length,
+          attachments: (n.attachments || []).length,
+        } : null))
         .catch(() => null)
     )).then((rows) => {
       if (!alive) return;
