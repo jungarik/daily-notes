@@ -77,8 +77,13 @@ function NoteMiniCard({ id, note, onOpen }) {
       <span className="note-mini-title">{title}</span>
       {hasMeta && (
         <span className="note-mini-meta">
-          {path && <span className="note-mini-path">{path}</span>}
-          {date && <span className="note-mini-date">{date}</span>}
+          {path && (
+            <span className="note-mini-path" title={path}>
+              <span className="note-mini-ic">📁</span>
+              <bdi className="note-mini-path-txt">{path}</bdi>
+            </span>
+          )}
+          {date && <span className="note-mini-date" title="created">📅 {date}</span>}
           {links > 0 && <span className="note-mini-count" title="linked notes">🔗 {links}</span>}
           {attachments > 0 && <span className="note-mini-count" title="attachments">📎 {attachments}</span>}
         </span>

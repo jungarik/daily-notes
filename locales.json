@@ -63,7 +63,16 @@
     "cmd_reminders": "Upcoming reminders",
     "cmd_timezone": "Set your timezone",
     "cmd_language": "Set your language",
-    "cmd_user": "Your settings"
+    "cmd_user": "Your settings",
+    "action_create_note": "Create a note: “{text}”.",
+    "action_set_note_path": "Move this note to “{path}”:\n[[note:{id}]]",
+    "action_add_note_tags": "Add tags {tags} to this note:\n[[note:{id}]]",
+    "action_enrich_note": "Apply metadata “{title}” ({type}) at “{path}”, tags {tags} to this note:\n[[note:{id}]]",
+    "action_enrich_note_plain": "Enrich this note (classify type/title/path/tags):\n[[note:{id}]]",
+    "action_create_reminder": "Create a reminder for {when}: “{text}”.",
+    "action_create_reminder_note": "Create a reminder for {when}: “{text}”.\n[[note:{id}]]",
+    "action_link_notes": "Link this note to the notes you select below:\n[[note:{id}]]",
+    "action_generic": "Run {name} with {args}."
   },
   "uk": {
     "folder_inbox": "Вхідні",
@@ -129,6 +138,15 @@
     "cmd_reminders": "Найближчі нагадування",
     "cmd_timezone": "Встановити часовий пояс",
     "cmd_language": "Встановити мову",
-    "cmd_user": "Ваші налаштування"
+    "cmd_user": "Ваші налаштування",
+    "action_create_note": "Створити нотатку: «{text}».",
+    "action_set_note_path": "Перемістити цю нотатку до «{path}»:\n[[note:{id}]]",
+    "action_add_note_tags": "Додати теги {tags} до цієї нотатки:\n[[note:{id}]]",
+    "action_enrich_note": "Застосувати метадані «{title}» ({type}) у «{path}», теги {tags} до цієї нотатки:\n[[note:{id}]]",
+    "action_enrich_note_plain": "Збагатити цю нотатку (тип/назва/шлях/теги):\n[[note:{id}]]",
+    "action_create_reminder": "Створити нагадування на {when}: «{text}».",
+    "action_create_reminder_note": "Створити нагадування на {when}: «{text}».\n[[note:{id}]]",
+    "action_link_notes": "Зв'язати цю нотатку з обраними нижче нотатками:\n[[note:{id}]]",
+    "action_generic": "Виконати {name} з {args}."
   }
 }

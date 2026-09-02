@@ -159,8 +159,13 @@
   .note-mini:first-child { margin-top: 0; }
   .note-mini:hover { border-color: #2f6feb; }
   .note-mini-title { font-size: 14px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
-  .note-mini-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); }
-  .note-mini-path { overflow-wrap: anywhere; }
+  .note-mini-meta { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--text-muted); overflow: hidden; }
+  .note-mini-path { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 3px; overflow: hidden; }
+  .note-mini-ic { flex: none; }
+  /* Truncate the path on the LEFT so the root folder drops first and the
+     specific sub-folder stays visible (rtl base puts the ellipsis at the start;
+     the path text itself still reads left-to-right). */
+  .note-mini-path-txt { flex: 1 1 auto; min-width: 0; direction: rtl; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .note-mini-date { flex: none; }
   .note-mini-count { flex: none; }
   .msg.confirm { background: var(--bg-alt); border: 1px solid var(--border); }

@@ -77,7 +77,9 @@ If the model omits markers, the cited notes still render as cards below the
 reply, so references are never lost. Confirmation/select action summaries carry
 the same `[[note:ID]]` markers (the deterministic `summarize_write` emits them
 for the note being acted on), so the confirm card also shows a preview card for
-its target note, resolved the same way.
+its target note, resolved the same way. `summarize_write` is localized: it takes
+the caller's `locale` and renders each action's summary from `locales.json`
+(`action_*` keys, en/uk), so confirmations read in the user's language.
 
 ## Safety and extension
 

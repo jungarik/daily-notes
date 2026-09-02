@@ -5,6 +5,7 @@ import re
 import uuid
 
 import config
+import i18n
 from common import embedings
 from tools.enrich import db
 from agents.enrich.state import ActionPlanState, EnrichState, context_from_state
@@ -38,58 +39,49 @@ def _guardrail_call(call: dict) -> dict:
     return {**call, "args": args}
 
 
-def _marker(note_id) -> str:
-    """A note reference the web app renders as a clickable preview card."""
-    return "[[note:%s]]" % note_id
+def _tag_text(tags) -> str:
+    return ", ".join(tags) if tags else ""
 
 
-def summarize_write(name: str, args: dict) -> str:
+def summarize_write(name: str, args: dict, locale: str | None = None) -> str:
+    """A localized, human-readable summary of a pending write for confirmation.
+    Note references are embedded as `[[note:ID]]` markers (rendered as cards)."""
+    note_id = args.get("note_id")
+
     if name == "create_note":
-        return "Create a note: “%s”." % args.get("text", "").strip()
+        return i18n.t(locale, "action_create_note", text=args.get("text", "").strip())
 
     if name == "set_note_path":
-        return "Move this note to “%s”:\n%s" % (
-            args.get("path", "").strip(),
-            _marker(args.get("note_id")),
-        )
+        return i18n.t(locale, "action_set_note_path",
+                      path=args.get("path", "").strip(), id=note_id)
 
     if name == "add_note_tags":
-        return "Add tags %s to this note:\n%s" % (
-            args.get("tags") or [],
-            _marker(args.get("note_id")),
-        )
+        return i18n.t(locale, "action_add_note_tags",
+                      tags=_tag_text(args.get("tags")), id=note_id)
 
     if name == "enrich_note":
         if args.get("title"):
-            return "Apply metadata “%s” (%s) at “%s”, tags %s to this note:\n%s" % (
-                args.get("title"),
-                args.get("type"),
-                args.get("path"),
-                args.get("tags") or [],
-                _marker(args.get("note_id")),
-            )
+            return i18n.t(locale, "action_enrich_note",
+                          title=args.get("title"), type=args.get("type"),
+                          path=args.get("path"), tags=_tag_text(args.get("tags")),
+                          id=note_id)
 
-        return "Enrich this note (classify type/title/path/tags):\n%s" % (
-            _marker(args.get("note_id")),
-        )
+        return i18n.t(locale, "action_enrich_note_plain", id=note_id)
 
     if name == "create_reminder":
-        base = "Create a reminder for %s: “%s”." % (
-            args.get("remind_at"),
-            (args.get("text") or "").strip(),
-        )
+        when = args.get("remind_at")
+        text = (args.get("text") or "").strip()
 
-        if args.get("note_id"):
-            return "%s\n%s" % (base, _marker(args.get("note_id")))
+        if note_id:
+            return i18n.t(locale, "action_create_reminder_note",
+                          when=when, text=text, id=note_id)
 
-        return base
+        return i18n.t(locale, "action_create_reminder", when=when, text=text)
 
     if name == "link_notes":
-        return "Link this note to the notes you select below:\n%s" % (
-            _marker(args.get("note_id")),
-        )
+        return i18n.t(locale, "action_link_notes", id=note_id)
 
-    return "Run %s with %s." % (name, args)
+    return i18n.t(locale, "action_generic", name=name, args=args)
 
 
 def _link_candidates(user_id: int, note: dict, preselect_ids: list[int]) -> tuple:
@@ -149,7 +141,7 @@ def _link_candidates(user_id: int, note: dict, preselect_ids: list[int]) -> tupl
     return candidates, preselected
 
 
-def _link_action(user_id: int, call: dict) -> dict:
+def _link_action(user_id: int, call: dict, locale: str | None = None) -> dict:
     """Validate a link_notes call and enrich its args with pickable candidates.
 
     Returns either an action dict (kind='select') or a tool error message dict.
@@ -189,7 +181,7 @@ def _link_action(user_id: int, call: dict) -> dict:
     return {
         "name": "link_notes",
         "args": args,
-        "summary": summarize_write("link_notes", args),
+        "summary": summarize_write("link_notes", args, locale),
         "kind": "select",
     }
 
@@ -201,7 +193,8 @@ def link_context(state) -> dict:
     write/validate nodes, mirroring how enrich_note loads metadata_context first.
     The resulting proposal (or an error) is stashed for the downstream node.
     """
-    proposal = _link_action(context_from_state(state).user_id, state["tool_call"])
+    ctx = context_from_state(state)
+    proposal = _link_action(ctx.user_id, state["tool_call"], ctx.locale)
 
     return {"link_proposal": proposal}
 
@@ -234,7 +227,8 @@ def prepare(state: EnrichState) -> dict:
         proposal = state["link_proposal"]
         args, summary, kind = proposal["args"], proposal["summary"], "select"
     else:
-        args, summary, kind = call["args"], summarize_write(call["name"], call["args"]), None
+        locale = context_from_state(state).locale
+        args, summary, kind = call["args"], summarize_write(call["name"], call["args"], locale), None
 
     pending = {"action_id": str(uuid.uuid4()), "tool_call_id": call["id"],
                "name": call["name"], "args": args, "summary": summary}
@@ -273,5 +267,6 @@ def validate(state: ActionPlanState) -> dict:
             return {"messages": [*state["messages"], message],
                     "tool_call": None, "action": None}
     return {"action": {"name": call["name"], "args": call["args"],
-                       "summary": summarize_write(call["name"], call["args"])},
+                       "summary": summarize_write(call["name"], call["args"],
+                                                  context_from_state(state).locale)},
             "tool_call": None}
