@@ -17,12 +17,14 @@ from agents.conversation.nodes import model as chat_model
 from agents.conversation.nodes import read as chat_read
 from agents.conversation.state import initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
-from agents.enrich import tools as enrich_tools
 from agents.enrich.nodes import approval as enrich_approval
 from agents.enrich.nodes import model as enrich_model
-from agents.enrich.state import context_data as enrich_context_data
+from agents.enrich.state import Ctx as EnrichCtx
+from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich.state import initial_state as enrich_initial_state
-from agents.enrich.tools import handlers as enrich_handlers
+from tools import enrich as enrich_tools
+from tools.enrich import add_note_tags, create_note, list_paths
+from agents.runtime.execute_tool import execute_tool as execute_enrich_tool
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -307,18 +309,41 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIn("create_reminder", names)
 
     def test_enrich_add_note_tags_merges_existing_tags(self):
-        with patch.object(enrich_handlers.db, "get_note_for_user",
+        with patch.object(add_note_tags.db, "get_note_for_user",
                           return_value={"id": 4, "tags": ["old", "keep"]}), \
-                patch.object(enrich_handlers.db, "set_tags") as set_tags:
-            result = json.loads(enrich_handlers.execute_tool(
-                enrich_handlers.Ctx(7, "now", "tz", "en"),
+                patch.object(add_note_tags.db, "set_tags") as set_tags:
+            result = json.loads(execute_enrich_tool(
+                enrich_tools.TOOLS,
+                enrich_context_data(EnrichCtx(7, "now", "tz", "en")),
                 "add_note_tags",
                 {"note_id": 4, "tags": ["New", "old", ""]},
+                "enrich",
             ))
 
         self.assertEqual({"ok": True, "note_id": 4,
                           "tags": ["old", "keep", "new"]}, result)
         set_tags.assert_called_once_with(4, ["old", "keep", "new"])
+
+    def test_enrich_tools_validate_context_and_args_values(self):
+        with patch.object(add_note_tags.db, "get_note_for_user") as get_note, \
+                patch.object(create_note.db, "save_note") as save_note, \
+                patch.object(list_paths.db, "list_paths") as paths:
+            self.assertEqual(
+                "Error: context is missing required values: user_id.",
+                add_note_tags.invoke({}, {"note_id": 4, "tags": ["new"]}),
+            )
+            self.assertEqual(
+                "Error: args is missing required values: text.",
+                create_note.invoke({"user_id": 7}, {"text": ""}),
+            )
+            self.assertEqual(
+                "Error: args must be an object.",
+                list_paths.invoke({"user_id": 7}, None),
+            )
+
+        get_note.assert_not_called()
+        save_note.assert_not_called()
+        paths.assert_not_called()
 
     def test_chat_handoff_action_is_planned_by_enrich_subgraph(self):
         create = Mock(return_value=completion(

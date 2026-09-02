@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from agents.enrich import api as enrich_service
 from agents.enrich.nodes import reminder
-from agents.enrich.tools import handlers
+from tools.enrich import create_reminder
 
 
 class ReminderAgentTests(unittest.TestCase):
@@ -50,8 +50,8 @@ class ReminderAgentTests(unittest.TestCase):
             "text": "Follow up on roadmap", "note_id": 20,
             "remind_at": "2026-09-01T09:00:00+00:00",
         }}
-        with patch.object(handlers.db, "save_note") as save_note, \
-                patch.object(handlers.db, "attach_reminder",
+        with patch.object(create_reminder.db, "save_note") as save_note, \
+                patch.object(create_reminder.db, "attach_reminder",
                              return_value=3) as attach:
             result = enrich_service.execute_action(
                 7, action, datetime.now(timezone.utc), timezone.utc, "en")
@@ -66,10 +66,10 @@ class ReminderAgentTests(unittest.TestCase):
             "text": "Call mom tomorrow",
             "remind_at": "2026-09-01T09:00:00+00:00",
         }}
-        with patch.object(handlers.db, "save_note", return_value=30) as save_note, \
-                patch.object(handlers.db, "save_chunks") as save_chunks, \
-                patch.object(handlers.embedings, "build_chunks", return_value=[]) as chunks, \
-                patch.object(handlers.db, "attach_reminder", return_value=4) as attach:
+        with patch.object(create_reminder.db, "save_note", return_value=30) as save_note, \
+                patch.object(create_reminder.db, "save_chunks") as save_chunks, \
+                patch.object(create_reminder.embedings, "build_chunks", return_value=[]) as chunks, \
+                patch.object(create_reminder.db, "attach_reminder", return_value=4) as attach:
             result = enrich_service.execute_action(
                 7, action, datetime.now(timezone.utc), timezone.utc, "en")
 

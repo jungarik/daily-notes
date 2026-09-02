@@ -6,7 +6,7 @@ import logging
 import config
 from agents.runtime import model_gateway
 from agents.enrich.state import ActionPlanState, EnrichState
-from agents.enrich.tools import TOOL_SPECS
+from tools.enrich import TOOL_SPECS
 
 logger = logging.getLogger(__name__)
 

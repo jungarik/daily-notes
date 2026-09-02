@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal, TypedDict
 from zoneinfo import ZoneInfo
 
+from agents.contracts import ToolResult
 
 
 class ConversationContext:
@@ -21,11 +22,15 @@ class ConversationContext:
     def cite(self, note_id: int, title: str) -> None:
         if note_id not in self._cited:
             self._cited.add(note_id)
-            self.citations.append({"note_id": note_id, "title": title or "note"})
+            self.citations.append({
+                "note_id": note_id,
+                "title": title or "note",
+            })
 
     def record_tool(self, name: str, args: dict, result=None) -> None:
         self.trace["tools"].append({
-            "name": name, "args": args or {},
+            "name": name,
+            "args": args or {},
             "result": str(result)[:1000] if result is not None else None,
         })
 
@@ -52,10 +57,31 @@ class ChatState(TypedDict, total=False):
     completed_action_id: str | None
 
 
-def _context_data(ctx: Ctx) -> dict:
-    now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
-    return {"user_id": ctx.user_id, "now": now, "tz": str(ctx.tz),
-            "locale": ctx.locale}
+def _context_to_dict(ctx: Ctx) -> dict:
+    return {
+        "user_id": ctx.user_id,
+        "now": ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now,
+        "tz": str(ctx.tz),
+        "locale": ctx.locale,
+    }
+
+
+def tool_context(ctx: Ctx) -> dict:
+    return {
+        "user_id": ctx.user_id,
+        "tz": ctx.tz,
+    }
+
+
+def apply_tool_result(ctx: Ctx, result: ToolResult) -> None:
+    for citation in result.citations:
+        ctx.cite(
+            citation["note_id"],
+            citation.get("title") or "note",
+        )
+
+    if result.retrieved_chunks:
+        ctx.trace.setdefault("retrieved_chunks", []).extend(result.retrieved_chunks)
 
 
 def _restore(value, factory):
@@ -85,7 +111,7 @@ def context_update(ctx: Ctx) -> dict:
 def initial_state(ctx: Ctx, messages: list, pending: dict | None = None,
                   reference_notes: list[dict] | None = None) -> ChatState:
     return {
-        "context": _context_data(ctx), "messages": list(messages), "steps": 0,
+        "context": _context_to_dict(ctx), "messages": list(messages), "steps": 0,
         "tool_call": None, "pending": pending,
         "action": pending.get("action") if pending else None,
         "completed_action_id": None, "citations": [],

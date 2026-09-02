@@ -1,10 +1,61 @@
-"""Shared deterministic note metadata helpers."""
+"""Shared deterministic helpers."""
 
+import json
 import config
 import i18n
 
 TYPES = ("idea", "task", "reminder", "note", "question", "link")
 PRIORITIES = ("low", "med", "high")
+
+
+def json_text(obj) -> str:
+    return json.dumps(obj, ensure_ascii=False, default=str)
+
+
+def note_label(title, text) -> str:
+    title = (title or "").strip()
+
+    if title:
+        return title
+
+    snippet = " ".join((text or "").split())
+
+    if not snippet:
+        return "note"
+
+    return snippet[:40] + "…" if len(snippet) > 40 else snippet
+
+
+def _is_set(value) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return bool(value.strip())
+
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+
+    return True
+
+
+def required_values_error(value, name: str, keys: list[str]) -> str | None:
+    if not isinstance(value, dict):
+        return "Error: %s must be an object." % name
+
+    not_set = [
+        key
+        for key in keys
+        if key not in value or not _is_set(value.get(key))
+    ]
+
+    if not_set:
+        return "Error: %s is missing required values: %s." % (name, ", ".join(not_set))
+
+    return None
+
+
+required_keys_error = required_values_error
 
 
 def localized_root_folders(language: str | None) -> tuple[dict[str, str], str]:
@@ -43,7 +94,7 @@ def enforce_root(path, root_folders, default_root_folder):
 def normalize_metadata(data: dict, text: str, root_folders=None,
                        default_root_folder=None) -> dict:
     note_type = str(data.get("type", "note")).lower()
-    
+
     if note_type not in TYPES:
         note_type = "note"
 
@@ -56,8 +107,8 @@ def normalize_metadata(data: dict, text: str, root_folders=None,
         priority = "low"
 
     path = enforce_root(
-      clean_path(data.get("path")) or default_root_folder, 
-      root_folders, 
+      clean_path(data.get("path")) or default_root_folder,
+      root_folders,
       default_root_folder)
 
     return {
@@ -69,3 +120,5 @@ def normalize_metadata(data: dict, text: str, root_folders=None,
 
 
 normalize = normalize_metadata
+_json = json_text
+_label = note_label

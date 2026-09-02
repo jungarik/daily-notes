@@ -8,9 +8,11 @@ from unittest.mock import Mock, patch
 import config
 from agents.enrich import graph as enrich_graph
 from agents.enrich.nodes import metadata as metadata_nodes
-from agents.enrich.state import context_data
-from agents.enrich.tools import Ctx, METADATA_CONTEXT_TOOLS, TOOL_SPECS
-from agents.enrich.tools import handlers as tool_handlers
+from agents.enrich.state import Ctx, context_to_dict
+from tools.enrich import METADATA_CONTEXT_TOOLS, TOOL_SPECS
+from tools import enrich as enrich_tools
+from tools.enrich import enrich_note, find_related_notes
+from agents.runtime.execute_tool import execute_allowed_tool
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -31,10 +33,16 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertNotIn("find_related_notes", exposed)
         self.assertIn("find_related_notes", METADATA_CONTEXT_TOOLS)
         ctx = Ctx(7, "now", tz="UTC", locale="en")
-        with patch.object(tool_handlers, "_embed", return_value="vector"), \
-                patch.object(tool_handlers.db, "related_notes", return_value=[]) as related:
-            result = tool_handlers.execute_context_tool(
-                ctx, "find_related_notes", {"text": "Garden", "exclude_note_id": None})
+        with patch.object(find_related_notes.embedings, "embed", return_value="vector"), \
+                patch.object(find_related_notes.db, "related_notes", return_value=[]) as related:
+            result = execute_allowed_tool(
+                enrich_tools.TOOLS,
+                METADATA_CONTEXT_TOOLS,
+                context_to_dict(ctx),
+                "find_related_notes",
+                {"text": "Garden", "exclude_note_id": None},
+                "enrich",
+            )
         self.assertEqual([], json.loads(result))
         related.assert_called_once_with(7, "vector", config.ENRICH_SIMILAR_LIMIT)
 
@@ -51,9 +59,9 @@ class EnrichMetadataTests(unittest.TestCase):
                                   "default_root": "Projects"},
             "find_related_notes": related,
         }
-        context_tool = Mock(side_effect=lambda _ctx, name, _args:
+        context_tool = Mock(side_effect=lambda _registry, _allowed, _ctx, name, _args, _owner:
                             json.dumps(context_results[name]))
-        with patch.object(metadata_nodes, "execute_context_tool", context_tool), \
+        with patch.object(metadata_nodes, "execute_allowed_tool", context_tool), \
                 patch.object(metadata_nodes.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create):
             result = enrich_graph.METADATA_GRAPH.invoke({
@@ -97,15 +105,15 @@ class EnrichMetadataTests(unittest.TestCase):
                                   "default_root": "Projects"},
             "find_related_notes": [],
         }
-        context_tool = Mock(side_effect=lambda _ctx, name, _args:
+        context_tool = Mock(side_effect=lambda _registry, _allowed, _ctx, name, _args, _owner:
                             json.dumps(context_results[name]))
-        with patch.object(metadata_nodes, "execute_context_tool", context_tool), \
+        with patch.object(metadata_nodes, "execute_allowed_tool", context_tool), \
                 patch.object(metadata_nodes.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create), \
                 patch("agents.enrich.nodes.write.db.get_note_for_user", return_value=note):
             result = enrich_graph.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich note 4"}],
-                "context": context_data(ctx),
+                "context": context_to_dict(ctx),
                 "tool_specs": [{"type": "function", "function": {
                     "name": "enrich_note", "parameters": {"type": "object"}}}],
                 "steps": 0, "tool_call": None, "action": None,
@@ -120,13 +128,15 @@ class EnrichMetadataTests(unittest.TestCase):
         proposed = {"type": "task", "title": "Ship release", "path": "Projects/App",
                     "tags": ["release"], "priority": "high"}
         note = {"id": 4, "text": "Ship the app release"}
-        with patch.object(tool_handlers.db, "get_note_for_user", return_value=note), \
-                patch.object(tool_handlers.db, "get_language", return_value="en"), \
-                patch.object(tool_handlers.db, "set_metadata") as save, \
-                patch.object(tool_handlers.embedings, "embed",
+        with patch.object(enrich_note.db, "get_note_for_user", return_value=note), \
+                patch.object(enrich_note.db, "get_language", return_value="en"), \
+                patch.object(enrich_note.db, "set_metadata") as save, \
+                patch.object(find_related_notes.embedings, "embed",
                              side_effect=AssertionError("Embedding during confirmation")):
-            result = json.loads(tool_handlers._enrich_note(
-            Ctx(7, "now"), {"note_id": 4, **proposed}))
+            result = json.loads(enrich_note.invoke(
+                context_to_dict(Ctx(7, "now")),
+                {"note_id": 4, **proposed},
+            ))
 
         self.assertEqual("Ship release", result["title"])
         save.assert_called_once_with(

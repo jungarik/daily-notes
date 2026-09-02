@@ -19,10 +19,13 @@ SYSTEM_PROMPT = (
 
 def with_system(messages: list[dict], now=None, tz=None) -> list[dict]:
     content = SYSTEM_PROMPT
+
     if now is not None:
         value = now.isoformat() if hasattr(now, "isoformat") else str(now)
         content += (f" Current local date and time: {value}. Timezone: {tz}. "
                     "Resolve relative agenda dates from this value.")
+
     if not messages or messages[0].get("role") != "system":
         return [{"role": "system", "content": content}, *messages]
+
     return [{"role": "system", "content": content}, *messages[1:]]

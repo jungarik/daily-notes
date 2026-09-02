@@ -1,23 +1,35 @@
 """OpenAI tool schemas and write classification for the enrichment agent."""
 
 WRITE_TOOLS = {
-    "create_note", "set_note_path", "enrich_note", "create_reminder",
+    "create_note",
+    "set_note_path",
+    "enrich_note",
+    "create_reminder",
     "add_note_tags",
+}
+
+METADATA_CONTEXT_TOOLS = {
+    "get_note_context",
+    "list_paths",
+    "list_tags",
+    "get_vault_context",
+    "find_related_notes",
 }
 
 
 def _fn(name, description, properties, required):
     return {
-              "type": "function",
-              "function": {
-                "name": name,
-                "description": description,
-                "parameters": {
-                  "type": "object",
-                  "properties": properties, 
-                  "required": required
-              },
-    }}
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        },
+    }
 
 
 TOOL_SPECS = [

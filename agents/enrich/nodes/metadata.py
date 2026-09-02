@@ -6,11 +6,21 @@ import time
 
 import config
 from common import helper
+from agents.contracts import ToolResult
+from tools import enrich as tools
 from agents.enrich.prompts import enrichment_prompt
-from agents.enrich.tools import Ctx, execute_context_tool
+from agents.enrich.state import Ctx, context_to_dict
+from agents.runtime.execute_tool import execute_allowed_tool
 from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_text(result) -> str:
+    if isinstance(result, ToolResult):
+        return helper.json_text(result.data)
+
+    return str(result)
 
 
 def _user_id(state: dict) -> int:
@@ -25,7 +35,14 @@ def _context(state: dict, user_id: int) -> Ctx:
 
 def _tool(ctx: Ctx, name: str, args: dict, trace: list[dict]):
     started = time.perf_counter()
-    result = execute_context_tool(ctx, name, args)
+    result = _tool_text(execute_allowed_tool(
+        tools.TOOLS,
+        tools.METADATA_CONTEXT_TOOLS,
+        context_to_dict(ctx),
+        name,
+        args,
+        "enrich",
+    ))
     latency_ms = round((time.perf_counter() - started) * 1000)
     if result.startswith("Error:") or result.startswith("Error running"):
         trace.append({"kind": "tool", "tool": name, "status": "error",

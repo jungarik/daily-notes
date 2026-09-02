@@ -5,9 +5,8 @@ import re
 import uuid
 
 import config
-from agents.enrich.tools import db
+from tools.enrich import db
 from agents.enrich.state import ActionPlanState, EnrichState, context_from_state
-from agents.enrich.tools import summarize_write
 
 logger = logging.getLogger(__name__)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
@@ -31,9 +30,48 @@ def _guardrail_call(call: dict) -> dict:
     """Normalize write-tool arguments that must be safe before confirmation."""
     if call["name"] != "create_note":
         return call
+
     args = dict(call.get("args") or {})
     args["text"] = _atomic_note_text(args.get("text") or "")
+
     return {**call, "args": args}
+
+
+def summarize_write(name: str, args: dict) -> str:
+    if name == "create_note":
+        return "Create a note: “%s”." % args.get("text", "").strip()
+
+    if name == "set_note_path":
+        return "Move note %s to “%s”." % (
+            args.get("note_id"),
+            args.get("path", "").strip(),
+        )
+
+    if name == "add_note_tags":
+        return "Add tags %s to note %s." % (
+            args.get("tags") or [],
+            args.get("note_id"),
+        )
+
+    if name == "enrich_note":
+        if args.get("title"):
+            return "Apply metadata to note %s: “%s” (%s) at “%s”, tags %s." % (
+                args.get("note_id"),
+                args.get("title"),
+                args.get("type"),
+                args.get("path"),
+                args.get("tags") or [],
+            )
+
+        return "Enrich note %s (classify type/title/path/tags)." % args.get("note_id")
+
+    if name == "create_reminder":
+        return "Create a reminder for %s: “%s”." % (
+            args.get("remind_at"),
+            (args.get("text") or "").strip(),
+        )
+
+    return "Run %s with %s." % (name, args)
 
 
 def prepare(state: EnrichState) -> dict:

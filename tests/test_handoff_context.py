@@ -7,6 +7,7 @@ from unittest.mock import ANY, Mock, patch
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+from agents.contracts import ToolResult
 from agents.conversation import api as chat_service
 from agents.conversation import graph as chat_loop
 from agents.conversation.nodes import dispatch as chat_dispatch
@@ -14,12 +15,13 @@ from agents.conversation.nodes import model as chat_model
 from agents.conversation.nodes import read as chat_read
 from agents.conversation.state import ConversationContext as ChatCtx, initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
-from agents.enrich import tools as enrich_tools
 from agents.enrich.nodes import model as enrich_model
 from agents.enrich.nodes import read as enrich_read
 from agents.enrich.nodes import write as enrich_write
-from agents.enrich.state import context_data as enrich_context_data
+from agents.enrich.state import Ctx as EnrichCtx
+from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich import api as enrich_service
+from tools import enrich as enrich_tools
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -47,9 +49,11 @@ class HandoffContextTests(unittest.TestCase):
                        call_id="write-1"),
         ]
 
-        def read_tool(tool_ctx, name, args):
-            tool_ctx.cite(4, "Product roadmap")
-            return '{"id": 4, "title": "Product roadmap", "path": "Areas"}'
+        def read_tool(_registry, _context, _name, _args, _owner):
+            return ToolResult(
+                {"id": 4, "title": "Product roadmap", "path": "Areas"},
+                citations=[{"note_id": 4, "title": "Product roadmap"}],
+            )
 
         with patch.object(chat_model, "complete", side_effect=replies), \
                 patch.object(chat_read, "execute_tool", side_effect=read_tool), \
@@ -72,9 +76,11 @@ class HandoffContextTests(unittest.TestCase):
         graph = chat_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "chat:references"}}
 
-        def read_tool(tool_ctx, name, args):
-            tool_ctx.cite(4, "Product roadmap")
-            return '{"id": 4, "title": "Product roadmap"}'
+        def read_tool(_registry, _context, _name, _args, _owner):
+            return ToolResult(
+                {"id": 4, "title": "Product roadmap"},
+                citations=[{"note_id": 4, "title": "Product roadmap"}],
+            )
 
         first_replies = [
             completion(tool_name="get_note", arguments='{"note_id": 4}', call_id="read-1"),
@@ -110,7 +116,7 @@ class HandoffContextTests(unittest.TestCase):
         self.assertEqual("confirm", second["status"])
 
     def test_enrich_planner_can_read_note_before_validated_write(self):
-        ctx = enrich_tools.Ctx(7, "now", tz="UTC", locale="en")
+        ctx = EnrichCtx(7, "now", tz="UTC", locale="en")
         replies = [
             completion(tool_name="get_note_context", arguments='{"note_id": 4}',
                        call_id="read-1"),
@@ -137,11 +143,17 @@ class HandoffContextTests(unittest.TestCase):
 
         self.assertEqual("set_note_path", action["name"])
         self.assertEqual(4, action["args"]["note_id"])
-        read.assert_called_once_with(ANY, "get_note_context", {"note_id": 4})
+        read.assert_called_once_with(
+            ANY,
+            ANY,
+            "get_note_context",
+            {"note_id": 4},
+            "enrich",
+        )
         self.assertEqual(2, create.call_count)
 
     def test_enrich_planner_rejects_note_not_owned_by_user(self):
-        ctx = enrich_tools.Ctx(7, "now", tz="UTC", locale="en")
+        ctx = EnrichCtx(7, "now", tz="UTC", locale="en")
         replies = [
             completion(tool_name="enrich_note", arguments='{"note_id": 999}'),
             completion(content="I need the note id."),

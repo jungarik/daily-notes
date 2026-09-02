@@ -6,7 +6,7 @@ import logging
 import config
 from agents.runtime import model_gateway
 from agents.conversation.state import ChatState
-from agents.conversation.tools import TOOL_SPECS
+from tools.conversation import TOOL_SPECS
 
 logger = logging.getLogger(__name__)
 

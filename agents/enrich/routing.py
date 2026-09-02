@@ -4,7 +4,7 @@ from langgraph.graph import END
 
 import config
 from agents.enrich.state import ActionPlanState, EnrichState
-from agents.enrich.tools import WRITE_TOOLS
+from tools.enrich import WRITE_TOOLS
 
 
 def entry(state: EnrichState):

@@ -4,7 +4,13 @@ from datetime import datetime
 from typing import Literal, TypedDict
 from zoneinfo import ZoneInfo
 
-from agents.enrich.tools import Ctx
+
+class Ctx:
+    def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
+        self.user_id = user_id
+        self.now = now
+        self.tz = tz
+        self.locale = locale
 
 
 class EnrichState(TypedDict, total=False):
@@ -72,10 +78,15 @@ class ReminderPlanState(TypedDict, total=False):
     reminder_trace: list[dict]
 
 
-def context_data(ctx: Ctx) -> dict:
+def context_to_dict(ctx: Ctx) -> dict:
     now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
-    return {"user_id": ctx.user_id, "now": now, "tz": str(ctx.tz),
-            "locale": ctx.locale}
+
+    return {
+        "user_id": ctx.user_id,
+        "now": now,
+        "tz": str(ctx.tz),
+        "locale": ctx.locale,
+    }
 
 
 def _restore(value, factory):
@@ -87,16 +98,31 @@ def _restore(value, factory):
 
 def context_from_state(state: EnrichState | ActionPlanState) -> Ctx:
     data = state["context"]
-    return Ctx(data["user_id"], _restore(data.get("now"), datetime.fromisoformat),
-               tz=_restore(data.get("tz"), ZoneInfo),
-               locale=data.get("locale") or "en")
+
+    return Ctx(
+        data["user_id"],
+        _restore(data.get("now"), datetime.fromisoformat),
+        tz=_restore(data.get("tz"), ZoneInfo),
+        locale=data.get("locale") or "en",
+    )
 
 
 def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> EnrichState:
     action = None
+
     if pending:
-        action = {"name": pending["name"], "args": pending["args"],
-                  "summary": pending["summary"]}
-    return {"context": context_data(ctx), "messages": list(messages), "steps": 0,
-            "tool_call": None, "pending": pending, "action": action,
-            "completed_action_id": None}
+        action = {
+            "name": pending["name"],
+            "args": pending["args"],
+            "summary": pending["summary"],
+        }
+
+    return {
+        "context": context_to_dict(ctx),
+        "messages": list(messages),
+        "steps": 0,
+        "tool_call": None,
+        "pending": pending,
+        "action": action,
+        "completed_action_id": None,
+    }

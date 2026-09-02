@@ -2,9 +2,19 @@
 
 from langgraph.types import interrupt
 
-from agents.enrich.state import EnrichState, context_from_state
-from agents.enrich.tools import execute_tool
+from common import helper
+from agents.contracts import ToolResult
+from tools import enrich as tools
+from agents.enrich.state import EnrichState, context_from_state, context_to_dict
+from agents.runtime.execute_tool import execute_tool
 from agents.runtime import execution_ledger
+
+
+def _tool_text(result) -> str:
+    if isinstance(result, ToolResult):
+        return helper.json_text(result.data)
+
+    return str(result)
 
 
 def run(state: EnrichState) -> dict:
@@ -14,12 +24,19 @@ def run(state: EnrichState) -> dict:
         "action": state["action"], "summary": pending.get("summary"),
     }))
     ctx = context_from_state(state)
+    context = context_to_dict(ctx)
     if approved:
         action = {"name": pending["name"], "args": pending["args"],
                   "summary": pending["summary"]}
         result = execution_ledger.execute_once(
             pending["action_id"], ctx.user_id, "enrich", action,
-            lambda: execute_tool(ctx, pending["name"], pending["args"]),
+            lambda: _tool_text(execute_tool(
+                tools.TOOLS,
+                context,
+                pending["name"],
+                pending["args"],
+                "enrich",
+            )),
         )
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."

@@ -4,7 +4,7 @@ from langgraph.graph import END
 
 import config
 from agents.conversation.state import ChatState
-from agents.conversation.tools import ENRICH_HANDOFF_TOOLS, REMINDER_HANDOFF_TOOLS
+from tools.conversation import ENRICH_HANDOFF_TOOLS, REMINDER_HANDOFF_TOOLS
 
 
 def route_model(state: ChatState):

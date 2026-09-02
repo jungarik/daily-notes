@@ -72,6 +72,22 @@ Consequences (follow these):
   `note_service.delete_bare_note` collects the keys *before* deleting and removes
   them after a successful delete.
 
+## Project code style
+
+- Keep standalone `if` blocks separated from surrounding logic with a single
+  empty line.
+- If a method has a multi-line body, leave one empty line before its final
+  `return` statement. Do not add that empty line for a single-return method.
+- If a function or method call passes more than 3–4 arguments, put each argument
+  on its own line.
+- For Python multi-line call/object/dict/list blocks, keep the opening bracket
+  on the caller/assignment/expression line, put each field or argument on its
+  own line, and put the closing bracket on its own line. For example, use
+  `helper.json_text({` and `result.append({`, not a standalone `{` on the next
+  line.
+- Prefer these rules for new and changed code in this project; do not reformat
+  unrelated code just for style.
+
 ## Layout (current)
 
 The API is organised into **section verticals**, not shared service/store
@@ -210,8 +226,8 @@ the focus/ego state.
 The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
 `agents/conversation/`) — see `devdoc/agentic-chat.md`. A bounded LangGraph
 single-tool-call ReAct workflow (`agents/conversation/graph.py`, `AGENT_MAX_STEPS`) drives
-read tools from `agents/conversation/tools/`: schemas and handlers wrap its RAG
-and database modules (`search_notes`, `get_note`, `neighbors`,
+read tools from `tools/conversation/`: schemas, tool handlers, and tool DB calls
+live outside the agent folder (`search_notes`, `get_note`, `neighbors`,
 `list_reminders`, `list_agenda`, `list_paths`). Conversation owns the explicit specialist handoffs:
 `perform_action(instruction)` for note actions and `set_reminder(instruction)` for
 scheduling. The chat agent
@@ -225,14 +241,23 @@ creation, and delivery implementation. Conversation state lives in `chat_threads
 `pending` handed-off action. `POST /api/chat` returns `{status:"answer", reply,
 citations}` or `{status:"confirm", action}`.
 
+**Agent tools.** Concrete tool implementations live in the root-level `tools/`
+package, not inside `agents/*/tools`. Use `tools/conversation/` for chat read
+tools and `tools/enrich/` for note write/enrichment/reminder tools. Each tool
+file exposes `invoke(context: dict, args: dict)`. Tool specs stay with their
+tool namespace as `tools/conversation/specs.py` and `tools/enrich/specs.py`.
+Agents import tool registries/specs from these packages and execute them through
+`agents/runtime/execute_tool.py`.
+
 **Citations.** Answers are grounded in the notes they drew on: `search_notes`
-uses its tool handler to retrieve structured note evidence and trace chunks. The
-Conversation model builds the answer after the tool returns, and the tool cites
-the distinct source notes (with a title, or a text snippet for un-enriched notes)
-via `Ctx.cite`. `get_note` cites the note it opened. The API returns these as
-`citations:[{note_id,title}]`; the chat UI renders them as chips that open the
-note card. Extend by adding a tool (or, later, a sub-agent) — never by editing
-the loop.
+retrieves structured note evidence and returns a `ToolResult` with `data`,
+`citations`, and `retrieved_chunks`. Tools do not call `Ctx.cite` or mutate
+conversation trace directly. `agents/conversation/state.py` owns context mapping
+and merge helpers (`tool_context`, `apply_tool_result`), while the read node
+renders `ToolResult.data` to JSON text for the model. The API returns citations
+as `citations:[{note_id,title}]`; the chat UI renders them as chips that open
+the note card. Extend by adding a tool file under `tools/` and registering it in
+the corresponding tool package — never by editing the loop.
 
 ## Agent evaluation and observability
 

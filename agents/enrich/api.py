@@ -11,9 +11,10 @@ import logging
 import uuid
 
 from agents.contracts import CaptureProposal
-from agents.enrich.tools import (
-    Ctx, TOOL_SPECS, execute_tool,
-)
+from agents.contracts import ToolResult
+from tools import enrich as tools
+from tools.enrich import TOOL_SPECS
+from agents.runtime.execute_tool import execute_tool
 from agents.contracts import handoff
 from agents.runtime import checkpoint
 from agents.runtime import execution_ledger
@@ -23,12 +24,19 @@ from agents.enrich import graph as loop
 from agents.enrich import db
 from agents.enrich.graph import METADATA_GRAPH
 from agents.enrich.prompts import SYSTEM_PROMPT, planning_messages, with_system
-from agents.enrich.state import context_data
+from agents.enrich.state import Ctx, context_to_dict
 
 logger = logging.getLogger(__name__)
 
 EDITABLE_CAPTURE_FIELDS = {"text", "title", "path", "tags", "type", "priority",
                            "linked_note_ids"}
+
+
+def _tool_text(result) -> str:
+    if isinstance(result, ToolResult):
+        return helper.json_text(result.data)
+
+    return str(result)
 
 
 def _load(user_id, thread_id):
@@ -158,7 +166,7 @@ def plan_action(user_id: int, request, now, tz, locale) -> dict | None:
     try:
         result = loop.ACTION_PLAN_GRAPH.invoke({
             "messages": messages,
-            "context": context_data(ctx),
+            "context": context_to_dict(ctx),
             "tool_specs": TOOL_SPECS,
             "steps": 0,
             "tool_call": None,
@@ -174,7 +182,14 @@ def execute_action(user_id: int, action: dict, now, tz, locale) -> str:
     """Run a planned write action (after the user approved it). Returns the tool's
     result string."""
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    return execute_tool(ctx, action["name"], action.get("args") or {})
+
+    return _tool_text(execute_tool(
+        tools.TOOLS,
+        context_to_dict(ctx),
+        action["name"],
+        action.get("args") or {},
+        "enrich",
+    ))
 
 
 # ----- standalone fast-capture API (transport adapters call these) --------
