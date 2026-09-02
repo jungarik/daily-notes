@@ -160,8 +160,9 @@
   .note-mini:hover { border-color: #2f6feb; }
   .note-mini-title { font-size: 14px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
   .note-mini-meta { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--text-muted); overflow: hidden; }
-  .note-mini-path { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 3px; overflow: hidden; }
-  .note-mini-ic { flex: none; }
+  .note-mini-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+  .note-mini-meta svg { width: 12px; height: 12px; flex: none; }
+  .note-mini-path { flex: 1 1 auto; min-width: 0; overflow: hidden; }
   /* Truncate the path on the LEFT so the root folder drops first and the
      specific sub-folder stays visible (rtl base puts the ellipsis at the start;
      the path text itself still reads left-to-right). */
