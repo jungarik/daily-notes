@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 
 import config
+import i18n
 from agents.enrich.prompts import reminder_extraction_prompt
 from agents.enrich.state import (
     EnrichState, ReminderPlanState, context_from_state,
@@ -46,7 +47,8 @@ def _parse_reminder_time(data: dict, now: datetime) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=now.tzinfo)
 
 
-def _plan_reminder_action(contract: dict, remind_at: datetime) -> dict | None:
+def _plan_reminder_action(contract: dict, remind_at: datetime,
+                          locale: str | None = None) -> dict | None:
     """Build one reminder proposal from a resolved datetime."""
     instruction = contract["instruction"].strip()
     notes = list((contract.get("resolved_entities") or {}).get(
@@ -64,11 +66,16 @@ def _plan_reminder_action(contract: dict, remind_at: datetime) -> dict | None:
             (selected.get("text") or "").split())[:120]
         text = f"{instruction}\nReferenced note: “{label or 'note'}” (id {selected['note_id']})."
     args = {"text": text, "remind_at": remind_at.isoformat()}
+    when = i18n.fmt_datetime(locale, remind_at)
+
     if selected:
         args["note_id"] = int(selected["note_id"])
-    return {"name": "create_reminder", "args": args,
-            "summary": "Create a reminder for %s: “%s”." %
-                       (remind_at.isoformat(), text.strip())}
+        summary = i18n.t(locale, "action_create_reminder_note",
+                         when=when, text=instruction, id=args["note_id"])
+    else:
+        summary = i18n.t(locale, "action_create_reminder", when=when, text=instruction)
+
+    return {"name": "create_reminder", "args": args, "summary": summary}
 
 
 def _latest_user_text(messages: list[dict]) -> str:
@@ -82,6 +89,16 @@ def _now(state):
     if state.get("now") is not None:
         return state["now"]
     return context_from_state(state).now
+
+
+def _locale(state):
+    """Locale from EnrichState context or the reminder plan state's own field."""
+    ctx = state.get("context")
+
+    if ctx and ctx.get("locale"):
+        return ctx["locale"]
+
+    return state.get("locale")
 
 
 def _contract(state: ReminderPlanState | EnrichState) -> dict:
@@ -146,7 +163,7 @@ def validate(state: ReminderPlanState | EnrichState) -> dict:
     try:
         remind_at = _parse_reminder_time(
             state.get("reminder_raw") or {}, _now(state))
-        action = (_plan_reminder_action(_contract(state), remind_at)
+        action = (_plan_reminder_action(_contract(state), remind_at, _locale(state))
                   if remind_at else None)
         trace.append({"kind": "node", "node": "reminder_validation",
                       "status": "ok"})

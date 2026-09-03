@@ -36,6 +36,37 @@ def normalize(code: str | None) -> str | None:
     return None
 
 
+_MONTHS_ABBR = {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "uk": ["січ", "лют", "бер", "кві", "трав", "черв",
+           "лип", "серп", "вер", "жовт", "лист", "груд"],
+}
+_WEEKDAYS_ABBR = {
+    "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "uk": ["пн", "вт", "ср", "чт", "пт", "сб", "нд"],
+}
+
+
+def fmt_datetime(locale: str | None, dt) -> str:
+    """A short, localized 'Wkd, D Mon YYYY, HH:MM' for a datetime."""
+    loc = locale if locale in _LOCALES else DEFAULT_LOCALE
+    months = _MONTHS_ABBR.get(loc, _MONTHS_ABBR["en"])
+    weekdays = _WEEKDAYS_ABBR.get(loc, _WEEKDAYS_ABBR["en"])
+    try:
+        return "%s, %d %s %d, %02d:%02d" % (
+            weekdays[dt.weekday()],
+            dt.day,
+            months[dt.month - 1],
+            dt.year,
+            dt.hour,
+            dt.minute,
+        )
+    except Exception:
+        logger.warning("Bad datetime for locale=%s", loc)
+        return str(dt)
+
+
 def t(locale: str | None, key: str, **kwargs) -> str:
     """Translate `key` for `locale`, formatting with kwargs."""
     loc = locale if locale in _LOCALES else DEFAULT_LOCALE

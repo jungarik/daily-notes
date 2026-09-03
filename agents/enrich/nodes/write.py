@@ -3,6 +3,7 @@
 import logging
 import re
 import uuid
+from datetime import datetime
 
 import config
 import i18n
@@ -70,6 +71,12 @@ def summarize_write(name: str, args: dict, locale: str | None = None) -> str:
 
     if name == "create_reminder":
         when = args.get("remind_at")
+
+        try:
+            when = i18n.fmt_datetime(locale, datetime.fromisoformat(args["remind_at"]))
+        except Exception:
+            pass
+
         text = (args.get("text") or "").strip()
 
         if note_id:

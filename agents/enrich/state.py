@@ -74,6 +74,7 @@ class MetadataState(TypedDict, total=False):
 class ReminderPlanState(TypedDict, total=False):
     contract: dict
     now: object
+    locale: str | None
     reminder_raw: dict
     action: dict | None
     reminder_error: str | None

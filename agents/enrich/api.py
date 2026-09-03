@@ -158,7 +158,7 @@ def plan_action(user_id: int, request, now, tz, locale) -> dict | None:
         contract["resolved_entities"]["referenced_notes"] = notes
         result = loop.REMINDER_PLAN_GRAPH.invoke({
             "contract": contract, "now": now, "action": None,
-            "reminder_trace": [],
+            "reminder_trace": [], "locale": locale,
         })
         return result.get("action")
     ctx = Ctx(user_id, now, tz=tz, locale=locale)

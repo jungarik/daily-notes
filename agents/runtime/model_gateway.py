@@ -43,21 +43,40 @@ def _retry_after(exc: Exception) -> float | None:
 def chat_completion(**kwargs):
     attempts = max(1, config.OPENAI_GATEWAY_MAX_ATTEMPTS)
     last_error = None
+
     for attempt in range(attempts):
         try:
             return openai_client.get_client().chat.completions.create(**kwargs)
         except Exception as exc:
             last_error = exc
             kind = _kind(exc)
-            if kind not in {"model_rate_limited", "model_provider_error",
-                            "model_timeout"} or attempt + 1 >= attempts:
+
+            if (
+                kind not in {
+                    "model_rate_limited",
+                    "model_provider_error",
+                    "model_timeout",
+                }
+                or attempt + 1 >= attempts
+            ):
                 logger.warning("OpenAI chat completion failed: %s", kind)
                 raise ModelGatewayError(kind, str(exc)[:1000]) from exc
+
             delay = _retry_after(exc)
+
             if delay is None:
-                delay = min(config.OPENAI_GATEWAY_MAX_BACKOFF_SECONDS,
-                            config.OPENAI_GATEWAY_BASE_BACKOFF_SECONDS * (2 ** attempt))
-            logger.info("OpenAI chat completion retry %s/%s after %.2fs: %s",
-                        attempt + 1, attempts, delay, kind)
+                delay = min(
+                    config.OPENAI_GATEWAY_MAX_BACKOFF_SECONDS,
+                    config.OPENAI_GATEWAY_BASE_BACKOFF_SECONDS * (2 ** attempt),
+                )
+
+            logger.info(
+                "OpenAI chat completion retry %s/%s after %.2fs: %s",
+                attempt + 1,
+                attempts,
+                delay,
+                kind,
+            )
             time.sleep(delay)
+
     raise ModelGatewayError(_kind(last_error), str(last_error)[:1000])
