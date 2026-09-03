@@ -56,7 +56,9 @@ class ConversationAgendaTests(unittest.TestCase):
         query.assert_called_once_with(
             7, datetime(2026, 9, 2, tzinfo=timezone.utc),
             datetime(2026, 9, 3, tzinfo=timezone.utc))
-        self.assertEqual([{"note_id": 9, "title": "Call Alex"}], ctx.citations)
+        self.assertEqual(
+            [{"note_id": 9, "title": "Call Alex", "path": None, "date": None}],
+            ctx.citations)
 
     def test_semantic_search_no_longer_parses_agenda_dates(self):
         with patch.object(search_notes.embedings, "embed", return_value="vector"), \
@@ -100,7 +102,10 @@ class ConversationAgendaTests(unittest.TestCase):
 
         self.assertEqual("Grow basil", result["evidence"][0]["content"])
         self.assertEqual("Balcony garden", result["evidence"][0]["title"])
-        self.assertEqual([{"note_id": 9, "title": "Balcony garden"}], ctx.citations)
+        self.assertEqual(
+            [{"note_id": 9, "title": "Balcony garden",
+              "path": "Areas/Garden", "date": "2026-08-01T00:00:00+00:00"}],
+            ctx.citations)
 
     def test_conversation_tools_validate_context_and_args_values(self):
         context = {

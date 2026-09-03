@@ -228,7 +228,12 @@ The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
 single-tool-call ReAct workflow (`agents/conversation/graph.py`, `AGENT_MAX_STEPS`) drives
 read tools from `tools/conversation/`: schemas, tool handlers, and tool DB calls
 live outside the agent folder (`search_notes`, `get_note`, `neighbors`,
-`list_reminders`, `list_agenda`, `list_paths`). Conversation owns the explicit specialist handoffs:
+`list_reminders`, `list_agenda`, `list_paths`, `detect_reminder` — a deterministic
+reminder classifier the model can call cheaply). The graph is four role-named
+nodes — `reason`, `act`, `handoff`, `approve` — each a module under
+`conversation/nodes/` with a single public `run`; `handoff` routes to the owning
+specialist via the `HANDOFF_SPECIALIST` map, and `reason` makes a tool-free call
+once the step budget is spent (no separate `final`/`pre_route` nodes). Conversation owns the explicit specialist handoffs:
 `perform_action(instruction)` for note actions and `set_reminder(instruction)` for
 scheduling. The chat agent
 **never mutates data itself**: the loop routes every write to the **enrich agent**

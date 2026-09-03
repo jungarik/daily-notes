@@ -10,9 +10,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from agents.contracts import ToolResult
 from agents.conversation import api as chat_service
 from agents.conversation import graph as chat_loop
-from agents.conversation.nodes import dispatch as chat_dispatch
-from agents.conversation.nodes import model as chat_model
-from agents.conversation.nodes import read as chat_read
+from agents.conversation.nodes import handoff as chat_handoff
+from agents.conversation.nodes import reason as chat_reason
+from agents.conversation.nodes import act as chat_act
 from agents.conversation.state import ConversationContext as ChatCtx, initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
 from agents.enrich.nodes import model as enrich_model
@@ -55,9 +55,9 @@ class HandoffContextTests(unittest.TestCase):
                 citations=[{"note_id": 4, "title": "Product roadmap"}],
             )
 
-        with patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_read, "execute_tool", side_effect=read_tool), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action", planner):
+        with patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_act, "execute_tool", side_effect=read_tool), \
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action", planner):
             result = chat_service.evaluate_turn(
                 7, [{"role": "user", "content": "Open the product roadmap"}],
                 now, timezone.utc, "en")
@@ -87,8 +87,8 @@ class HandoffContextTests(unittest.TestCase):
             completion(content="Here is the roadmap."),
         ]
         first_ctx = ChatCtx(7, now, timezone.utc, "en")
-        with patch.object(chat_model, "complete", side_effect=first_replies), \
-                patch.object(chat_read, "execute_tool", side_effect=read_tool):
+        with patch.object(chat_reason, "_complete", side_effect=first_replies), \
+                patch.object(chat_act, "execute_tool", side_effect=read_tool):
             first = chat_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(
@@ -100,10 +100,10 @@ class HandoffContextTests(unittest.TestCase):
         })
         second_messages = [*first["messages"],
                            {"role": "user", "content": "Enrich that note"}]
-        with patch.object(chat_model, "complete", return_value=completion(
+        with patch.object(chat_reason, "_complete", return_value=completion(
                 tool_name="perform_action",
                 arguments='{"instruction": "Enrich that note"}', call_id="write-1")), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action", planner):
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action", planner):
             second = chat_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(

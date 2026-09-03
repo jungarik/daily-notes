@@ -86,10 +86,19 @@ def evaluate_turn(user_id: int, messages: list[dict], now, tz, locale) -> dict:
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user message. Returns {thread_id, status, reply|action, citations}."""
     thread_id, messages, pending = _load(user_id, thread_id)
-    ctx = _ctx(user_id, now, tz, locale)
+    ctx = _ctx(
+        user_id,
+        now,
+        tz,
+        locale,
+    )
     with checkpoint.session(loop.build_graph, "chat", thread_id) as (graph, graph_config):
         snapshot, messages, pending = _latest_or_projection(
-            graph, graph_config, messages, pending)
+            graph,
+            graph_config,
+            messages,
+            pending,
+        )
         if snapshot.values and checkpoint.is_interrupted(snapshot):
             result = dict(snapshot.values)
         else:
@@ -108,9 +117,17 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
             if snapshot.values:
                 references = snapshot.values.get("reference_notes") or []
             result = loop.invoke(
-                graph, graph_config,
-                initial_state(ctx, messages, pending, references))
+                graph,
+                graph_config,
+                initial_state(
+                    ctx,
+                    messages,
+                    pending,
+                    references,
+                ),
+            )
         _project(thread_id, result)
+
         return _shape(thread_id, result)
 
 

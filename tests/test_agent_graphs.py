@@ -11,10 +11,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 import config
 from agents.conversation import api as chat_api
 from agents.conversation import graph as chat_loop
-from agents.conversation.nodes import approval as chat_approval
-from agents.conversation.nodes import dispatch as chat_dispatch
-from agents.conversation.nodes import model as chat_model
-from agents.conversation.nodes import read as chat_read
+from agents.conversation.nodes import approve as chat_approve
+from agents.conversation.nodes import handoff as chat_handoff
+from agents.conversation.nodes import reason as chat_reason
+from agents.conversation.nodes import act as chat_act
 from agents.conversation.state import initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
 from agents.enrich.nodes import approval as enrich_approval
@@ -47,14 +47,13 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIsNotNone(chat_loop.CHAT_GRAPH.checkpointer)
         self.assertIsNotNone(enrich_loop.ENRICH_GRAPH.checkpointer)
         self.assertEqual(
-            {"pre_route", "model", "read_tool", "enrich_agent", "reminder_agent",
-             "approval", "final"},
+            {"reason", "act", "handoff", "approve"},
             set(chat_loop.CHAT_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
         self.assertEqual(
             {"model", "read_tool", "metadata_context", "metadata_model",
              "metadata_validation", "reminder_model", "reminder_validation",
-             "pending_write", "approval", "final"},
+             "link_context", "pending_write", "approval", "final"},
             set(enrich_loop.ENRICH_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
 
@@ -63,8 +62,8 @@ class AgentGraphTests(unittest.TestCase):
             completion(tool_name="get_note", arguments='{"note_id": 4}'),
             completion(content="The answer."),
         ]
-        with patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_read, "execute_tool", return_value='{"id": 4}') as tool:
+        with patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_act, "execute_tool", return_value='{"id": 4}') as tool:
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Read it"}], "now", "tz", "en")
 
@@ -73,9 +72,9 @@ class AgentGraphTests(unittest.TestCase):
         tool.assert_called_once()
         self.assertEqual("tool", result["messages"][-2]["role"])
 
-    def test_chat_model_provider_error_returns_answer(self):
-        with patch.object(chat_model, "complete",
-                          side_effect=chat_model.model_gateway.ModelGatewayError(
+    def test_chat_reason_provider_error_returns_answer(self):
+        with patch.object(chat_reason, "_complete",
+                          side_effect=chat_reason.model_gateway.ModelGatewayError(
                               "model_rate_limited", "429 Too Many Requests")):
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Please analyze my notes"}],
@@ -85,28 +84,18 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIn("try again", result["reply"])
         self.assertIn("model_error", result["trace"])
 
-    def test_obvious_reminder_pre_routes_without_conversation_model(self):
-        action = {"name": "create_reminder",
-                  "args": {"text": "Remind me tomorrow",
-                           "remind_at": "2026-09-01T09:00:00+00:00"},
-                  "summary": "Create a reminder."}
-        graph = chat_loop.build_graph(InMemorySaver())
-        graph_config = {"configurable": {"thread_id": "chat:pre-route-reminder"}}
-        with patch.object(chat_model, "complete") as complete, \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
-                             return_value=action) as plan:
-            paused = chat_loop.invoke(
-                graph, graph_config,
-                chat_initial_state(
-                    context(),
-                    [{"role": "user",
-                      "content": "Remind me tomorrow to call Ivan"}]))
+    def test_detect_reminder_tool_flags_intent_and_time(self):
+        from tools.conversation import detect_reminder
 
-        complete.assert_not_called()
-        plan.assert_called_once()
-        self.assertEqual("confirm", paused["status"])
-        self.assertEqual("pre-route-reminder", paused["pending"]["tool_call_id"])
-        self.assertEqual("reminder", paused["trace"]["pre_route"])
+        yes = detect_reminder.invoke(
+            {}, {"text": "Remind me tomorrow to call Ivan"}).data
+        self.assertTrue(yes["is_reminder"])
+        self.assertTrue(yes["intent"])
+        self.assertTrue(yes["has_time_hint"])
+
+        no = detect_reminder.invoke(
+            {}, {"text": "What did I note about the pool?"}).data
+        self.assertFalse(no["is_reminder"])
 
     def test_chat_handoff_pauses_and_resume_executes_after_approval(self):
         action = {"name": "create_note", "args": {"text": "Idea"},
@@ -114,9 +103,9 @@ class AgentGraphTests(unittest.TestCase):
         graph = chat_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "chat:handoff"}}
         ctx = context()
-        with patch.object(chat_model, "complete", return_value=completion(
+        with patch.object(chat_reason, "_complete", return_value=completion(
                 tool_name="perform_action", arguments='{"instruction": "save Idea"}')), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
                              return_value=action):
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -126,12 +115,12 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual(action, paused["action"])
         self.assertIn("action_id", paused["pending"])
 
-        with patch.object(chat_approval.execution_ledger, "execute_once",
+        with patch.object(chat_approve.execution_ledger, "execute_once",
                           side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approval.registry.get("enrich"), "execute_action",
+                patch.object(chat_approve.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}'), \
-                patch.object(chat_model, "complete", return_value=completion(content="Created.")):
-            resumed = chat_loop.resume(graph, graph_config, approve=True)
+                patch.object(chat_reason, "_complete", return_value=completion(content="Created.")):
+            resumed = chat_loop.resume(graph, graph_config, True)
 
         self.assertEqual("answer", resumed["status"])
         self.assertEqual("Created.", resumed["reply"])
@@ -145,8 +134,8 @@ class AgentGraphTests(unittest.TestCase):
                        arguments='{"instruction": "add a tag to that note"}'),
             completion(content="Which note should I update?"),
         ]
-        with patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+        with patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
                              return_value=None):
             result = chat_loop.invoke(
                 graph, graph_config,
@@ -233,10 +222,10 @@ class AgentGraphTests(unittest.TestCase):
         graph = chat_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "chat:reminder"}}
         ctx = context()
-        with patch.object(chat_model, "complete", return_value=completion(
+        with patch.object(chat_reason, "_complete", return_value=completion(
                 tool_name="set_reminder",
                 arguments='{"instruction": "Call tomorrow"}')), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
                              return_value=action):
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -245,12 +234,12 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("confirm", paused["status"])
         self.assertEqual("enrich", paused["pending"]["agent"])
 
-        with patch.object(chat_approval.execution_ledger, "execute_once",
+        with patch.object(chat_approve.execution_ledger, "execute_once",
                           side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approval.registry.get("enrich"), "execute_action",
+                patch.object(chat_approve.registry.get("enrich"), "execute_action",
                           return_value='{"reminder_id": 3}') as reminder_execute, \
-                patch.object(chat_model, "complete", return_value=completion(content="Scheduled.")):
-            resumed = chat_loop.resume(graph, graph_config, approve=True)
+                patch.object(chat_reason, "_complete", return_value=completion(content="Scheduled.")):
+            resumed = chat_loop.resume(graph, graph_config, True)
 
         reminder_execute.assert_called_once()
         self.assertEqual("Scheduled.", resumed["reply"])
@@ -385,8 +374,8 @@ class AgentGraphTests(unittest.TestCase):
             completion(content="I couldn't complete the lookup."),
         ]
         with patch.object(chat_loop.config, "AGENT_MAX_STEPS", 1), \
-                patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_read, "execute_tool", return_value="[]"):
+                patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_act, "execute_tool", return_value="[]"):
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Paths"}], "now", "tz", "en")
 

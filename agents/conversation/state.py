@@ -50,7 +50,6 @@ class ChatState(TypedDict, total=False):
     reference_notes: list[dict]
     trace: dict
     steps: int
-    pre_route: str | None
     tool_call: dict | None
     status: Literal["answer", "confirm"]
     reply: str

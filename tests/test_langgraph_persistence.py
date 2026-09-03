@@ -11,9 +11,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from agents.runtime import checkpoint
 from agents.conversation import graph as chat_loop
 from agents.conversation import api as chat_service
-from agents.conversation.nodes import approval as chat_approval
-from agents.conversation.nodes import dispatch as chat_dispatch
-from agents.conversation.nodes import model as chat_model
+from agents.conversation.nodes import approve as chat_approve
+from agents.conversation.nodes import handoff as chat_handoff
+from agents.conversation.nodes import reason as chat_reason
 from agents.conversation.state import initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
 from agents.enrich.nodes import approval as enrich_approval
@@ -52,12 +52,12 @@ class LangGraphPersistenceTests(unittest.TestCase):
                        arguments='{"instruction": "save Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+        with patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
                              return_value=action) as plan, \
-                patch.object(chat_approval.execution_ledger, "execute_once",
+                patch.object(chat_approve.execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approval.registry.get("enrich"), "execute_action",
+                patch.object(chat_approve.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}') as execute:
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -69,7 +69,7 @@ class LangGraphPersistenceTests(unittest.TestCase):
             resumed = chat_loop.resume(graph, graph_config, True)
 
         self.assertTrue(checkpoint.is_interrupted(snapshot))
-        self.assertEqual(("approval",), snapshot.next)
+        self.assertEqual(("approve",), snapshot.next)
         self.assertEqual(action_id, snapshot.values["pending"]["action_id"])
         self.assertEqual("Created.", resumed["reply"])
         plan.assert_called_once()
@@ -126,12 +126,12 @@ class LangGraphPersistenceTests(unittest.TestCase):
                              side_effect=lambda user_id, thread_id: dict(projection)), \
                 patch.object(chat_service.db, "save_thread",
                              side_effect=save_thread), \
-                patch.object(chat_model, "complete", side_effect=replies), \
-                patch.object(chat_dispatch.registry.get("enrich"), "plan_action",
+                patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
                              return_value=action), \
-                patch.object(chat_approval.execution_ledger, "execute_once",
+                patch.object(chat_approve.execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approval.registry.get("enrich"), "execute_action",
+                patch.object(chat_approve.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 11}') as execute:
             paused = chat_service.start_turn(7, "Save Idea", None, now, timezone.utc, "en")
             resumed = chat_service.confirm(7, 51, True, now, timezone.utc, "en")

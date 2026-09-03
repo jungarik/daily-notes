@@ -1,4 +1,10 @@
-"""Human approval and idempotent execution node."""
+"""Approve node: human approval, then idempotent execution via the specialist.
+
+Interrupts the graph with the staged action, resumes on the user's decision, and
+executes it exactly once through the owning specialist (or records a decline). A
+select action (link_notes) carries the user's chosen note ids. The only public
+entry point is `run`.
+"""
 
 from langgraph.types import interrupt
 
@@ -16,8 +22,8 @@ def _decision(raw) -> tuple:
     return bool(raw), None
 
 
-def _apply_selection(action: dict, selection) -> dict:
-    """For a select action (link_notes), replace its target ids with the user's pick."""
+def _with_selection(action: dict, selection) -> dict:
+    """For a select action (link_notes), replace its targets with the user's pick."""
     if selection is None or action.get("name") != "link_notes":
         return action
 
@@ -33,6 +39,25 @@ def _apply_selection(action: dict, selection) -> dict:
             chosen.append(note_id)
 
     return {**action, "args": {**action.get("args", {}), "linked_note_ids": chosen}}
+
+
+def _execute(pending: dict, ctx) -> str:
+    service = registry.get("enrich")
+    action = _with_selection(pending["action"], pending.get("selection"))
+
+    return execution_ledger.execute_once(
+        pending["action_id"],
+        ctx.user_id,
+        "enrich",
+        action,
+        lambda: service.execute_action(
+            ctx.user_id,
+            action,
+            ctx.now,
+            ctx.tz,
+            ctx.locale,
+        ),
+    )
 
 
 def run(state: ChatState) -> dict:
@@ -53,24 +78,9 @@ def run(state: ChatState) -> dict:
         "summary": pending.get("summary"),
     }))
     ctx = context_from_state(state)
-    action = _apply_selection(pending["action"], selection)
 
     if approved:
-        agent_name = "enrich"
-        service = registry.get("enrich")
-        result = execution_ledger.execute_once(
-            pending["action_id"],
-            ctx.user_id,
-            agent_name,
-            action,
-            lambda: service.execute_action(
-                ctx.user_id,
-                action,
-                ctx.now,
-                ctx.tz,
-                ctx.locale,
-            ),
-        )
+        result = _execute({**pending, "selection": selection}, ctx)
     else:
         result = "The user declined this action; do not perform it. Acknowledge and continue."
 

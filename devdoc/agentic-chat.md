@@ -6,26 +6,25 @@ Every write pauses for explicit confirmation; Chat never mutates data directly.
 
 ## Workflow and tools
 
-`agents/conversation/graph.py` defines the bounded LangGraph `CHAT_GRAPH`.
-`pre_route` can detect obvious reminder requests before the model. Otherwise
-the model emits at most one tool call per step (`parallel_tool_calls=False`),
-and conditional edges route it to:
+`agents/conversation/graph.py` defines the bounded LangGraph `CHAT_GRAPH` — four
+role-named nodes, each a module under `nodes/` exposing a single public `run`:
+`reason`, `act`, `handoff`, `approve`. `reason` emits at most one tool call per
+step (`parallel_tool_calls=False`), and conditional edges route it to:
 
-- `read_tool` for `search_notes`, `get_note`, `neighbors`, `list_reminders`,
-  `list_agenda`, or
-  `list_paths`;
-- `enrich_agent` for `perform_action(instruction)` — create a note, move a note,
-  or enrich/classify it;
-- `pre_route` for obvious reminder requests — skip the Conversation model and
-  send `set_reminder(instruction)` directly to Enrich;
-- `reminder_agent` for `set_reminder(instruction)` — resolve and schedule a
-  reminder through Enrich;
+- `act` for a read tool: `search_notes`, `get_note`, `neighbors`,
+  `list_reminders`, `list_agenda`, `list_paths`, or `detect_reminder` (a
+  deterministic reminder classifier the model can call cheaply, no model turn);
+- `handoff` for a handoff tool — `perform_action(instruction)` (create/move/tag/
+  link/enrich a note) or `set_reminder(instruction)` (schedule a reminder). One
+  node picks the specialist from the tool name via `HANDOFF_SPECIALIST`;
 - END when the model answers without a tool.
 
-Read results loop back to the model until it answers or `AGENT_MAX_STEPS` is
+Read results loop back to `reason` until it answers or `AGENT_MAX_STEPS` is
 used. `search_notes` returns structured evidence rather than calling another
-LLM; the Conversation model produces the grounded answer on the next graph step.
-`final` provides a tool-free bounded fallback.
+LLM; `reason` produces the grounded answer on the next graph step. When the step
+budget is spent, `reason` makes a final tool-free call so it must answer (this
+replaced a separate `final` node). The former `pre_route` fast path is gone — the
+model calls `detect_reminder` when it wants the cheap check.
 
 ## Specialist handoff and confirmation
 

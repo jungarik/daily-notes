@@ -1,7 +1,12 @@
 """Conversation tool schemas and routing groups."""
 
-ENRICH_HANDOFF_TOOLS = {"perform_action"}
-REMINDER_HANDOFF_TOOLS = {"set_reminder"}
+# A handoff tool name -> the specialist mode that plans/executes it. Adding a
+# new handoff is one entry here plus its tool spec — no new graph node/branch.
+HANDOFF_SPECIALIST = {
+    "perform_action": "enrich",
+    "set_reminder": "reminder",
+}
+HANDOFF_TOOLS = set(HANDOFF_SPECIALIST)
 
 
 def _fn(name, description, properties, required):
@@ -100,6 +105,14 @@ READ_TOOL_SPECS = [
         "List existing vault paths.",
         {},
         [],
+    ),
+    _fn(
+        "detect_reminder",
+        "Deterministically check whether a message is a reminder request "
+        "(reminder intent plus a time expression). Cheap — no model call. Call it "
+        "on the user's text when unsure before using set_reminder.",
+        {"text": {"type": "string"}},
+        ["text"],
     ),
 ]
 

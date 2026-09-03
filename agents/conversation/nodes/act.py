@@ -1,4 +1,9 @@
-"""Knowledge-read node for the conversation graph."""
+"""Act node: execute one read tool the model chose, then loop back to reason.
+
+Owner-scoped reads only (search, note lookups, agenda, reminder detection). It
+records citations and references onto the turn context and never mutates data.
+The only public entry point is `run`.
+"""
 
 from common import helper
 from agents.contracts import ToolResult
@@ -14,7 +19,7 @@ from tools import conversation as tools
 from agents.runtime.execute_tool import execute_tool
 
 
-def _tool_text(result) -> str:
+def _result_text(result) -> str:
     if isinstance(result, ToolResult):
         return helper.json_text(result.data)
 
@@ -24,7 +29,7 @@ def _tool_text(result) -> str:
 def run(state: ChatState) -> dict:
     tool_call = state["tool_call"]
     ctx = context_from_state(state)
-    tool_result = execute_tool(
+    result = execute_tool(
         tools.TOOLS,
         tool_context(ctx),
         tool_call["name"],
@@ -32,16 +37,16 @@ def run(state: ChatState) -> dict:
         "conversation",
     )
 
-    if isinstance(tool_result, ToolResult):
-        apply_tool_result(ctx, tool_result)
+    if isinstance(result, ToolResult):
+        apply_tool_result(ctx, result)
 
-    result = _tool_text(tool_result)
-    ctx.record_tool(tool_call["name"], tool_call["args"], result)
+    text = _result_text(result)
+    ctx.record_tool(tool_call["name"], tool_call["args"], text)
     ctx.record_route("rag" if tool_call["name"] == "search_notes" else "tool")
     message = {
         "role": "tool",
         "tool_call_id": tool_call["id"],
-        "content": str(result),
+        "content": str(text),
     }
 
     return {

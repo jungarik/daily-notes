@@ -23,34 +23,36 @@ deserialization enabled.
 `ChatState` carries provider messages, per-turn context, step count, current tool
 call, terminal response, pending action, specialist identity, and an ordered
 cross-turn `reference_notes` list. Response citations remain turn-local.
-Before the model node, `pre_route` deterministically detects obvious reminder
-requests and sends them to Enrich as `set_reminder`, avoiding one LLM routing
-call.
+
+The loop is four role-named nodes — `reason`, `act`, `handoff`, `approve` — each a
+module under `nodes/` with a single public `run`. A single `handoff` node routes
+every write/reminder request to its owning specialist: the tool name maps to a
+specialist mode via `HANDOFF_SPECIALIST` (`perform_action`→enrich,
+`set_reminder`→reminder), so a new capability is a map entry plus a tool spec, not
+a new node. The old `pre_route` fast path is gone: its regex now lives in a
+`detect_reminder` read tool the model can call to classify a message cheaply (no
+model turn) before choosing `set_reminder`. The former `final` node is folded into
+`reason`: once the read step budget is spent, `reason` makes one tool-free call so
+it must answer.
 
 ```mermaid
 flowchart TD
-    S((START)) -->|turn| PR[pre_route]
-    S -->|legacy pending| H[approval / interrupt]
-    PR -->|obvious reminder| RM[reminder_agent]
-    PR -->|otherwise| M
+    S((START)) -->|turn| M[reason]
+    S -->|pending| H[approve / interrupt]
     M -->|no tool| E((END))
-    M -->|read| T[read_tool]
-    M -->|perform_action| A[enrich_agent]
-    M -->|set_reminder| RM[reminder_agent]
-    T -->|budget remains| M
-    T -->|budget used| F[final]
-    A --> H
+    M -->|read| T[act]
+    M -->|perform_action / set_reminder| A[handoff]
+    T --> M
+    A -->|pending| H
     A -->|unresolved| M
-    RM --> H
-    RM -->|unresolved| M
     H -->|Command resume| M
-    F --> E
 ```
 
-Both handoff branches plan through Enrich; `reminder_agent` names the reminder
-mode, not a separately registered agent. `approval` interrupts with the stable action id and proposal. The confirm API
-uses `Command(resume=approve)`, so planning nodes are not rerun. After approval,
-the node executes through Enrich. Old projections also default to Enrich.
+`handoff` plans through Enrich for both modes; `reminder` names a mode, not a
+separately registered agent. `approve` interrupts with the stable action id and
+proposal. The confirm API uses `Command(resume=approve)`, so planning nodes are
+not rerun. After approval, the node executes through Enrich. Old projections also
+default to Enrich.
 
 ## Enrich graphs
 

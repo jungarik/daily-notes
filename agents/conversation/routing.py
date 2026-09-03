@@ -1,34 +1,38 @@
-"""Conditional routing decisions for the conversation graph."""
+"""Conditional edges for the conversation graph.
+
+A small ReAct loop with a human-approval pause:
+
+    START ─entry──▶ reason | approve
+    reason ─after_reason─▶ act | handoff | END
+    act ────────────────▶ reason
+    handoff ─after_handoff─▶ approve | reason
+    approve ─────────────▶ reason
+"""
 
 from langgraph.graph import END
 
-import config
 from agents.conversation.state import ChatState
-from tools.conversation import ENRICH_HANDOFF_TOOLS, REMINDER_HANDOFF_TOOLS
+from tools.conversation import HANDOFF_TOOLS
 
 
-def route_model(state: ChatState):
-    call = state.get("tool_call")
-    if call is None:
+def entry(state: ChatState):
+    """Resume a paused approval, otherwise start reasoning."""
+    return "approve" if state.get("pending") else "reason"
+
+
+def after_reason(state: ChatState):
+    """Run a read tool, hand a write to a specialist, or answer and finish."""
+    tool_call = state.get("tool_call")
+
+    if tool_call is None:
         return END
-    if call["name"] in REMINDER_HANDOFF_TOOLS:
-        return "reminder_agent"
-    if call["name"] in ENRICH_HANDOFF_TOOLS:
-        return "enrich_agent"
-    return "read_tool"
+
+    if tool_call["name"] in HANDOFF_TOOLS:
+        return "handoff"
+
+    return "act"
 
 
-def route_after_read(state: ChatState):
-    return "final" if state.get("steps", 0) >= config.AGENT_MAX_STEPS else "model"
-
-
-def route_after_handoff(state: ChatState):
-    return "approval" if state.get("pending") else "model"
-
-
-def entry_route(state: ChatState):
-    return "approval" if state.get("pending") else "pre_route"
-
-
-def route_pre(state: ChatState):
-    return "reminder_agent" if state.get("pre_route") == "reminder" else "model"
+def after_handoff(state: ChatState):
+    """A staged action pauses for approval; nothing concrete loops back."""
+    return "approve" if state.get("pending") else "reason"
