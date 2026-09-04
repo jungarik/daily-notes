@@ -17,8 +17,10 @@ from agents.conversation.nodes import reason as chat_reason
 from agents.conversation.nodes import act as chat_act
 from agents.conversation.state import initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
-from agents.enrich.nodes import approval as enrich_approval
-from agents.enrich.nodes import model as enrich_model
+from agents.enrich.nodes import approve as enrich_approve
+from agents.enrich.nodes import plan as enrich_plan
+from agents.enrich.nodes import reason as enrich_reason
+from agents.enrich.nodes.schedule import resolve as enrich_schedule_resolve
 from agents.enrich.state import Ctx as EnrichCtx
 from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich.state import initial_state as enrich_initial_state
@@ -51,9 +53,9 @@ class AgentGraphTests(unittest.TestCase):
             set(chat_loop.CHAT_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
         self.assertEqual(
-            {"model", "read_tool", "metadata_context", "metadata_model",
-             "metadata_validation", "reminder_model", "reminder_validation",
-             "link_context", "pending_write", "approval", "final"},
+            {"reason", "act", "classify_gather", "classify_propose",
+             "classify_normalize", "schedule_resolve", "schedule_build",
+             "link_context", "stage", "approve"},
             set(enrich_loop.ENRICH_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
 
@@ -150,7 +152,7 @@ class AgentGraphTests(unittest.TestCase):
     def test_enrich_write_pauses_and_decline_does_not_execute(self):
         graph = enrich_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "enrich:decline"}}
-        with patch.object(enrich_model, "complete", return_value=completion(
+        with patch.object(enrich_reason, "complete", return_value=completion(
                 tool_name="create_note", arguments='{"text": "Call tomorrow"}')):
             paused = enrich_loop.invoke(
                 graph, graph_config,
@@ -160,8 +162,8 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("confirm", paused["status"])
         self.assertEqual("create_note", paused["action"]["name"])
 
-        with patch.object(enrich_approval, "execute_tool") as tool, \
-                patch.object(enrich_model, "complete",
+        with patch.object(enrich_approve, "execute_tool") as tool, \
+                patch.object(enrich_reason, "complete",
                              return_value=completion(content="Cancelled.")):
             resumed = enrich_loop.resume(graph, graph_config, approve=False)
 
@@ -178,7 +180,7 @@ class AgentGraphTests(unittest.TestCase):
         )
         with patch.object(config, "ATOMIC_NOTE_MAX_SENTENCES", 3), \
                 patch.object(config, "ATOMIC_NOTE_MAX_CHARS", 700), \
-                patch.object(enrich_model, "complete", return_value=completion(
+                patch.object(enrich_reason, "complete", return_value=completion(
                     tool_name="create_note",
                     arguments=json.dumps({"text": verbose}))):
             paused = enrich_loop.invoke(
@@ -196,7 +198,7 @@ class AgentGraphTests(unittest.TestCase):
     def test_enrich_approval_runs_through_idempotency_ledger(self):
         graph = enrich_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "enrich:approve"}}
-        with patch.object(enrich_model, "complete", return_value=completion(
+        with patch.object(enrich_reason, "complete", return_value=completion(
                 tool_name="create_note", arguments='{"text": "Call tomorrow"}')):
             paused = enrich_loop.invoke(
                 graph, graph_config,
@@ -204,10 +206,10 @@ class AgentGraphTests(unittest.TestCase):
                     context(), [{"role": "user", "content": "Save this"}]))
 
         self.assertIn("action_id", paused["pending"])
-        with patch.object(enrich_approval.execution_ledger, "execute_once",
+        with patch.object(enrich_approve.execution_ledger, "execute_once",
                           return_value='{"note_id": 9}') as execute_once, \
-                patch.object(enrich_approval, "execute_tool") as tool, \
-                patch.object(enrich_model, "complete",
+                patch.object(enrich_approve, "execute_tool") as tool, \
+                patch.object(enrich_reason, "complete",
                              return_value=completion(content="Created.")):
             resumed = enrich_loop.resume(graph, graph_config, approve=True)
 
@@ -252,10 +254,10 @@ class AgentGraphTests(unittest.TestCase):
             create=Mock(return_value=SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content=raw))])))))
 
-        with patch.object(enrich_model, "complete", return_value=completion(
+        with patch.object(enrich_reason, "complete", return_value=completion(
                 tool_name="create_reminder",
                 arguments='{"text": "Call tomorrow"}')), \
-                patch.object(enrich_loop.reminder.model_gateway, "chat_completion",
+                patch.object(enrich_schedule_resolve.model_gateway, "chat_completion",
                              return_value=client.chat.completions.create()):
             paused = enrich_loop.invoke(
                 graph, graph_config,
@@ -271,17 +273,17 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("2026-09-01T09:00:00+00:00",
                          paused["action"]["args"]["remind_at"])
         self.assertEqual(
-            ["reminder_model", "reminder_validation"],
+            ["schedule_resolve", "schedule_build"],
             [event["node"] for event in paused["reminder_trace"]])
 
     def test_reminder_graph_resolves_time_before_confirmation(self):
         now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
         remind_at = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
         contract = {"instruction": "Call tomorrow", "resolved_entities": {}}
-        with patch.object(enrich_loop.reminder, "extract_time", return_value={
+        with patch.object(enrich_schedule_resolve, "run", return_value={
             "reminder_raw": {"is_reminder": True,
                              "remind_at": remind_at.isoformat()},
-            "reminder_trace": [{"node": "reminder_model", "status": "ok"}],
+            "reminder_trace": [{"node": "schedule_resolve", "status": "ok"}],
         }):
             graph = enrich_loop.build_reminder_plan_graph()
             action = graph.invoke({
@@ -341,7 +343,7 @@ class AgentGraphTests(unittest.TestCase):
             chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         specs = [{"type": "function", "function": {"name": "create_note"}}]
 
-        with patch.object(enrich_model.model_gateway, "chat_completion",
+        with patch.object(enrich_plan.model_gateway, "chat_completion",
                           side_effect=client.chat.completions.create):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],
@@ -355,8 +357,8 @@ class AgentGraphTests(unittest.TestCase):
         create.assert_called_once()
 
     def test_enrich_planning_provider_error_returns_no_action(self):
-        with patch.object(enrich_model.model_gateway, "chat_completion",
-                          side_effect=enrich_model.model_gateway.ModelGatewayError(
+        with patch.object(enrich_plan.model_gateway, "chat_completion",
+                          side_effect=enrich_plan.model_gateway.ModelGatewayError(
                               "model_rate_limited", "429 Too Many Requests")):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],

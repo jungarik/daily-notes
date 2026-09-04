@@ -134,6 +134,27 @@ ENRICH_SIMILAR_LIMIT = int(os.environ.get("ENRICH_SIMILAR_LIMIT", "8"))
 ENRICH_SIMILAR_MAX_DISTANCE = float(os.environ.get("ENRICH_SIMILAR_MAX_DISTANCE", "0.6"))
 
 
+# --- Note linking ---
+
+# How many nearest neighbours to recall before the idea-level ranking pass.
+
+# The ranker keeps ENRICH_SIMILAR_LIMIT of them, so recall wider than that.
+
+LINK_RECALL_LIMIT = int(os.environ.get("LINK_RECALL_LIMIT", "20"))
+
+# Model that ranks link candidates by the idea they share with the source note.
+
+LINK_RANK_LLM_MODEL = os.environ.get("LINK_RANK_LLM_MODEL", ENRICH_LLM_MODEL)
+
+# Set false to offer plain nearest-neighbour order instead (kill switch).
+
+LINK_RANK_ENABLED = os.environ.get("LINK_RANK_ENABLED", "true").lower() == "true"
+
+# How many idea-level matches the ranker may pre-select for the user.
+
+LINK_PRESELECT_LIMIT = int(os.environ.get("LINK_PRESELECT_LIMIT", "3"))
+
+
 # --- Agentic chat (Web App chat tab) ---
 
 # Model that runs the tool-calling agent loop.

@@ -98,8 +98,10 @@ TOOL_SPECS = [
         "link_notes",
         "Link a source note to other related notes. Pass note_id (the "
         "source note being linked, usually a referenced note from the handoff); the "
-        "graph proposes semantically related candidates and the user picks which ones "
-        "to link. Optionally pass linked_note_ids to pre-select specific targets. "
+        "graph recalls candidates and ranks them by the IDEA they share with the "
+        "source note (a principle, mechanism or pattern that carries across both) "
+        "rather than by topic overlap, then the user picks which ones to link. "
+        "Optionally pass linked_note_ids to pre-select specific targets. "
         "Requires user confirmation.",
         {
             "note_id": {"type": "integer"},

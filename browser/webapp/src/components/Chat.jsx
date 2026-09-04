@@ -61,6 +61,7 @@ function SelectMsg({ action, onConfirm, resolve, onOpen }) {
               onChange={() => toggle(c.note_id)} />
             <span className="link-opt-body">
               <span className="link-opt-title">{c.title || "note"}</span>
+              {c.reason && <span className="link-opt-reason">{c.reason}</span>}
               {c.path && <span className="link-opt-path">{c.path}</span>}
             </span>
           </label>

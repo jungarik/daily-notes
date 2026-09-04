@@ -1,19 +1,18 @@
-"""Explicit metadata context, classification, and validation graph nodes."""
+"""classify_gather node: collect vault context + related notes for a note.
+
+Runs the internal metadata-context tools (note text, existing paths/tags, vault
+roots, related notes) and stashes them for the proposal step. Single public
+`run`.
+"""
 
 import json
-import logging
 import time
 
-import config
 from common import helper
 from agents.contracts import ToolResult
 from tools import enrich as tools
-from agents.enrich.prompts import enrichment_prompt
 from agents.enrich.state import Ctx, context_to_dict
 from agents.runtime.execute_tool import execute_allowed_tool
-from agents.runtime import model_gateway
-
-logger = logging.getLogger(__name__)
 
 
 def _tool_text(result) -> str:
@@ -29,6 +28,7 @@ def _user_id(state: dict) -> int:
 
 def _context(state: dict, user_id: int) -> Ctx:
     data = state.get("context") or {}
+
     return Ctx(user_id, data.get("now"), tz=data.get("tz"),
                locale=data.get("locale") or "en")
 
@@ -59,13 +59,14 @@ def _tool(ctx: Ctx, name: str, args: dict, trace: list[dict]):
 
     trace.append({"kind": "tool", "tool": name, "status": "ok",
                   "latency_ms": latency_ms})
+
     try:
         return json.loads(result)
     except json.JSONDecodeError:
         return result
 
 
-def load_context(state: dict) -> dict:
+def run(state: dict) -> dict:
     user_id = _user_id(state)
     ctx = _context(state, user_id)
     call = state.get("tool_call") or {}
@@ -73,10 +74,12 @@ def load_context(state: dict) -> dict:
     note_id = state.get("metadata_note_id") or args.get("note_id")
     text = (state.get("metadata_text") or "").strip()
     trace = [*(state.get("metadata_trace") or [])]
+
     try:
         if not text and note_id is not None:
             note = _tool(ctx, "get_note_context", {"note_id": int(note_id)}, trace)
             text = ((note or {}).get("text") or "").strip()
+
         if not text:
             raise ValueError("note not found or empty")
 
@@ -84,7 +87,8 @@ def load_context(state: dict) -> dict:
         tags_data = _tool(ctx, "list_tags", {}, trace)
         vault = _tool(ctx, "get_vault_context", {}, trace)
         related_data = _tool(ctx, "find_related_notes", {
-            "text": text, "exclude_note_id": int(note_id) if note_id is not None else None,
+            "text": text,
+            "exclude_note_id": int(note_id) if note_id is not None else None,
         }, trace)
         paths = (
             paths_data.get("paths", paths_data)
@@ -114,7 +118,7 @@ def load_context(state: dict) -> dict:
     except Exception as exc:
         trace.append({
             "kind": "node",
-            "node": "metadata_context",
+            "node": "classify_gather",
             "status": "error",
             "error": str(exc)[:500],
         })
@@ -129,7 +133,7 @@ def load_context(state: dict) -> dict:
 
     trace.append({
         "kind": "node",
-        "node": "metadata_context",
+        "node": "classify_gather",
         "status": "ok",
         "related_note_ids": [
             item.get("note_id")
@@ -145,46 +149,3 @@ def load_context(state: dict) -> dict:
         "metadata_error": None,
         "metadata_trace": trace,
     }
-
-
-def propose(state: dict) -> dict:
-    trace = [*(state.get("metadata_trace") or [])]
-    if state.get("metadata_error"):
-        return {"raw_metadata": {}, "metadata_trace": trace}
-    context = state["metadata_context"]
-    try:
-        system = enrichment_prompt(
-            context["known_paths"], context["known_tags"],
-            context["related_notes"], context["root_folders"],
-            context["default_root"], config.ENRICH_SIMILAR_MAX_DISTANCE)
-        response = model_gateway.chat_completion(
-            model=config.ENRICH_LLM_MODEL, temperature=0,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": state["metadata_text"]}],
-        )
-        raw = json.loads(response.choices[0].message.content)
-        trace.append({"kind": "node", "node": "metadata_model", "status": "ok"})
-        return {"raw_metadata": raw, "metadata_trace": trace}
-    except Exception as exc:
-        logger.exception("Metadata proposal failed; using normalized fallback")
-        trace.append({"kind": "node", "node": "metadata_model", "status": "error",
-                      "error": type(exc).__name__})
-        return {"raw_metadata": {}, "metadata_error": str(exc),
-                "metadata_trace": trace}
-
-
-def validate(state: dict) -> dict:
-    context = state.get("metadata_context") or {}
-    metadata = helper.normalize(
-        state.get("raw_metadata") or {}, state.get("metadata_text") or "",
-        context.get("root_folders"), context.get("default_root"))
-    trace = [*(state.get("metadata_trace") or []),
-             {"kind": "node", "node": "metadata_validation", "status": "ok"}]
-    update = {"metadata": metadata, "metadata_trace": trace}
-    call = state.get("tool_call")
-    if call and call.get("name") == "enrich_note":
-        update["tool_call"] = {
-            **call, "args": {**(call.get("args") or {}), **metadata},
-        }
-    return update

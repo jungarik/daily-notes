@@ -62,6 +62,32 @@ def similar_notes(user_id: int, query_embedding: str, exclude_note_id: int,
                 for r in cur.fetchall()]
 
 
+def link_candidates(user_id: int, query_embedding: str, exclude_note_id: int,
+                    limit: int) -> list[dict]:
+    """Nearest neighbours plus a text snippet, as input for idea-level ranking.
+
+    Same recall as `similar_notes`, but carries enough of each note's body for a
+    model to judge which idea it shares with the source note.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.note_type, m.title, m.path, m.tags,
+                   LEFT(m.text, 400) AS snippet,
+                   MIN(mc.embedding <=> %s::vector) AS distance
+            FROM note_chunks mc JOIN notes m ON m.id = mc.note_id
+            WHERE m.user_id = %s AND m.id <> %s AND m.title IS NOT NULL
+            GROUP BY m.id, m.note_type, m.title, m.path, m.tags, m.text
+            ORDER BY distance LIMIT %s;
+            """,
+            (query_embedding, user_id, exclude_note_id, limit),
+        )
+
+        return [{"note_id": r[0], "note_type": r[1], "title": r[2],
+                 "path": r[3], "tags": r[4] or [], "snippet": r[5],
+                 "distance": float(r[6])} for r in cur.fetchall()]
+
+
 def related_notes(user_id: int, query_embedding: str, limit: int = 5) -> list[dict]:
     """Return user-owned notes that may be linked to a new captured thought."""
     with cursor() as cur:

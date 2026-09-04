@@ -15,9 +15,9 @@ from agents.conversation.nodes import reason as chat_reason
 from agents.conversation.nodes import act as chat_act
 from agents.conversation.state import ConversationContext as ChatCtx, initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
-from agents.enrich.nodes import model as enrich_model
-from agents.enrich.nodes import read as enrich_read
-from agents.enrich.nodes import write as enrich_write
+from agents.enrich.nodes import plan as enrich_plan
+from agents.enrich.nodes import act as enrich_act
+from agents.enrich.nodes.write import validate as enrich_write_validate
 from agents.enrich.state import Ctx as EnrichCtx
 from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich import api as enrich_service
@@ -127,11 +127,11 @@ class HandoffContextTests(unittest.TestCase):
         create = Mock(side_effect=replies)
         client = SimpleNamespace(chat=SimpleNamespace(
             completions=SimpleNamespace(create=create)))
-        with patch.object(enrich_model.model_gateway, "chat_completion",
+        with patch.object(enrich_plan.model_gateway, "chat_completion",
                           side_effect=client.chat.completions.create), \
-                patch.object(enrich_read, "execute_tool",
+                patch.object(enrich_act, "execute_tool",
                              return_value='{"id": 4, "title": "Roadmap"}') as read, \
-                patch.object(enrich_write.db, "get_note_for_user",
+                patch.object(enrich_write_validate.db, "get_note_for_user",
                              return_value={"id": 4}):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Move that note"}],
@@ -160,9 +160,9 @@ class HandoffContextTests(unittest.TestCase):
         ]
         client = SimpleNamespace(chat=SimpleNamespace(
             completions=SimpleNamespace(create=Mock(side_effect=replies))))
-        with patch.object(enrich_model.model_gateway, "chat_completion",
+        with patch.object(enrich_plan.model_gateway, "chat_completion",
                           side_effect=client.chat.completions.create), \
-                patch.object(enrich_write.db, "get_note_for_user", return_value=None):
+                patch.object(enrich_write_validate.db, "get_note_for_user", return_value=None):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich that note"}],
                 "context": enrich_context_data(ctx),

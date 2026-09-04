@@ -1,4 +1,19 @@
-"""Conditional routing decisions for both Enrich workflows."""
+"""Conditional edges for the Enrich workflows.
+
+Interactive graph (capture loop):
+
+    START ─entry──▶ reason | approve
+    reason ─after_reason─▶ act | classify_gather | schedule_resolve
+                          | link_context | stage | END
+    act ──────────────────▶ reason
+    classify_gather ▶ classify_propose ▶ classify_normalize ▶ stage
+    schedule_resolve ▶ schedule_build ─after_schedule_build─▶ stage | reason
+    link_context ─────────▶ stage
+    stage ────────────────▶ approve ─▶ reason
+
+Action-plan graph (stateless): plan ─▶ act | classify_* | link_context |
+validate_write, looping back to plan until an action is produced.
+"""
 
 from langgraph.graph import END
 
@@ -8,46 +23,52 @@ from tools.enrich import WRITE_TOOLS
 
 
 def entry(state: EnrichState):
-    return "approval" if state.get("pending") else "model"
+    return "approve" if state.get("pending") else "reason"
 
 
-def after_model(state: EnrichState):
+def after_reason(state: EnrichState):
     tool_call = state.get("tool_call")
+
     if tool_call is None:
         return END
+
     if tool_call["name"] == "enrich_note":
-        return "metadata_context"
+        return "classify_gather"
+
     if tool_call["name"] == "create_reminder":
-        return "reminder_model"
+        return "schedule_resolve"
+
     if tool_call["name"] == "link_notes":
         return "link_context"
-    return "pending_write" if tool_call["name"] in WRITE_TOOLS else "read_tool"
+
+    return "stage" if tool_call["name"] in WRITE_TOOLS else "act"
 
 
-def after_read(state: EnrichState):
-    return "final" if state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS else "model"
+def after_schedule_build(state: EnrichState):
+    return "stage" if state.get("action") else "reason"
 
 
-def after_reminder_validation(state: EnrichState):
-    return "pending_write" if state.get("action") else "final"
-
-
-def after_plan_model(state: ActionPlanState):
+def after_plan(state: ActionPlanState):
     call = state.get("tool_call")
+
     if call is None:
         return END
+
     if call["name"] == "enrich_note":
-        return "metadata_context"
+        return "classify_gather"
+
     if call["name"] == "link_notes":
         return "link_context"
-    return "validate_write" if call["name"] in WRITE_TOOLS else "plan_read"
+
+    return "validate_write" if call["name"] in WRITE_TOOLS else "act"
 
 
 def after_plan_read(state: ActionPlanState):
-    return END if state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS else "plan_model"
+    return END if state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS else "plan"
 
 
 def after_validation(state: ActionPlanState):
     if state.get("action") or state.get("steps", 0) >= config.ENRICH_AGENT_MAX_STEPS:
         return END
-    return "plan_model"
+
+    return "plan"

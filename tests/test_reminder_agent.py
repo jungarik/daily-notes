@@ -7,15 +7,15 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from agents.enrich import api as enrich_service
-from agents.enrich.nodes import reminder
+from agents.enrich.nodes.schedule import resolve as schedule_resolve
 from tools.enrich import create_reminder
 
 
 class ReminderAgentTests(unittest.TestCase):
     def test_hint_gate_skips_model_for_ordinary_note(self):
         now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
-        with patch.object(reminder.model_gateway, "chat_completion") as client:
-            result = reminder.extract_time({
+        with patch.object(schedule_resolve.model_gateway, "chat_completion") as client:
+            result = schedule_resolve.run({
                 "contract": {"instruction": "A plain project thought"},
                 "now": now,
                 "reminder_trace": [],
@@ -34,16 +34,16 @@ class ReminderAgentTests(unittest.TestCase):
                 choices=[SimpleNamespace(message=SimpleNamespace(
                     content=json.dumps(payload)))])))))
 
-        with patch.object(reminder.model_gateway, "chat_completion",
+        with patch.object(schedule_resolve.model_gateway, "chat_completion",
                           side_effect=client.chat.completions.create):
-            result = reminder.extract_time({
+            result = schedule_resolve.run({
                 "contract": {"instruction": "Call tomorrow"},
                 "now": now,
                 "reminder_trace": [],
             })
 
         self.assertEqual(payload, result["reminder_raw"])
-        self.assertEqual("reminder_model", result["reminder_trace"][0]["node"])
+        self.assertEqual("schedule_resolve", result["reminder_trace"][0]["node"])
 
     def test_referenced_note_reminder_attaches_without_creating_duplicate_note(self):
         action = {"name": "create_reminder", "args": {

@@ -57,40 +57,44 @@ default to Enrich.
 ## Enrich graphs
 
 `EnrichState` carries messages, context, step count, tool call, terminal state,
-pending write, and confirmation flags.
+pending write, and confirmation flags. Every node is a module under `nodes/` with
+a single public `run`: the loop primitives `reason`/`act`/`plan`/`approve` are
+flat; the multi-step phases live in subpackages `classify/` (gather → propose →
+normalize), `schedule/` (resolve → build), and `write/` (link, stage, validate).
+`reason` folds in the old `final` node (a tool-free call once the budget is
+spent).
 
 ```mermaid
 flowchart TD
-    S((START)) -->|turn| M[model]
-    S -->|legacy pending| H[approval / interrupt]
+    S((START)) -->|turn| M[reason]
+    S -->|pending| H[approve / interrupt]
     M -->|no tool| E((END))
-    M -->|read| T[read_tool]
-    M -->|metadata write| MC[metadata_context]
-    M -->|reminder write| RM[reminder_model]
-    M -->|simple write| P[pending_write]
-    T -->|budget remains| M
-    T -->|budget used| F[final]
-    MC --> MM[metadata_model]
-    MM --> MV[metadata_validation]
+    M -->|read| T[act]
+    M -->|metadata write| MC[classify_gather]
+    M -->|reminder write| RM[schedule_resolve]
+    M -->|simple write| P[stage]
+    T --> M
+    MC --> MM[classify_propose]
+    MM --> MV[classify_normalize]
     MV --> P
-    RM --> RV[reminder_validation]
+    RM --> RV[schedule_build]
     RV -->|resolved| P
-    RV -->|unresolved| F
+    RV -->|unresolved| M
     P --> H
     H -->|Command resume| M
-    F --> E
 ```
 
-The stateless Chat handoff uses `ACTION_PLAN_GRAPH`:
-`START -> plan_model -> plan_read -> plan_model ... -> validate_write -> END`.
-It can read note context, paths, and tags, but only returns a validated write
-proposal. The handoff itself is typed and includes conversation and entities.
+`link_notes` first runs `link_context` (candidate lookup) before `stage`. The
+stateless Chat handoff uses `ACTION_PLAN_GRAPH`:
+`START -> plan -> act -> plan ... -> validate_write -> END`. It can read note
+context, paths, and tags, but only returns a validated write proposal. The
+handoff itself is typed and includes conversation and entities.
 
 ## Reminder capability
 
 The main Enrich graph and `REMINDER_PLAN_GRAPH` both use
-`reminder_model -> reminder_validation`. The model node resolves
-natural-language time; validation uses deterministic domain logic to resolve
+`schedule_resolve -> schedule_build`. The resolve node fixes the
+natural-language time; build uses deterministic domain logic to resolve
 referenced notes and return a frozen `create_reminder` proposal. The standalone
 plan graph is used for Chat handoff evaluation and has no loop, checkpoint, or
 independent approval boundary.

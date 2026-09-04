@@ -7,7 +7,8 @@ from unittest.mock import Mock, patch
 
 import config
 from agents.enrich import graph as enrich_graph
-from agents.enrich.nodes import metadata as metadata_nodes
+from agents.enrich.nodes.classify import gather as classify_gather
+from agents.enrich.nodes.classify import propose as classify_propose
 from agents.enrich.state import Ctx, context_to_dict
 from tools.enrich import METADATA_CONTEXT_TOOLS, TOOL_SPECS
 from tools import enrich as enrich_tools
@@ -61,8 +62,8 @@ class EnrichMetadataTests(unittest.TestCase):
         }
         context_tool = Mock(side_effect=lambda _registry, _allowed, _ctx, name, _args, _owner:
                             json.dumps(context_results[name]))
-        with patch.object(metadata_nodes, "execute_allowed_tool", context_tool), \
-                patch.object(metadata_nodes.model_gateway, "chat_completion",
+        with patch.object(classify_gather, "execute_allowed_tool", context_tool), \
+                patch.object(classify_propose.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create):
             result = enrich_graph.METADATA_GRAPH.invoke({
                 "user_id": 7,
@@ -74,7 +75,7 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertEqual("Pocket garden", result["metadata"]["title"])
         self.assertEqual(["garden"], result["metadata"]["tags"])
         self.assertEqual(
-            ["metadata_context", "metadata_model", "metadata_validation"],
+            ["classify_gather", "classify_propose", "classify_normalize"],
             [event["node"] for event in result["metadata_trace"]
              if event.get("kind") == "node"])
         self.assertEqual(
@@ -82,7 +83,7 @@ class EnrichMetadataTests(unittest.TestCase):
             [event["tool"] for event in result["metadata_trace"]
              if event.get("kind") == "tool"])
         self.assertEqual(
-            {"metadata_context", "metadata_model", "metadata_validation"},
+            {"classify_gather", "classify_propose", "classify_normalize"},
             set(enrich_graph.METADATA_GRAPH.get_graph().nodes) -
             {"__start__", "__end__"})
 
@@ -107,10 +108,10 @@ class EnrichMetadataTests(unittest.TestCase):
         }
         context_tool = Mock(side_effect=lambda _registry, _allowed, _ctx, name, _args, _owner:
                             json.dumps(context_results[name]))
-        with patch.object(metadata_nodes, "execute_allowed_tool", context_tool), \
-                patch.object(metadata_nodes.model_gateway, "chat_completion",
+        with patch.object(classify_gather, "execute_allowed_tool", context_tool), \
+                patch.object(classify_propose.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create), \
-                patch("agents.enrich.nodes.write.db.get_note_for_user", return_value=note):
+                patch("agents.enrich.nodes.write.validate.db.get_note_for_user", return_value=note):
             result = enrich_graph.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich note 4"}],
                 "context": context_to_dict(ctx),

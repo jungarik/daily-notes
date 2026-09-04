@@ -16,8 +16,8 @@ from agents.conversation.nodes import handoff as chat_handoff
 from agents.conversation.nodes import reason as chat_reason
 from agents.conversation.state import initial_state as chat_initial_state
 from agents.enrich import graph as enrich_loop
-from agents.enrich.nodes import approval as enrich_approval
-from agents.enrich.nodes import model as enrich_model
+from agents.enrich.nodes import approve as enrich_approve
+from agents.enrich.nodes import reason as enrich_reason
 
 
 def completion(content=None, tool_name=None, arguments="{}", call_id="call-1"):
@@ -82,8 +82,8 @@ class LangGraphPersistenceTests(unittest.TestCase):
             completion(tool_name="create_note", arguments='{"text": "Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(enrich_model, "complete", side_effect=replies), \
-                patch.object(enrich_approval.execution_ledger, "execute_once",
+        with patch.object(enrich_reason, "complete", side_effect=replies), \
+                patch.object(enrich_approve.execution_ledger, "execute_once",
                              return_value='{"note_id": 10}') as execute_once:
             paused = enrich_loop.invoke(
                 graph, graph_config,
