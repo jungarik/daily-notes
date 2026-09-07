@@ -15,6 +15,17 @@ export function fmtDateShort(iso) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
 }
 
+// A stable colour for a note's path: every note filed in the same folder gets
+// the same hue, so the map's dots and card borders group by folder at a glance.
+export function pathColor(path, sat = 52, light = 58) {
+  const key = String(path || "Inbox").trim() || "Inbox";
+  let h = 0;
+
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+
+  return "hsl(" + (h % 360) + "," + sat + "%," + light + "%)";
+}
+
 // A note's folder key for the filter (its path, or a bucket for unsorted notes).
 export const notePathKey = (d) => (d && d.path) || "(unsorted)";
 

@@ -1,23 +1,27 @@
 // Canvas force-directed graph engine (ported from the vanilla map.js).
 // Framework-agnostic: the React MapView owns the focus card / ego-reset UI and
 // drives this engine through callbacks. The engine owns the canvas, the physics
-// sim, pan/zoom input, semantic-zoom labels, and depth-1 ego subgraphs.
+// sim, pan/zoom input, and depth-1 ego subgraphs.
+//
+// Nodes are drawn as a faint folder-coloured dot plus a note card. The cards are
+// real DOM (the shared NoteMiniCard, so the map and the chat tab show the same
+// card); this engine only decides which nodes get one and where it sits, and
+// reports that through `onCards` (set changed) and `onLayout` (per-frame
+// positions). Cards are fixed screen size, so zooming in spreads nodes apart and
+// reveals more of them — the semantic zoom falls out of the overlap culling.
 import { fetchGraph, fetchNote } from "../lib/api.js";
+import { pathColor } from "../lib/format.js";
 import { tg } from "../lib/telegram.js";
 
-function rootFolder(path) { const s = (path || "Inbox").split("/")[0].trim(); return s || "Inbox"; }
-function folderColor(name) {
-  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return "hsl(" + (h % 360) + ",55%,62%)";
-}
-function truncateLabel(ctx, s, maxW) {
-  s = String(s || "");
-  if (ctx.measureText(s).width <= maxW) return s;
-  let lo = 0, hi = s.length;
-  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ctx.measureText(s.slice(0, mid) + "…").width <= maxW) lo = mid; else hi = mid - 1; }
-  return s.slice(0, lo) + "…";
-}
-function nodeRadius(n) { return 4 + Math.min(11, (n.degree || 0) * 1.6); }
+// Cards are fixed screen-size (they do not scale with zoom); the layout below
+// places them in screen space and culls overlaps, so zooming changes density
+// rather than card size.
+const CARD_W = 200, CARD_H = 48, CARD_GAP = 6, MAX_CARDS = 60, EDGE = 40;
+
+function clamp(v, lo, hi) { return hi < lo ? lo : Math.max(lo, Math.min(hi, v)); }
+
+// A faint folder-coloured dot anchors every node; the card carries the detail.
+function nodeRadius(n) { return 3 + Math.min(6, (n.degree || 0) * 0.8); }
 
 function buildSim(data, W, H) {
   const spread = Math.min(W, H) * 0.5 || 200;
@@ -58,11 +62,14 @@ export function createGraphEngine(canvas, opts) {
   const G = {
     canvas, ctx: canvas.getContext("2d"), dpr: 1, sim: null, raf: null,
     running: false, loaded: false, selected: null, focusNodeId: null,
+    cards: [], cardSig: null,
     ego: null, focusReq: 0, data: null, filterSig: null,
     view: { scale: 1, tx: 0, ty: 0 },
   };
   const getFilter = opts.getFilter || (() => null);   // returns a Set of folder keys, or null = all
   const onFocus = opts.onFocus || (() => {});          // (node|null) → React renders the focus card
+  const onCards = opts.onCards || (() => {});          // (nodes[]) → the visible card set changed
+  const onLayout = opts.onLayout || (() => {});        // (cards[]) → per-frame screen positions
 
   function sizeCanvas() {
     const c = G.canvas; if (!c) return;
@@ -93,34 +100,50 @@ export function createGraphEngine(canvas, opts) {
     ctx.stroke();
     for (const n of sim.nodes) {
       ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n), 0, Math.PI * 2);
-      ctx.fillStyle = folderColor(rootFolder(n.path)); ctx.fill();
+      ctx.fillStyle = pathColor(n.path); ctx.fill();
       if (selected === n.id) { ctx.lineWidth = 2 / view.scale; ctx.strokeStyle = "#fff"; ctx.stroke(); }
     }
     ctx.restore();
-    drawLabels();
+    layoutCards();
   }
 
-  function drawLabels() {
-    const { ctx, sim, view, selected } = G;
-    ctx.font = "11px -apple-system,Segoe UI,Roboto,sans-serif"; ctx.textBaseline = "top";
+  // Every node in view gets a card, and they are allowed to overlap: the result
+  // is a heap where the most-linked notes sit on top, fully readable, and the
+  // rest peek out from underneath. `cards` is ordered most-linked first, which
+  // is both the stacking order (React maps it to a descending z-index) and the
+  // hit-test order, so a tap always lands on the card you can actually see.
+  function layoutCards() {
+    const { sim, view, selected, canvas } = G;
     const s = view.scale;
-    let minDeg = s >= 2.2 ? 0 : s >= 1.3 ? 1 : s >= 0.7 ? 2 : 3;
-    if (G.ego != null || sim.nodes.length <= 14) minDeg = 0;
-    const placed = [];
-    let count = 0;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const cards = [];
     for (const n of [...sim.nodes].sort((x, y) => (y.degree || 0) - (x.degree || 0))) {
-      if (count >= 36) break;
-      const isSel = selected === n.id;
-      if (!isSel && (n.degree || 0) < minDeg) continue;
-      const sx = n.x * view.scale + view.tx, sy = n.y * view.scale + view.ty;
-      const label = truncateLabel(ctx, n.title, 120), tw = ctx.measureText(label).width;
-      const bx = sx - tw / 2, by = sy + nodeRadius(n) * view.scale + 2, bw = tw, bh = 13;
-      if (!isSel && placed.some((p) => bx < p.x + p.w && bx + bw > p.x && by < p.y + p.h && by + bh > p.y)) continue;
-      placed.push({ x: bx, y: by, w: bw, h: bh });
-      ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(bx - 3, by - 1, bw + 6, bh + 2);
-      ctx.fillStyle = isSel ? "#fff" : "rgba(230,230,230,.92)"; ctx.fillText(label, bx, by);
-      count++;
+      if (cards.length >= MAX_CARDS) break;
+      const sx = n.x * s + view.tx, sy = n.y * s + view.ty;
+
+      if (sx < -EDGE || sx > w + EDGE || sy < -EDGE || sy > h + EDGE) continue;   // offscreen node
+
+      // Cards keep their full width — an edge card is nudged back inside rather
+      // than sliced off, since in a heap it is already offset from its dot.
+      const x = clamp(sx - CARD_W / 2, 2, w - CARD_W - 2);
+      const y = clamp(sy + nodeRadius(n) * s + CARD_GAP, 2, h - CARD_H - 2);
+      cards.push({ id: n.id, x, y, node: n, selected: selected === n.id });
     }
+    G.cards = cards;
+    publishCards();
+  }
+
+  // Content changes are rare (a new visible set); positions change every frame.
+  // Splitting them keeps React re-renders off the animation path.
+  function publishCards() {
+    const sig = G.cards.map((c) => c.id + (c.selected ? "*" : "")).join(",");
+
+    if (sig !== G.cardSig) {
+      G.cardSig = sig;
+      onCards(G.cards.map((c) => c.node));
+    }
+
+    onLayout(G.cards);
   }
 
   function emptyMessage(msg) {
@@ -147,10 +170,21 @@ export function createGraphEngine(canvas, opts) {
 
   function graphTap(clientX, clientY) {
     const c = G.canvas, rect = c.getBoundingClientRect(), v = G.view;
-    const gx = (clientX - rect.left - v.tx) / v.scale, gy = (clientY - rect.top - v.ty) / v.scale;
+    const px = clientX - rect.left, py = clientY - rect.top;
+
+    const hit = (card) => px >= card.x && px <= card.x + CARD_W
+                       && py >= card.y && py <= card.y + CARD_H;
+    const top = G.cards.find((c) => c.selected && hit(c)) || G.cards.find(hit);
+
+    if (top) {
+      focusNode(top.node);
+      return;
+    }
+
+    const gx = (px - v.tx) / v.scale, gy = (py - v.ty) / v.scale;
     let best = null, bestd = 1e9;
     for (const n of (G.sim ? G.sim.nodes : [])) {
-      const r = nodeRadius(n) + 8, dx = n.x - gx, dy = n.y - gy, d = dx * dx + dy * dy;
+      const r = nodeRadius(n) + 10, dx = n.x - gx, dy = n.y - gy, d = dx * dx + dy * dy;
       if (d < r * r && d < bestd) { best = n; bestd = d; }
     }
     if (best) focusNode(best); else clearFocus();
@@ -209,7 +243,7 @@ export function createGraphEngine(canvas, opts) {
     G.filterSig = filterSig();
     const data = currentData();
     if (!data.nodes.length) {
-      stopLoop(); G.sim = null;
+      stopLoop(); G.sim = null; G.cards = []; publishCards();
       emptyMessage(getFilter() ? "No notes match the folder filter." : "No connections yet — link notes in the bot.");
       return;
     }

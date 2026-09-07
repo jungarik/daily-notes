@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { createGraphEngine } from "../graph/engine.js";
+import NoteMiniCard from "./NoteMiniCard.jsx";
+import { pathColor } from "../lib/format.js";
 
 // Connections map: a canvas force-directed graph with semantic zoom, a focused
 // node card (Neighbors / Open note / Outline), and depth-1 ego subgraphs. The
@@ -17,6 +19,22 @@ export default function MapView({ hidden }) {
   const [focus, setFocus] = useState(null);   // { id, title, path, links } or null
   const [meta, setMeta] = useState("");
   const [ego, setEgo] = useState(false);
+  const [cards, setCards] = useState([]);    // the nodes currently carrying a card
+
+  // Card DOM nodes, positioned imperatively from the engine's animation frame so
+  // panning/zooming never re-renders React.
+  const cardEls = useRef(new Map());
+  const cardPos = useRef(new Map());
+  const place = (el, at) => {
+    el.style.transform = "translate3d(" + at.x + "px," + at.y + "px,0)";
+  };
+  const setCardEl = useCallback((id, el) => {
+    if (!el) { cardEls.current.delete(id); return; }
+    cardEls.current.set(id, el);
+    const at = cardPos.current.get(id);
+
+    if (at) place(el, at);
+  }, []);
 
   // Create the engine once, on the canvas element.
   useEffect(() => {
@@ -25,6 +43,14 @@ export default function MapView({ hidden }) {
     const engine = createGraphEngine(canvas, {
       getFilter: () => filterRef.current,
       onFocus: (node) => setFocus(node),
+      onCards: (nodes) => setCards(nodes),
+      onLayout: (layout) => {
+        for (const card of layout) {
+          cardPos.current.set(card.id, card);
+          const el = cardEls.current.get(card.id);
+          if (el) place(el, card);
+        }
+      },
     });
     engineRef.current = engine;
     return () => { engine.destroy(); engineRef.current = null; };
@@ -35,7 +61,7 @@ export default function MapView({ hidden }) {
     const engine = engineRef.current;
     if (!engine) return;
     if (!hidden) engine.start();
-    else { engine.stop(); setFocus(null); setEgo(false); }
+    else { engine.stop(); setFocus(null); setEgo(false); setCards([]); }
   }, [hidden]);
 
   // Rebuild when the shared folder filter changes (only matters while visible).
@@ -85,6 +111,27 @@ export default function MapView({ hidden }) {
   return (
     <div id="map" className={"view" + (hidden ? " hidden" : "")}>
       <canvas id="graph" ref={canvasRef} />
+      {/* The engine hands the nodes over most-linked first; that order becomes a
+          descending z-index, so the busiest note sits on top of the heap and the
+          focused one is lifted above everything. */}
+      <div className="map-cards" aria-hidden="true">
+        {cards.map((n, i) => (
+          <div key={n.id} ref={(el) => setCardEl(n.id, el)}
+            style={{
+              zIndex: focus && focus.id === n.id ? cards.length + 1 : cards.length - i,
+              "--card-accent": pathColor(n.path),
+            }}
+            className={"map-card" + (focus && focus.id === n.id ? " sel" : "")}>
+            <NoteMiniCard id={n.id} note={{
+              title: n.title,
+              path: n.path,
+              date: n.created_at,
+              links: n.degree,
+              attachments: n.attachments,
+            }} />
+          </div>
+        ))}
+      </div>
       <div className="map-hint">Pinch / scroll to zoom · drag to pan · tap a node</div>
       {ego && (
         <button id="egoReset" className="ego-reset" onClick={onExitEgo}>Full graph</button>

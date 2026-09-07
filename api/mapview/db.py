@@ -22,13 +22,28 @@ def all_links(user_id: int, limit: int = 1000) -> list[tuple[int, int]]:
 
 
 def notes_brief(user_id: int, ids) -> list[dict]:
-    """Minimal node fields for a set of the user's notes: [{id, title, text, path}]."""
+    """Node card fields for a set of the user's notes:
+    [{id, title, text, path, created_at, attachments}]. The map draws the same
+    compact card the chat tab does, so it needs the date and attachment count."""
     ids = list(ids)
     if not ids:
         return []
     with cursor() as cur:
         cur.execute(
-            "SELECT id, title, text, path FROM notes WHERE user_id = %s AND id = ANY(%s);",
+            """
+            SELECT n.id, n.title, n.text, n.path, n.created_at,
+                   (SELECT count(*) FROM note_attachments a
+                    WHERE a.note_id = n.id) AS attachments
+            FROM notes n
+            WHERE n.user_id = %s AND n.id = ANY(%s);
+            """,
             (user_id, ids),
         )
-        return [{"id": r[0], "title": r[1], "text": r[2], "path": r[3]} for r in cur.fetchall()]
+        return [{
+            "id": r[0],
+            "title": r[1],
+            "text": r[2],
+            "path": r[3],
+            "created_at": r[4],
+            "attachments": r[5] or 0,
+        } for r in cur.fetchall()]

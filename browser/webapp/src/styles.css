@@ -325,6 +325,20 @@
   /* Connections map */
   #map { padding: 0; position: relative; }
   #graph { display: block; width: 100%; height: calc(100vh - 150px); touch-action: none; }
+  /* Map node cards: the shared NoteMiniCard, positioned over the canvas by the
+     graph engine. The overlay is inert so the canvas keeps all pan/zoom/tap
+     input — the engine hit-tests the card rectangles itself. */
+  .map-cards { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .map-card { position: absolute; left: 0; top: 0; width: 200px; will-change: transform; }
+  /* Opaque with a lifted shadow: the cards overlap as a heap, so each one has
+     to read as a separate layer sitting on the ones below it. */
+  /* A hairline border in the note's folder colour: same path, same colour, and
+     it matches the node's dot. Kept to 1px so a dense heap does not turn loud. */
+  .map-card .note-mini { margin: 0; padding: 6px 9px; border-radius: 10px; background: var(--bg); border-color: var(--card-accent, var(--border)); box-shadow: 0 3px 14px rgba(0, 0, 0, .45); }
+  .map-card .note-mini-title { font-size: 12.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .map-card .note-mini-meta { font-size: 10px; gap: 3px 6px; }
+  .map-card .note-mini-meta svg { width: 11px; height: 11px; }
+  .map-card.sel .note-mini { border-color: #2f6feb; box-shadow: 0 0 0 1px #2f6feb, 0 6px 20px rgba(0, 0, 0, .55); }
   .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
 
   /* Map: ego reset chip (top) + focused-node card (bottom, above the dock) */

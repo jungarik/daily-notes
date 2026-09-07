@@ -8,6 +8,8 @@ class GraphNode(BaseModel):
     title: str
     path: str | None = None
     degree: int = 0
+    created_at: str | None = None
+    attachments: int = 0
 
 
 class GraphEdge(BaseModel):
