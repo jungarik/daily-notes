@@ -18,7 +18,51 @@ import { tg } from "../lib/telegram.js";
 // rather than card size.
 const CARD_W = 200, CARD_H = 48, CARD_GAP = 6, MAX_CARDS = 60, EDGE = 40;
 
+// A tap re-centres the map on a note; holding it opens the action card.
+const LONG_PRESS_MS = 450, TAP_SLOP = 6;
+
+// Focus depth: 0 is the tapped note, 1 its direct neighbours, 2+ the rest of the
+// vault falling away behind them. DEPTH_RING is the sim-space radius each ring
+// settles at; FORESHORTEN then projects those rings toward the tapped note so
+// the far ones compress together the way distance does in perspective.
+const MAX_DEPTH = 3;
+const DEPTH_RING = [0, 118, 215, 300];
+const FORESHORTEN = 0.26;
+
 function clamp(v, lo, hi) { return hi < lo ? lo : Math.max(lo, Math.min(hi, v)); }
+
+// How much a card shrinks with depth — gentler than the positional
+// foreshortening, so a neighbour stays readable instead of vanishing.
+function cardScale(d) { return Math.max(0.6, 1 - d * 0.17); }
+
+// Breadth-first distance from the tapped note; anything unreachable sits on the
+// furthest ring.
+function depthsFrom(data, rootId) {
+  const adj = new Map();
+  const add = (a, b) => {
+    if (!adj.has(a)) adj.set(a, []);
+    adj.get(a).push(b);
+  };
+
+  for (const e of data.edges || []) { add(e.source, e.target); add(e.target, e.source); }
+
+  const depth = new Map([[rootId, 0]]);
+  let frontier = [rootId];
+
+  for (let d = 1; d <= MAX_DEPTH && frontier.length; d++) {
+    const next = [];
+    for (const id of frontier) {
+      for (const nb of adj.get(id) || []) {
+        if (depth.has(nb)) continue;
+        depth.set(nb, d);
+        next.push(nb);
+      }
+    }
+    frontier = next;
+  }
+
+  return depth;
+}
 
 // A faint folder-coloured dot anchors every node; the card carries the detail.
 function nodeRadius(n) { return 3 + Math.min(6, (n.degree || 0) * 0.8); }
@@ -31,7 +75,7 @@ function buildSim(data, W, H) {
   return { nodes, edges, alpha: 1 };
 }
 
-function stepSim(sim) {
+function stepSim(sim, depth) {
   const nodes = sim.nodes, a = sim.alpha;
   const REPEL = 1600, SPRING = 0.02, LEN = 64, CENTER = 0.015, DAMP = 0.85;
   for (let i = 0; i < nodes.length; i++) {
@@ -50,7 +94,20 @@ function stepSim(sim) {
     e.a.vx += fx; e.a.vy += fy; e.b.vx -= fx; e.b.vy -= fy;
   }
   for (const n of nodes) {
-    n.vx += -n.x * CENTER; n.vy += -n.y * CENTER;
+    if (depth) {
+      // With a note focused the layout re-forms as concentric rings around it:
+      // the note itself is pinned to the origin, everything else is sprung
+      // toward the radius of its depth.
+      const d = Math.min(depth.get(n.id) ?? MAX_DEPTH, MAX_DEPTH);
+
+      if (d === 0) { n.vx += -n.x * 0.30; n.vy += -n.y * 0.30; }
+      else {
+        const r = Math.hypot(n.x, n.y) || 0.01, f = (r - DEPTH_RING[d]) * 0.05;
+        n.vx += -n.x / r * f; n.vy += -n.y / r * f;
+      }
+    } else {
+      n.vx += -n.x * CENTER; n.vy += -n.y * CENTER;
+    }
     n.x += n.vx * a; n.y += n.vy * a;
     n.vx *= DAMP; n.vy *= DAMP;
   }
@@ -62,12 +119,13 @@ export function createGraphEngine(canvas, opts) {
   const G = {
     canvas, ctx: canvas.getContext("2d"), dpr: 1, sim: null, raf: null,
     running: false, loaded: false, selected: null, focusNodeId: null,
-    cards: [], cardSig: null,
+    cards: [], cardSig: null, depth: null, pos: new Map(), vanish: null,
     ego: null, focusReq: 0, data: null, filterSig: null,
     view: { scale: 1, tx: 0, ty: 0 },
   };
   const getFilter = opts.getFilter || (() => null);   // returns a Set of folder keys, or null = all
-  const onFocus = opts.onFocus || (() => {});          // (node|null) → React renders the focus card
+  const onSelect = opts.onSelect || (() => {});         // (node|null) → tap: which note the map is built around
+  const onFocus = opts.onFocus || (() => {});          // (node|null) → long press: the action card
   const onCards = opts.onCards || (() => {});          // (nodes[]) → the visible card set changed
   const onLayout = opts.onLayout || (() => {});        // (cards[]) → per-frame screen positions
 
@@ -87,47 +145,96 @@ export function createGraphEngine(canvas, opts) {
     view.ty = h / 2 - (b + d) / 2 * view.scale;
   }
 
+  // Screen position for one node, foreshortened by its depth. With nothing
+  // focused this is the plain pan/zoom transform; with a focus, everything
+  // recedes toward the tapped note, which is the vanishing point.
+  function project(n) {
+    const v = G.view;
+    const sx = n.x * v.scale + v.tx, sy = n.y * v.scale + v.ty;
+
+    if (!G.depth) return { x: sx, y: sy, k: 1, d: 0, alpha: 1 };
+
+    const d = Math.min(G.depth.get(n.id) ?? MAX_DEPTH, MAX_DEPTH);
+    const k = 1 / (1 + d * FORESHORTEN);
+    const vp = G.vanish || { x: sx, y: sy };
+
+    return {
+      x: vp.x + (sx - vp.x) * k,
+      y: vp.y + (sy - vp.y) * k,
+      k,
+      d,
+      alpha: d === 0 ? 1 : Math.max(0.3, 1 - d * 0.25),
+    };
+  }
+
   function drawGraph() {
     const { ctx, canvas, sim, view, dpr, selected } = G; if (!ctx || !sim) return;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(view.tx, view.ty); ctx.scale(view.scale, view.scale);
-    ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1 / view.scale;
-    ctx.beginPath();
-    for (const e of sim.edges) { ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); }
-    ctx.stroke();
-    for (const n of sim.nodes) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, nodeRadius(n), 0, Math.PI * 2);
-      ctx.fillStyle = pathColor(n.path); ctx.fill();
-      if (selected === n.id) { ctx.lineWidth = 2 / view.scale; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+
+    const focused = G.depth ? sim.nodes.find((n) => n.id === G.focusNodeId) : null;
+    G.vanish = focused
+      ? { x: focused.x * view.scale + view.tx, y: focused.y * view.scale + view.ty }
+      : null;
+
+    const pos = new Map();
+    for (const n of sim.nodes) pos.set(n.id, project(n));
+    G.pos = pos;
+
+    // Edges fade with the shallower of their two endpoints, so a link into the
+    // background dims with it.
+    for (const e of sim.edges) {
+      const a = pos.get(e.a.id), b = pos.get(e.b.id);
+      ctx.globalAlpha = Math.min(a.alpha, b.alpha) * 0.55;
+      ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
-    ctx.restore();
+
+    for (const n of sim.nodes) {
+      const p = pos.get(n.id);
+      ctx.globalAlpha = p.alpha;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(1.2, nodeRadius(n) * view.scale * p.k), 0, Math.PI * 2);
+      ctx.fillStyle = pathColor(n.path); ctx.fill();
+
+      if (selected === n.id) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+    }
+
+    ctx.globalAlpha = 1;
     layoutCards();
   }
 
   // Every node in view gets a card, and they are allowed to overlap: the result
-  // is a heap where the most-linked notes sit on top, fully readable, and the
-  // rest peek out from underneath. `cards` is ordered most-linked first, which
-  // is both the stacking order (React maps it to a descending z-index) and the
-  // hit-test order, so a tap always lands on the card you can actually see.
+  // is a heap. Nearest depth wins the top of the pile, and within a depth the
+  // most-linked note does — so the tapped note sits in front, its neighbours
+  // just behind it, and the rest of the vault stacks up in the background.
+  // `cards` is ordered front-to-back, which is both the stacking order (React
+  // maps it to a descending z-index) and the hit-test order.
   function layoutCards() {
-    const { sim, view, selected, canvas } = G;
-    const s = view.scale;
+    const { sim, view, selected, canvas, pos } = G;
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    const cards = [];
-    for (const n of [...sim.nodes].sort((x, y) => (y.degree || 0) - (x.degree || 0))) {
-      if (cards.length >= MAX_CARDS) break;
-      const sx = n.x * s + view.tx, sy = n.y * s + view.ty;
+    const ordered = [...sim.nodes].sort((x, y) => {
+      const dx = pos.get(x.id).d, dy = pos.get(y.id).d;
 
-      if (sx < -EDGE || sx > w + EDGE || sy < -EDGE || sy > h + EDGE) continue;   // offscreen node
+      return dx !== dy ? dx - dy : (y.degree || 0) - (x.degree || 0);
+    });
+    const cards = [];
+    for (const n of ordered) {
+      if (cards.length >= MAX_CARDS) break;
+      const p = pos.get(n.id);
+
+      if (p.x < -EDGE || p.x > w + EDGE || p.y < -EDGE || p.y > h + EDGE) continue;
 
       // Cards keep their full width — an edge card is nudged back inside rather
       // than sliced off, since in a heap it is already offset from its dot.
-      const x = clamp(sx - CARD_W / 2, 2, w - CARD_W - 2);
-      const y = clamp(sy + nodeRadius(n) * s + CARD_GAP, 2, h - CARD_H - 2);
-      cards.push({ id: n.id, x, y, node: n, selected: selected === n.id });
+      const k = cardScale(p.d), cw = CARD_W * k, ch = CARD_H * k;
+      const x = clamp(p.x - cw / 2, 2, w - cw - 2);
+      const y = clamp(p.y + nodeRadius(n) * view.scale * p.k + CARD_GAP, 2, h - ch - 2);
+      cards.push({
+        id: n.id, x, y, w: cw, h: ch, k,
+        depth: p.d, alpha: p.alpha, node: n, selected: selected === n.id,
+      });
     }
     G.cards = cards;
     publishCards();
@@ -136,11 +243,19 @@ export function createGraphEngine(canvas, opts) {
   // Content changes are rare (a new visible set); positions change every frame.
   // Splitting them keeps React re-renders off the animation path.
   function publishCards() {
-    const sig = G.cards.map((c) => c.id + (c.selected ? "*" : "")).join(",");
+    const sig = G.cards.map((c) => c.id + ":" + c.depth + (c.selected ? "*" : "")).join(",");
 
     if (sig !== G.cardSig) {
       G.cardSig = sig;
-      onCards(G.cards.map((c) => c.node));
+      onCards(G.cards.map((c) => ({
+        id: c.node.id,
+        title: c.node.title,
+        path: c.node.path,
+        degree: c.node.degree,
+        created_at: c.node.created_at,
+        attachments: c.node.attachments,
+        depth: c.depth,
+      })));
     }
 
     onLayout(G.cards);
@@ -156,7 +271,7 @@ export function createGraphEngine(canvas, opts) {
 
   function loop() {
     if (!G.running) return;
-    stepSim(G.sim); drawGraph();
+    stepSim(G.sim, G.depth); drawGraph();
     G.raf = requestAnimationFrame(loop);
   }
   function startLoop() { if (G.running || !G.sim) return; G.running = true; G.raf = requestAnimationFrame(loop); }
@@ -168,26 +283,47 @@ export function createGraphEngine(canvas, opts) {
     v.tx = cx - gx * v.scale; v.ty = cy - gy * v.scale;
   }
 
-  function graphTap(clientX, clientY) {
+  // Which note is under a screen point: the topmost card covering it, else the
+  // nearest dot. Shared by the tap and the long press.
+  function nodeAt(clientX, clientY) {
     const c = G.canvas, rect = c.getBoundingClientRect(), v = G.view;
     const px = clientX - rect.left, py = clientY - rect.top;
 
-    const hit = (card) => px >= card.x && px <= card.x + CARD_W
-                       && py >= card.y && py <= card.y + CARD_H;
-    const top = G.cards.find((c) => c.selected && hit(c)) || G.cards.find(hit);
+    const hit = (card) => px >= card.x && px <= card.x + card.w
+                       && py >= card.y && py <= card.y + card.h;
+    const top = G.cards.find((card) => card.selected && hit(card)) || G.cards.find(hit);
 
-    if (top) {
-      focusNode(top.node);
-      return;
-    }
+    if (top) return top.node;
 
-    const gx = (px - v.tx) / v.scale, gy = (py - v.ty) / v.scale;
+    // Dots are matched against their *projected* positions — under perspective a
+    // node is not where the plain pan/zoom transform would put it.
     let best = null, bestd = 1e9;
     for (const n of (G.sim ? G.sim.nodes : [])) {
-      const r = nodeRadius(n) + 10, dx = n.x - gx, dy = n.y - gy, d = dx * dx + dy * dy;
+      const p = G.pos.get(n.id);
+
+      if (!p) continue;
+
+      const r = nodeRadius(n) * v.scale * p.k + 10;
+      const dx = p.x - px, dy = p.y - py, d = dx * dx + dy * dy;
+
       if (d < r * r && d < bestd) { best = n; bestd = d; }
     }
-    if (best) focusNode(best); else clearFocus();
+
+    return best;
+  }
+
+  function graphTap(clientX, clientY) {
+    const node = nodeAt(clientX, clientY);
+
+    if (node) selectNode(node); else clearFocus();
+  }
+
+  // Holding a note opens its action card. Holding empty space does nothing —
+  // clearing is the tap's job, and a hold there is usually an aborted pan.
+  function graphLongPress(clientX, clientY) {
+    const node = nodeAt(clientX, clientY);
+
+    if (node) openActionCard(node);
   }
 
   function neighborCount(id) {
@@ -196,21 +332,55 @@ export function createGraphEngine(canvas, opts) {
     for (const e of edges) if (e.source === id || e.target === id) n++;
     return n;
   }
-  function centerOnNode(node) {
+  // The focused note is pinned to the sim origin, so the view centres there and
+  // the note travels to the middle as the rings form around it.
+  function centerOnOrigin() {
     const c = G.canvas, v = G.view; if (!c) return;
-    v.tx = c.clientWidth / 2 - node.x * v.scale;
-    v.ty = c.clientHeight / 2 - node.y * v.scale;
+    v.tx = c.clientWidth / 2;
+    v.ty = c.clientHeight / 2;
   }
-  function focusNode(node) {
+  // The payload React needs for either the highlight or the action card; the
+  // card enriches it with tags/snippet itself.
+  function nodeSummary(node) {
+    return {
+      id: node.id,
+      title: node.title || "untitled",
+      path: node.path || "Inbox",
+      links: neighborCount(node.id),
+    };
+  }
+  // A tap: re-layout around the note. Depth drives both the ring physics and the
+  // perspective, so the graph reforms instead of just highlighting — and any open
+  // action card is dismissed, since that belongs to a long press.
+  function selectNode(node, keepCard) {
     G.selected = node.id; G.focusNodeId = node.id;
-    centerOnNode(node);
+    G.depth = depthsFrom(currentData(), node.id);
+    reheat();
+    centerOnOrigin();
     tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
-    // Hand the React card an initial payload; it enriches with tags/snippet itself.
-    onFocus({ id: node.id, title: node.title || "untitled", path: node.path || "Inbox", links: neighborCount(node.id) });
+    onSelect(nodeSummary(node));
+
+    if (!keepCard) onFocus(null);
+  }
+  // A long press: same note, plus the Neighbors / Open note / Outline card.
+  function openActionCard(node) {
+    selectNode(node, true);
+    tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred
+      && tg.HapticFeedback.impactOccurred("medium");
+    onFocus(nodeSummary(node));
   }
   function clearFocus() {
     G.selected = null; G.focusNodeId = null; G.focusReq++;
+    G.depth = null; G.vanish = null;
+    reheat();
+    onSelect(null);
     onFocus(null);
+  }
+  // Wake the sim so it can settle into (or out of) the focused ring layout.
+  function reheat() {
+    if (!G.sim) return;
+    G.sim.alpha = Math.max(G.sim.alpha, 0.55);
+    startLoop();
   }
 
   // ----- folder filter (shared with the Notes feed) + ego subgraph -----
@@ -248,17 +418,35 @@ export function createGraphEngine(canvas, opts) {
       return;
     }
     G.sim = buildSim(data, G.canvas.clientWidth, G.canvas.clientHeight);
-    for (let i = 0; i < 80; i++) stepSim(G.sim);   // warm up before first paint
+    for (let i = 0; i < 80; i++) stepSim(G.sim, G.depth);   // warm up before first paint
     autoFit();
     startLoop();
   }
 
   // ----- pointer / wheel input -----
   const pointers = new Map(); let last = null, moved = 0, pinch = 0;
+  // The long-press timer fires while the finger is still down, so the action card
+  // appears on the hold itself. Any drag, pinch or early release cancels it.
+  let pressTimer = null, pressFired = false;
+  const cancelPress = () => {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+  };
   const onDown = (e) => {
     canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     last = { x: e.clientX, y: e.clientY }; moved = 0;
-    if (pointers.size === 2) { const p = [...pointers.values()]; pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); }
+    cancelPress();
+
+    if (pointers.size === 1) {
+      pressFired = false;
+      const at = { x: e.clientX, y: e.clientY };
+      pressTimer = setTimeout(() => {
+        pressTimer = null; pressFired = true;
+        graphLongPress(at.x, at.y);
+      }, LONG_PRESS_MS);
+    } else {
+      const p = [...pointers.values()]; pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    }
   };
   const onMove = (e) => {
     if (!pointers.has(e.pointerId)) return;
@@ -266,13 +454,18 @@ export function createGraphEngine(canvas, opts) {
     if (pointers.size === 2) {
       const p = [...pointers.values()], d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       if (pinch > 0) { const rect = canvas.getBoundingClientRect(); zoomAt((p[0].x + p[1].x) / 2 - rect.left, (p[0].y + p[1].y) / 2 - rect.top, d / pinch); }
-      pinch = d; moved = 999; return;
+      pinch = d; moved = 999; cancelPress(); return;
     }
     if (last) { const dx = e.clientX - last.x, dy = e.clientY - last.y; moved += Math.abs(dx) + Math.abs(dy); G.view.tx += dx; G.view.ty += dy; last = { x: e.clientX, y: e.clientY }; }
+
+    if (moved > TAP_SLOP) cancelPress();
   };
   const onUp = (e) => {
     if (!pointers.has(e.pointerId)) return;
-    if (pointers.size === 1 && moved < 6) graphTap(e.clientX, e.clientY);
+    cancelPress();
+
+    if (pointers.size === 1 && moved < TAP_SLOP && !pressFired) graphTap(e.clientX, e.clientY);
+
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
     last = pointers.size === 1 ? [...pointers.values()][0] : null;
@@ -320,6 +513,6 @@ export function createGraphEngine(canvas, opts) {
       return d;
     },
     focusReqId() { return G.focusReq; },
-    destroy() { stopLoop(); unwireInput(); },
+    destroy() { stopLoop(); cancelPress(); unwireInput(); },
   };
 }

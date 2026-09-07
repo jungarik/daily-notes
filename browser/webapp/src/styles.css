@@ -329,7 +329,9 @@
      graph engine. The overlay is inert so the canvas keeps all pan/zoom/tap
      input — the engine hit-tests the card rectangles itself. */
   .map-cards { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-  .map-card { position: absolute; left: 0; top: 0; width: 200px; will-change: transform; }
+  /* Scaled from the top-left corner, which is the point the engine positions.
+     Opacity/blur ease so focusing a note reads as the background falling away. */
+  .map-card { position: absolute; left: 0; top: 0; width: 200px; transform-origin: 0 0; will-change: transform, opacity; transition: opacity .3s ease, filter .3s ease; }
   /* Opaque with a lifted shadow: the cards overlap as a heap, so each one has
      to read as a separate layer sitting on the ones below it. */
   /* A hairline border in the note's folder colour: same path, same colour, and

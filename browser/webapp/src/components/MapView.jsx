@@ -4,9 +4,10 @@ import { createGraphEngine } from "../graph/engine.js";
 import NoteMiniCard from "./NoteMiniCard.jsx";
 import { pathColor } from "../lib/format.js";
 
-// Connections map: a canvas force-directed graph with semantic zoom, a focused
-// node card (Neighbors / Open note / Outline), and depth-1 ego subgraphs. The
-// engine owns the canvas; this component owns the overlay UI and lifecycle.
+// Connections map: a canvas force-directed graph. Tapping a note rebuilds the
+// map around it (depth rings + perspective); holding one opens its action card
+// (Neighbors / Open note / Outline). The engine owns the canvas; this component
+// owns the overlay UI and lifecycle.
 export default function MapView({ hidden }) {
   const { state, openNote, setView } = useApp();
   const filterSel = state.filterSel;
@@ -16,7 +17,8 @@ export default function MapView({ hidden }) {
   const filterRef = useRef(filterSel);
   filterRef.current = filterSel;
 
-  const [focus, setFocus] = useState(null);   // { id, title, path, links } or null
+  const [selected, setSelected] = useState(null);  // tap: the note the map is built around
+  const [focus, setFocus] = useState(null);        // long press: the action card
   const [meta, setMeta] = useState("");
   const [ego, setEgo] = useState(false);
   const [cards, setCards] = useState([]);    // the nodes currently carrying a card
@@ -25,8 +27,11 @@ export default function MapView({ hidden }) {
   // panning/zooming never re-renders React.
   const cardEls = useRef(new Map());
   const cardPos = useRef(new Map());
+  // Position, foreshortening and fade all come from the engine's per-frame
+  // layout; the card scales from its top-left, which is where the engine puts it.
   const place = (el, at) => {
-    el.style.transform = "translate3d(" + at.x + "px," + at.y + "px,0)";
+    el.style.transform = "translate3d(" + at.x + "px," + at.y + "px,0) scale(" + at.k + ")";
+    el.style.opacity = at.alpha;
   };
   const setCardEl = useCallback((id, el) => {
     if (!el) { cardEls.current.delete(id); return; }
@@ -42,6 +47,7 @@ export default function MapView({ hidden }) {
     if (!canvas) return;
     const engine = createGraphEngine(canvas, {
       getFilter: () => filterRef.current,
+      onSelect: (node) => setSelected(node),
       onFocus: (node) => setFocus(node),
       onCards: (nodes) => setCards(nodes),
       onLayout: (layout) => {
@@ -61,7 +67,7 @@ export default function MapView({ hidden }) {
     const engine = engineRef.current;
     if (!engine) return;
     if (!hidden) engine.start();
-    else { engine.stop(); setFocus(null); setEgo(false); setCards([]); }
+    else { engine.stop(); setFocus(null); setSelected(null); setEgo(false); setCards([]); }
   }, [hidden]);
 
   // Rebuild when the shared folder filter changes (only matters while visible).
@@ -111,17 +117,19 @@ export default function MapView({ hidden }) {
   return (
     <div id="map" className={"view" + (hidden ? " hidden" : "")}>
       <canvas id="graph" ref={canvasRef} />
-      {/* The engine hands the nodes over most-linked first; that order becomes a
-          descending z-index, so the busiest note sits on top of the heap and the
-          focused one is lifted above everything. */}
+      {/* The engine hands the nodes over front-to-back — nearest depth first, then
+          most-linked — and that order becomes a descending z-index. With a note
+          focused this puts it in front, its neighbours right behind, and the rest
+          of the vault stacked into the background. */}
       <div className="map-cards" aria-hidden="true">
         {cards.map((n, i) => (
           <div key={n.id} ref={(el) => setCardEl(n.id, el)}
             style={{
-              zIndex: focus && focus.id === n.id ? cards.length + 1 : cards.length - i,
+              zIndex: selected && selected.id === n.id ? cards.length + 1 : cards.length - i,
               "--card-accent": pathColor(n.path),
+              filter: n.depth > 1 ? "blur(" + ((n.depth - 1) * 0.9) + "px)" : "none",
             }}
-            className={"map-card" + (focus && focus.id === n.id ? " sel" : "")}>
+            className={"map-card" + (selected && selected.id === n.id ? " sel" : "")}>
             <NoteMiniCard id={n.id} note={{
               title: n.title,
               path: n.path,
@@ -132,7 +140,7 @@ export default function MapView({ hidden }) {
           </div>
         ))}
       </div>
-      <div className="map-hint">Pinch / scroll to zoom · drag to pan · tap a node</div>
+      <div className="map-hint">Pinch to zoom · drag to pan · tap a note · hold for actions</div>
       {ego && (
         <button id="egoReset" className="ego-reset" onClick={onExitEgo}>Full graph</button>
       )}
