@@ -5,11 +5,11 @@ import NoteMiniCard from "./NoteMiniCard.jsx";
 import { pathColor } from "../lib/format.js";
 
 // Connections map: a canvas force-directed graph. Tapping a note rebuilds the
-// map around it (depth rings + perspective); holding one opens its action card
-// (Neighbors / Open note / Outline). The engine owns the canvas; this component
-// owns the overlay UI and lifecycle.
+// map around it (depth rings + perspective); holding one opens the note. The
+// engine owns the canvas and every per-frame style; this component owns the
+// card list and the lifecycle.
 export default function MapView({ hidden }) {
-  const { state, openNote, setView } = useApp();
+  const { state, openNote } = useApp();
   const filterSel = state.filterSel;
 
   const canvasRef = useRef(null);
@@ -17,21 +17,21 @@ export default function MapView({ hidden }) {
   const filterRef = useRef(filterSel);
   filterRef.current = filterSel;
 
-  const [selected, setSelected] = useState(null);  // tap: the note the map is built around
-  const [focus, setFocus] = useState(null);        // long press: the action card
-  const [meta, setMeta] = useState("");
-  const [ego, setEgo] = useState(false);
   const [cards, setCards] = useState([]);    // the nodes currently carrying a card
 
   // Card DOM nodes, positioned imperatively from the engine's animation frame so
   // panning/zooming never re-renders React.
   const cardEls = useRef(new Map());
   const cardPos = useRef(new Map());
-  // Position, foreshortening and fade all come from the engine's per-frame
-  // layout; the card scales from its top-left, which is where the engine puts it.
+  // Position, foreshortening, fade, blur and the held-note marker all come from
+  // the engine's per-frame layout — it eases the focus transition itself, so none
+  // of this is a CSS transition. The card scales from its top-left, which is
+  // where the engine puts it.
   const place = (el, at) => {
     el.style.transform = "translate3d(" + at.x + "px," + at.y + "px,0) scale(" + at.k + ")";
     el.style.opacity = at.alpha;
+    el.style.filter = at.blur > 0.05 ? "blur(" + at.blur.toFixed(2) + "px)" : "none";
+    el.classList.toggle("sel", !!at.marked);
   };
   const setCardEl = useCallback((id, el) => {
     if (!el) { cardEls.current.delete(id); return; }
@@ -41,14 +41,18 @@ export default function MapView({ hidden }) {
     if (at) place(el, at);
   }, []);
 
+  // openNote lands in a ref so the engine can be created once and still call the
+  // current handler.
+  const openRef = useRef(openNote);
+  openRef.current = openNote;
+
   // Create the engine once, on the canvas element.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const engine = createGraphEngine(canvas, {
       getFilter: () => filterRef.current,
-      onSelect: (node) => setSelected(node),
-      onFocus: (node) => setFocus(node),
+      onOpenNote: (id) => openRef.current(id),
       onCards: (nodes) => setCards(nodes),
       onLayout: (layout) => {
         for (const card of layout) {
@@ -67,7 +71,7 @@ export default function MapView({ hidden }) {
     const engine = engineRef.current;
     if (!engine) return;
     if (!hidden) engine.start();
-    else { engine.stop(); setFocus(null); setSelected(null); setEgo(false); setCards([]); }
+    else { engine.stop(); setCards([]); }
   }, [hidden]);
 
   // Rebuild when the shared folder filter changes (only matters while visible).
@@ -76,60 +80,17 @@ export default function MapView({ hidden }) {
     engineRef.current && engineRef.current.syncFilter();
   }, [filterSel, hidden]);
 
-  // Lazily enrich the focus card with tags + a snippet from the note detail.
-  useEffect(() => {
-    if (!focus) { setMeta(""); return; }
-    setMeta((focus.links || 0) + " linked note(s)");
-    let alive = true;
-    engineRef.current && engineRef.current.loadDetail(focus.id).then((d) => {
-      if (!alive || !d) return;
-      const bits = [];
-      if (d.tags && d.tags.length) bits.push("🏷 " + d.tags.join(", "));
-      const snip = (d.text || "").trim().replace(/\s+/g, " ");
-      if (snip) bits.push(snip.slice(0, 80) + (snip.length > 80 ? "…" : ""));
-      if (bits.length) setMeta(bits.join("  ·  "));
-    });
-    return () => { alive = false; };
-  }, [focus]);
-
-  const onNeighbors = useCallback(() => {
-    if (engineRef.current && engineRef.current.enterEgo()) setEgo(true);
-  }, []);
-  const onExitEgo = useCallback(() => {
-    if (engineRef.current && engineRef.current.exitEgo()) setEgo(false);
-  }, []);
-  const onOpen = useCallback(() => { if (focus) openNote(focus.id); }, [focus, openNote]);
-
-  // Outline: jump to the Explorer tab and flash the note's row. (Ancestor folders
-  // stay collapsed — folder open-state is local to the Explorer tree.)
-  const onOutline = useCallback(() => {
-    if (!focus) return;
-    setView("explorer");
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const row = document.querySelector('#tree [data-id="' + focus.id + '"]');
-      if (!row) return;
-      row.scrollIntoView({ block: "center", behavior: "smooth" });
-      row.classList.add("flash");
-      setTimeout(() => row.classList.remove("flash"), 1500);
-    }));
-  }, [focus, setView]);
-
   return (
     <div id="map" className={"view" + (hidden ? " hidden" : "")}>
       <canvas id="graph" ref={canvasRef} />
       {/* The engine hands the nodes over front-to-back — nearest depth first, then
-          most-linked — and that order becomes a descending z-index. With a note
-          focused this puts it in front, its neighbours right behind, and the rest
-          of the vault stacked into the background. */}
+          most-linked — and that order becomes a descending z-index. A tapped note
+          is depth 0, so it leads the pile without needing any highlight. */}
       <div className="map-cards" aria-hidden="true">
         {cards.map((n, i) => (
           <div key={n.id} ref={(el) => setCardEl(n.id, el)}
-            style={{
-              zIndex: selected && selected.id === n.id ? cards.length + 1 : cards.length - i,
-              "--card-accent": pathColor(n.path),
-              filter: n.depth > 1 ? "blur(" + ((n.depth - 1) * 0.9) + "px)" : "none",
-            }}
-            className={"map-card" + (selected && selected.id === n.id ? " sel" : "")}>
+            style={{ zIndex: cards.length - i, "--card-accent": pathColor(n.path) }}
+            className="map-card">
             <NoteMiniCard id={n.id} note={{
               title: n.title,
               path: n.path,
@@ -140,23 +101,7 @@ export default function MapView({ hidden }) {
           </div>
         ))}
       </div>
-      <div className="map-hint">Pinch to zoom · drag to pan · tap a note · hold for actions</div>
-      {ego && (
-        <button id="egoReset" className="ego-reset" onClick={onExitEgo}>Full graph</button>
-      )}
-      {focus && (
-        <div id="focusCard" className="focus-card">
-          <button id="focusClose" className="focus-close" onClick={() => setFocus(null)}>✕</button>
-          <div id="focusTitle" className="focus-title">{focus.title}</div>
-          <div id="focusPath" className="focus-path">{"📁 " + focus.path}</div>
-          <div id="focusMeta" className="focus-meta">{meta}</div>
-          <div className="focus-actions">
-            <button id="focusNeighbors" className="focus-btn" onClick={onNeighbors}>Neighbors</button>
-            <button id="focusOpen" className="focus-btn" onClick={onOpen}>Open note</button>
-            <button id="focusOutline" className="focus-btn" onClick={onOutline}>Outline</button>
-          </div>
-        </div>
-      )}
+      <div className="map-hint">Drag to pan · tap a note · hold to open it</div>
     </div>
   );
 }

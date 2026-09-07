@@ -1,7 +1,7 @@
 // Canvas force-directed graph engine (ported from the vanilla map.js).
-// Framework-agnostic: the React MapView owns the focus card / ego-reset UI and
-// drives this engine through callbacks. The engine owns the canvas, the physics
-// sim, pan/zoom input, and depth-1 ego subgraphs.
+// Framework-agnostic: the engine owns the canvas, the physics sim, pan/zoom
+// input and the focus transition; MapView only renders the card list and passes
+// the note-open handler in. Tap focuses a note, hold opens it.
 //
 // Nodes are drawn as a faint folder-coloured dot plus a note card. The cards are
 // real DOM (the shared NoteMiniCard, so the map and the chat tab show the same
@@ -9,7 +9,7 @@
 // reports that through `onCards` (set changed) and `onLayout` (per-frame
 // positions). Cards are fixed screen size, so zooming in spreads nodes apart and
 // reveals more of them — the semantic zoom falls out of the overlap culling.
-import { fetchGraph, fetchNote } from "../lib/api.js";
+import { fetchGraph } from "../lib/api.js";
 import { pathColor } from "../lib/format.js";
 import { tg } from "../lib/telegram.js";
 
@@ -20,6 +20,21 @@ const CARD_W = 200, CARD_H = 48, CARD_GAP = 6, MAX_CARDS = 60, EDGE = 40;
 
 // A tap re-centres the map on a note; holding it opens the action card.
 const LONG_PRESS_MS = 450, TAP_SLOP = 6;
+
+// Focusing is a transition, not a switch. `mix` runs on a clock, not a decaying
+// lerp — an exponential ease is fastest at its first frame, which is exactly the
+// jolt we do not want — and it is shaped by smoothstep, so the motion starts and
+// ends at zero velocity. Every depth cue (position, foreshortening, scale, fade,
+// blur) and the recentring pan are driven by that one value, so the whole map
+// moves as a single body.
+const FOCUS_MS = 950;
+
+// Below this the free layout is considered settled and stops moving entirely.
+const ALPHA_REST = 0.004;
+
+function lerp(from, to, mix) { return from + (to - from) * mix; }
+
+function smoothstep(t) { return t * t * (3 - 2 * t); }
 
 // Focus depth: 0 is the tapped note, 1 its direct neighbours, 2+ the rest of the
 // vault falling away behind them. DEPTH_RING is the sim-space radius each ring
@@ -34,6 +49,65 @@ function clamp(v, lo, hi) { return hi < lo ? lo : Math.max(lo, Math.min(hi, v));
 // How much a card shrinks with depth — gentler than the positional
 // foreshortening, so a neighbour stays readable instead of vanishing.
 function cardScale(d) { return Math.max(0.6, 1 - d * 0.17); }
+
+function depthAlpha(d) { return d === 0 ? 1 : Math.max(0.3, 1 - d * 0.25); }
+
+function depthBlur(d) { return d > 1 ? (d - 1) * 0.9 : 0; }
+
+// Where each node sits once the map is fully focused: the tapped note at the hub,
+// each depth on its own ring. Ring members keep their current angular order and
+// are spread evenly around it at the offset that rotates them least, so the
+// layout re-forms by the shortest path instead of scrambling. The outermost ring
+// is only pushed outward — its nodes keep their arrangement, since a perfect
+// circle of everything-else reads as noise.
+function ringLayout(nodes, depth, hub) {
+  const rings = new Map();
+
+  for (const n of nodes) {
+    const d = Math.min(depth.get(n.id) ?? MAX_DEPTH, MAX_DEPTH);
+
+    if (!rings.has(d)) rings.set(d, []);
+
+    rings.get(d).push(n);
+  }
+
+  const target = new Map();
+
+  for (const [d, members] of rings) {
+    if (d === 0) {
+      for (const n of members) target.set(n.id, { x: hub.x, y: hub.y });
+      continue;
+    }
+
+    const placed = members
+      .map((n) => ({ n, a: Math.atan2(n.y - hub.y, n.x - hub.x), r: Math.hypot(n.x - hub.x, n.y - hub.y) }))
+      .sort((p, q) => p.a - q.a);
+
+    if (d === MAX_DEPTH) {
+      for (const item of placed) {
+        const r = Math.max(item.r, DEPTH_RING[d]);
+        target.set(item.n.id, { x: hub.x + Math.cos(item.a) * r, y: hub.y + Math.sin(item.a) * r });
+      }
+      continue;
+    }
+
+    const step = (Math.PI * 2) / placed.length;
+    let offset = 0;
+
+    placed.forEach((item, i) => { offset += item.a - i * step; });
+    offset /= placed.length;
+
+    placed.forEach((item, i) => {
+      const a = offset + i * step;
+      target.set(item.n.id, {
+        x: hub.x + Math.cos(a) * DEPTH_RING[d],
+        y: hub.y + Math.sin(a) * DEPTH_RING[d],
+      });
+    });
+  }
+
+  return target;
+}
 
 // Breadth-first distance from the tapped note; anything unreachable sits on the
 // furthest ring.
@@ -75,7 +149,7 @@ function buildSim(data, W, H) {
   return { nodes, edges, alpha: 1 };
 }
 
-function stepSim(sim, depth) {
+function stepSim(sim) {
   const nodes = sim.nodes, a = sim.alpha;
   const REPEL = 1600, SPRING = 0.02, LEN = 64, CENTER = 0.015, DAMP = 0.85;
   for (let i = 0; i < nodes.length; i++) {
@@ -94,38 +168,29 @@ function stepSim(sim, depth) {
     e.a.vx += fx; e.a.vy += fy; e.b.vx -= fx; e.b.vy -= fy;
   }
   for (const n of nodes) {
-    if (depth) {
-      // With a note focused the layout re-forms as concentric rings around it:
-      // the note itself is pinned to the origin, everything else is sprung
-      // toward the radius of its depth.
-      const d = Math.min(depth.get(n.id) ?? MAX_DEPTH, MAX_DEPTH);
-
-      if (d === 0) { n.vx += -n.x * 0.30; n.vy += -n.y * 0.30; }
-      else {
-        const r = Math.hypot(n.x, n.y) || 0.01, f = (r - DEPTH_RING[d]) * 0.05;
-        n.vx += -n.x / r * f; n.vy += -n.y / r * f;
-      }
-    } else {
-      n.vx += -n.x * CENTER; n.vy += -n.y * CENTER;
-    }
+    n.vx += -n.x * CENTER; n.vy += -n.y * CENTER;
     n.x += n.vx * a; n.y += n.vy * a;
     n.vx *= DAMP; n.vy *= DAMP;
   }
-  sim.alpha = Math.max(0.03, a * 0.985);
+  // Decay all the way to rest. The old 0.03 floor kept every node drifting
+  // forever, which read as constant low-level jitter under everything else.
+  sim.alpha = a < ALPHA_REST ? 0 : a * 0.978;
 }
 
 // One engine instance per mounted canvas. All former GRAPH globals live on G.
 export function createGraphEngine(canvas, opts) {
   const G = {
     canvas, ctx: canvas.getContext("2d"), dpr: 1, sim: null, raf: null,
-    running: false, loaded: false, selected: null, focusNodeId: null,
-    cards: [], cardSig: null, depth: null, pos: new Map(), vanish: null,
-    ego: null, focusReq: 0, data: null, filterSig: null,
+    running: false, loaded: false, selected: null,
+    cards: [], cardSig: null, pos: new Map(), vanish: null, lastTs: 0,
+    depth: null, depthRoot: null, target: null, marked: null,
+    mix: 0, mixT: 0, mixTarget: 0, viewFrom: null, viewTo: null,
+    data: null, filterSig: null,
     view: { scale: 1, tx: 0, ty: 0 },
   };
   const getFilter = opts.getFilter || (() => null);   // returns a Set of folder keys, or null = all
-  const onSelect = opts.onSelect || (() => {});         // (node|null) → tap: which note the map is built around
-  const onFocus = opts.onFocus || (() => {});          // (node|null) → long press: the action card
+  // A tap needs no callback: it rebuilds the map, which is its own feedback.
+  const onOpenNote = opts.onOpenNote || (() => {});    // (noteId) → long press opens the note
   const onCards = opts.onCards || (() => {});          // (nodes[]) → the visible card set changed
   const onLayout = opts.onLayout || (() => {});        // (cards[]) → per-frame screen positions
 
@@ -149,13 +214,25 @@ export function createGraphEngine(canvas, opts) {
   // focused this is the plain pan/zoom transform; with a focus, everything
   // recedes toward the tapped note, which is the vanishing point.
   function project(n) {
-    const v = G.view;
-    const sx = n.x * v.scale + v.tx, sy = n.y * v.scale + v.ty;
+    const v = G.view, mix = G.mix;
 
-    if (!G.depth) return { x: sx, y: sy, k: 1, d: 0, alpha: 1 };
+    if (!G.depth || mix <= 0) {
+      return {
+        x: n.x * v.scale + v.tx, y: n.y * v.scale + v.ty,
+        k: 1, cardK: 1, d: 0, alpha: 1, blur: 0,
+      };
+    }
+
+    // Glide from wherever the free layout left this node to its ring slot. This
+    // is plain interpolation between two layouts — no forces, so nothing can
+    // overshoot, oscillate or lurch.
+    const to = G.target && G.target.get(n.id);
+    const gx = to ? lerp(n.x, to.x, mix) : n.x;
+    const gy = to ? lerp(n.y, to.y, mix) : n.y;
+    const sx = gx * v.scale + v.tx, sy = gy * v.scale + v.ty;
 
     const d = Math.min(G.depth.get(n.id) ?? MAX_DEPTH, MAX_DEPTH);
-    const k = 1 / (1 + d * FORESHORTEN);
+    const k = 1 / (1 + d * FORESHORTEN * mix);
     const vp = G.vanish || { x: sx, y: sy };
 
     return {
@@ -163,19 +240,25 @@ export function createGraphEngine(canvas, opts) {
       y: vp.y + (sy - vp.y) * k,
       k,
       d,
-      alpha: d === 0 ? 1 : Math.max(0.3, 1 - d * 0.25),
+      cardK: lerp(1, cardScale(d), mix),
+      alpha: lerp(1, depthAlpha(d), mix),
+      blur: depthBlur(d) * mix,
     };
   }
 
   function drawGraph() {
-    const { ctx, canvas, sim, view, dpr, selected } = G; if (!ctx || !sim) return;
+    const { ctx, canvas, sim, view, dpr } = G; if (!ctx || !sim) return;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const focused = G.depth ? sim.nodes.find((n) => n.id === G.focusNodeId) : null;
+    const focused = G.depth ? sim.nodes.find((n) => n.id === G.depthRoot) : null;
+    const hub = focused && G.target && G.target.get(focused.id);
     G.vanish = focused
-      ? { x: focused.x * view.scale + view.tx, y: focused.y * view.scale + view.ty }
+      ? {
+          x: lerp(focused.x, hub ? hub.x : focused.x, G.mix) * view.scale + view.tx,
+          y: lerp(focused.y, hub ? hub.y : focused.y, G.mix) * view.scale + view.ty,
+        }
       : null;
 
     const pos = new Map();
@@ -198,7 +281,9 @@ export function createGraphEngine(canvas, opts) {
       ctx.arc(p.x, p.y, Math.max(1.2, nodeRadius(n) * view.scale * p.k), 0, Math.PI * 2);
       ctx.fillStyle = pathColor(n.path); ctx.fill();
 
-      if (selected === n.id) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+      // Only the long-pressed note is marked; a tap says which note the map is
+      // built around by putting it front and centre, which needs no chrome.
+      if (G.marked === n.id) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
     }
 
     ctx.globalAlpha = 1;
@@ -228,12 +313,13 @@ export function createGraphEngine(canvas, opts) {
 
       // Cards keep their full width — an edge card is nudged back inside rather
       // than sliced off, since in a heap it is already offset from its dot.
-      const k = cardScale(p.d), cw = CARD_W * k, ch = CARD_H * k;
+      const k = p.cardK, cw = CARD_W * k, ch = CARD_H * k;
       const x = clamp(p.x - cw / 2, 2, w - cw - 2);
       const y = clamp(p.y + nodeRadius(n) * view.scale * p.k + CARD_GAP, 2, h - ch - 2);
       cards.push({
         id: n.id, x, y, w: cw, h: ch, k,
-        depth: p.d, alpha: p.alpha, node: n, selected: selected === n.id,
+        depth: p.d, alpha: p.alpha, blur: p.blur, node: n,
+        selected: selected === n.id, marked: G.marked === n.id,
       });
     }
     G.cards = cards;
@@ -243,7 +329,7 @@ export function createGraphEngine(canvas, opts) {
   // Content changes are rare (a new visible set); positions change every frame.
   // Splitting them keeps React re-renders off the animation path.
   function publishCards() {
-    const sig = G.cards.map((c) => c.id + ":" + c.depth + (c.selected ? "*" : "")).join(",");
+    const sig = G.cards.map((c) => c.id + ":" + c.depth).join(",");
 
     if (sig !== G.cardSig) {
       G.cardSig = sig;
@@ -269,12 +355,45 @@ export function createGraphEngine(canvas, opts) {
     ctx.fillText(msg, canvas.clientWidth / 2, canvas.clientHeight / 2); ctx.textAlign = "start";
   }
 
-  function loop() {
+  // Ease the focus strength and the recentring pan one step. Both are pure
+  // animation, so they run per frame rather than being set on the gesture.
+  function stepTransition(dt) {
+    if (G.mixT !== G.mixTarget) {
+      const step = dt / FOCUS_MS;
+      G.mixT = G.mixTarget > G.mixT
+        ? Math.min(G.mixTarget, G.mixT + step)
+        : Math.max(G.mixTarget, G.mixT - step);
+      G.mix = smoothstep(G.mixT);
+
+      // Fully unfocused: only now is the ring layout safe to drop, so the unwind
+      // has something to unwind from.
+      if (G.mixT === 0) { G.depth = null; G.depthRoot = null; G.target = null; G.vanish = null; }
+    }
+
+    // The recentring pan rides the same curve, so it cannot drift out of step
+    // with the layout. A drag clears it and hands control back.
+    if (G.viewFrom && G.viewTo) {
+      G.view.tx = lerp(G.viewFrom.tx, G.viewTo.tx, G.mix);
+      G.view.ty = lerp(G.viewFrom.ty, G.viewTo.ty, G.mix);
+
+      if (G.mixT === 1 || G.mixT === 0) { G.viewFrom = null; G.viewTo = null; }
+    }
+  }
+
+  function loop(ts) {
     if (!G.running) return;
-    stepSim(G.sim, G.depth); drawGraph();
+    const dt = G.lastTs ? Math.min(64, ts - G.lastTs) : 16;
+    G.lastTs = ts;
+    stepTransition(dt);
+
+    // While the focus layout owns the positions the free sim has nothing to say,
+    // so let it rest rather than drift underneath.
+    if (G.mixT < 1) stepSim(G.sim);
+
+    drawGraph();
     G.raf = requestAnimationFrame(loop);
   }
-  function startLoop() { if (G.running || !G.sim) return; G.running = true; G.raf = requestAnimationFrame(loop); }
+  function startLoop() { if (G.running || !G.sim) return; G.running = true; G.lastTs = 0; G.raf = requestAnimationFrame(loop); }
   function stopLoop() { G.running = false; if (G.raf) cancelAnimationFrame(G.raf); G.raf = null; }
 
   function zoomAt(cx, cy, factor) {
@@ -318,75 +437,81 @@ export function createGraphEngine(canvas, opts) {
     if (node) selectNode(node); else clearFocus();
   }
 
-  // Holding a note opens its action card. Holding empty space does nothing —
+  // Holding a note opens it. Holding empty space does nothing —
   // clearing is the tap's job, and a hold there is usually an aborted pan.
   function graphLongPress(clientX, clientY) {
     const node = nodeAt(clientX, clientY);
 
-    if (node) openActionCard(node);
+    if (node) openNote(node);
   }
 
-  function neighborCount(id) {
-    const edges = (G.data && G.data.edges) || [];
-    let n = 0;
-    for (const e of edges) if (e.source === id || e.target === id) n++;
-    return n;
-  }
-  // The focused note is pinned to the sim origin, so the view centres there and
-  // the note travels to the middle as the rings form around it.
-  function centerOnOrigin() {
+  // The hub stays exactly where the tapped note already is, so the note itself
+  // never moves in the graph — the rings form around it and the view glides to
+  // bring it to the centre, both on the transition's own curve.
+  function centerOnHub(hub) {
     const c = G.canvas, v = G.view; if (!c) return;
-    v.tx = c.clientWidth / 2;
-    v.ty = c.clientHeight / 2;
-  }
-  // The payload React needs for either the highlight or the action card; the
-  // card enriches it with tags/snippet itself.
-  function nodeSummary(node) {
-    return {
-      id: node.id,
-      title: node.title || "untitled",
-      path: node.path || "Inbox",
-      links: neighborCount(node.id),
+    G.viewFrom = { tx: v.tx, ty: v.ty };
+    G.viewTo = {
+      tx: c.clientWidth / 2 - hub.x * v.scale,
+      ty: c.clientHeight / 2 - hub.y * v.scale,
     };
   }
-  // A tap: re-layout around the note. Depth drives both the ring physics and the
-  // perspective, so the graph reforms instead of just highlighting — and any open
-  // action card is dismissed, since that belongs to a long press.
-  function selectNode(node, keepCard) {
-    G.selected = node.id; G.focusNodeId = node.id;
+  // A tap: re-layout around the note. Depth drives both the ring position and the
+  // perspective, so the graph reforms instead of just highlighting. It also drops
+  // the held-note marker, which belongs to the long press.
+  function selectNode(node, keepMark) {
+    G.selected = node.id;
     G.depth = depthsFrom(currentData(), node.id);
-    reheat();
-    centerOnOrigin();
+    G.depthRoot = node.id;
+    // Re-aim from wherever the map is right now, so re-tapping mid-transition
+    // continues smoothly instead of restarting.
+    freezeCurrentLayout();
+    const hub = { x: node.x, y: node.y };
+    G.target = ringLayout(G.sim.nodes, G.depth, hub);
+    G.mixT = 0; G.mixTarget = 1;
+    G.mix = 0;
+    centerOnHub(hub);
+    startLoop();
     tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged();
-    onSelect(nodeSummary(node));
 
-    if (!keepCard) onFocus(null);
+    if (!keepMark) G.marked = null;
   }
-  // A long press: same note, plus the Neighbors / Open note / Outline card.
-  function openActionCard(node) {
+  // A long press: focus the note as a tap would, mark it, and open it.
+  function openNote(node) {
     selectNode(node, true);
     tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred
       && tg.HapticFeedback.impactOccurred("medium");
-    onFocus(nodeSummary(node));
+    G.marked = node.id;
+    onOpenNote(node.id);
   }
   function clearFocus() {
-    G.selected = null; G.focusNodeId = null; G.focusReq++;
-    G.depth = null; G.vanish = null;
-    reheat();
-    onSelect(null);
-    onFocus(null);
-  }
-  // Wake the sim so it can settle into (or out of) the focused ring layout.
-  function reheat() {
-    if (!G.sim) return;
-    G.sim.alpha = Math.max(G.sim.alpha, 0.55);
+    G.selected = null; G.marked = null;
+    // Leave the ring layout in place; `stepTransition` drops it once the mix
+    // reaches 0, so the rings unwind instead of vanishing.
+    G.mixTarget = 0;
+    G.viewFrom = null; G.viewTo = null;
     startLoop();
   }
+  // Bake the currently rendered (part-way) positions back into the sim, so a new
+  // focus interpolates from what is on screen rather than from the free layout
+  // the viewer can no longer see.
+  function freezeCurrentLayout() {
+    if (!G.sim || !G.target || G.mix <= 0) return;
 
-  // ----- folder filter (shared with the Notes feed) + ego subgraph -----
+    for (const n of G.sim.nodes) {
+      const to = G.target.get(n.id);
+
+      if (!to) continue;
+
+      n.x = lerp(n.x, to.x, G.mix); n.y = lerp(n.y, to.y, G.mix);
+      n.vx = 0; n.vy = 0;
+    }
+  }
+  // ----- folder filter (shared with the Notes feed) -----
   function filterSig() {
     const f = getFilter();
-    return (f ? [...f].sort().join("|") : "ALL") + "|ego:" + (G.ego == null ? "" : G.ego);
+
+    return f ? [...f].sort().join("|") : "ALL";
   }
   function applyFilter(data) {
     const f = getFilter();
@@ -397,17 +522,7 @@ export function createGraphEngine(canvas, opts) {
     return { nodes, edges };
   }
   function currentData() {
-    const full = applyFilter(G.data || { nodes: [], edges: [] });
-    if (G.ego == null) return full;
-    const keep = new Set([G.ego]);
-    for (const e of full.edges) {
-      if (e.source === G.ego) keep.add(e.target);
-      if (e.target === G.ego) keep.add(e.source);
-    }
-    return {
-      nodes: full.nodes.filter((n) => keep.has(n.id)),
-      edges: full.edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
-    };
+    return applyFilter(G.data || { nodes: [], edges: [] });
   }
   function rebuildSim() {
     G.filterSig = filterSig();
@@ -418,7 +533,7 @@ export function createGraphEngine(canvas, opts) {
       return;
     }
     G.sim = buildSim(data, G.canvas.clientWidth, G.canvas.clientHeight);
-    for (let i = 0; i < 80; i++) stepSim(G.sim, G.depth);   // warm up before first paint
+    for (let i = 0; i < 80; i++) stepSim(G.sim);   // warm up before first paint
     autoFit();
     startLoop();
   }
@@ -456,7 +571,7 @@ export function createGraphEngine(canvas, opts) {
       if (pinch > 0) { const rect = canvas.getBoundingClientRect(); zoomAt((p[0].x + p[1].x) / 2 - rect.left, (p[0].y + p[1].y) / 2 - rect.top, d / pinch); }
       pinch = d; moved = 999; cancelPress(); return;
     }
-    if (last) { const dx = e.clientX - last.x, dy = e.clientY - last.y; moved += Math.abs(dx) + Math.abs(dy); G.view.tx += dx; G.view.ty += dy; last = { x: e.clientX, y: e.clientY }; }
+    if (last) { const dx = e.clientX - last.x, dy = e.clientY - last.y; moved += Math.abs(dx) + Math.abs(dy); G.view.tx += dx; G.view.ty += dy; last = { x: e.clientX, y: e.clientY }; G.viewFrom = null; G.viewTo = null; }
 
     if (moved > TAP_SLOP) cancelPress();
   };
@@ -502,17 +617,6 @@ export function createGraphEngine(canvas, opts) {
     stop() { stopLoop(); },
     // Rebuild if the folder filter changed since the last build (called on filter edits).
     syncFilter() { if (G.loaded && G.filterSig !== filterSig()) rebuildSim(); },
-    enterEgo() { if (G.focusNodeId == null) return false; G.ego = G.focusNodeId; rebuildSim(); return true; },
-    exitEgo() { if (G.ego == null) return false; G.ego = null; rebuildSim(); return true; },
-    isEgo() { return G.ego != null; },
-    // Lazily enrich the focus card with tags + a snippet from the note detail.
-    async loadDetail(id) {
-      const req = ++G.focusReq;
-      const d = await fetchNote(id).catch(() => null);
-      if (req !== G.focusReq || !d) return null;
-      return d;
-    },
-    focusReqId() { return G.focusReq; },
     destroy() { stopLoop(); cancelPress(); unwireInput(); },
   };
 }

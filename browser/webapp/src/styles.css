@@ -330,8 +330,9 @@
      input — the engine hit-tests the card rectangles itself. */
   .map-cards { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
   /* Scaled from the top-left corner, which is the point the engine positions.
-     Opacity/blur ease so focusing a note reads as the background falling away. */
-  .map-card { position: absolute; left: 0; top: 0; width: 200px; transform-origin: 0 0; will-change: transform, opacity; transition: opacity .3s ease, filter .3s ease; }
+     No CSS transition: transform/opacity/filter are driven every frame by the
+     engine's eased focus transition, and a transition on top would smear it. */
+  .map-card { position: absolute; left: 0; top: 0; width: 200px; transform-origin: 0 0; will-change: transform, opacity, filter; }
   /* Opaque with a lifted shadow: the cards overlap as a heap, so each one has
      to read as a separate layer sitting on the ones below it. */
   /* A hairline border in the note's folder colour: same path, same colour, and
@@ -343,28 +344,3 @@
   .map-card.sel .note-mini { border-color: #2f6feb; box-shadow: 0 0 0 1px #2f6feb, 0 6px 20px rgba(0, 0, 0, .55); }
   .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
 
-  /* Map: ego reset chip (top) + focused-node card (bottom, above the dock) */
-  .ego-reset {
-    position: absolute; top: 10px; left: 12px; z-index: 6;
-    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
-    padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14);
-    background: rgba(48,48,48,.7);
-    -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
-  }
-  .ego-reset.hidden, .focus-card.hidden { display: none; }
-  .focus-card {
-    position: absolute; left: 12px; right: 12px; bottom: 104px; z-index: 6;
-    padding: 12px 14px 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,.14);
-    background: rgba(40,40,40,.86);
-    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
-    box-shadow: 0 12px 36px rgba(0,0,0,.5);
-  }
-  .focus-close { position: absolute; top: 8px; right: 10px; border: none; background: rgba(255,255,255,.12); color: var(--text); width: 26px; height: 26px; border-radius: 50%; font-size: 12px; cursor: pointer; }
-  .focus-title { font-size: 15px; font-weight: 600; color: var(--text); padding-right: 28px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focus-path { font-size: 12px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focus-meta { font-size: 12px; color: var(--text-faint); margin-top: 4px; min-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focus-actions { display: flex; gap: 8px; margin-top: 11px; }
-  .focus-btn { flex: 1; font: inherit; font-size: 13px; padding: 9px 6px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); background: rgba(255,255,255,.06); color: var(--text); }
-  .focus-btn:active { background: rgba(255,255,255,.14); }
-  .row.flash { animation: rowflash 1.4s ease; }
-  @keyframes rowflash { 0%, 100% { background: transparent; } 25% { background: rgba(47,111,235,.35); } }
