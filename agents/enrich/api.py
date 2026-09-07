@@ -22,7 +22,7 @@ from common import embedings
 from common import helper
 from agents.enrich import graph as loop
 from agents.enrich import db
-from agents.enrich.graph import METADATA_GRAPH
+from agents.enrich.graph import CLASSIFY_GRAPH
 from agents.enrich.prompts import SYSTEM_PROMPT, planning_messages, with_system
 from agents.enrich.state import Ctx, context_to_dict
 
@@ -220,7 +220,7 @@ def propose_capture(user_id: int, text: str) -> CaptureProposal:
     if not text:
         raise ValueError("text is required")
 
-    result = METADATA_GRAPH.invoke({
+    result = CLASSIFY_GRAPH.invoke({
         "user_id": user_id,
         "metadata_text": text,
         "metadata_note_id": None,

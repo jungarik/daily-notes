@@ -100,7 +100,7 @@ def _restore(value, factory):
 
 
 def context_from_state(state: EnrichState | ActionPlanState) -> Ctx:
-    data = state["context"]
+    data = state.get("context") or {}
 
     return Ctx(
         data["user_id"],

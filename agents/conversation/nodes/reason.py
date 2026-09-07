@@ -21,8 +21,10 @@ _UNAVAILABLE_REPLY = (
 )
 
 
-def _assistant_message(message) -> dict:
-    data = {"role": "assistant", "content": message.content}
+def _create_assistant_message(message) -> dict:
+    data = {
+        "role": "assistant", 
+        "content": message.content}
 
     if message.tool_calls:
         data["tool_calls"] = [{
@@ -37,24 +39,7 @@ def _assistant_message(message) -> dict:
     return data
 
 
-def _complete(messages: list[dict], use_tools: bool):
-    kwargs = {
-        "model": config.AGENT_MODEL,
-        "messages": messages,
-        "temperature": 0.2,
-    }
-
-    if use_tools:
-        kwargs.update(
-            tools=TOOL_SPECS,
-            tool_choice="auto",
-            parallel_tool_calls=False,
-        )
-
-    return model_gateway.chat_completion(**kwargs)
-
-
-def _tool_call(message) -> dict | None:
+def _extract_first_tool(message) -> dict | None:
     if not message.tool_calls:
         return None
 
@@ -75,7 +60,7 @@ def _tool_call(message) -> dict | None:
 def _unavailable(state: ChatState, kind: str) -> dict:
     return {
         "messages": [
-            *state["messages"],
+            *state.get("messages", []),
             {"role": "assistant", "content": _UNAVAILABLE_REPLY},
         ],
         "steps": state.get("steps", 0) + 1,
@@ -88,23 +73,37 @@ def _unavailable(state: ChatState, kind: str) -> dict:
 
 
 def run(state: ChatState) -> dict:
+    messages = state.get("messages") or []
     use_tools = state.get("steps", 0) < config.AGENT_MAX_STEPS
 
+    model_request = {
+        "model": config.AGENT_MODEL,
+        "messages": messages,
+        "temperature": 0.2,
+    }
+
+    if use_tools:
+        model_request.update(
+            tools=TOOL_SPECS,
+            tool_choice="auto",
+            parallel_tool_calls=False,
+        )
+
     try:
-        message = _complete(state["messages"], use_tools).choices[0].message
+        model_response = model_gateway.chat_completion(**model_request).choices[0].message
     except model_gateway.ModelGatewayError as exc:
         logger.warning("Conversation model call failed: %s", exc.kind)
 
         return _unavailable(state, exc.kind)
 
-    call = _tool_call(message) if use_tools else None
-    update = {
-        "messages": [*state["messages"], _assistant_message(message)],
+    tool_call = _extract_first_tool(model_response) if use_tools else None
+    state_update = {
+        "messages": [*messages, _create_assistant_message(model_response)],
         "steps": state.get("steps", 0) + 1,
-        "tool_call": call,
+        "tool_call": tool_call,
     }
 
-    if call is None:
-        update.update(status="answer", reply=message.content or "", pending=None)
+    if tool_call is None:
+        state_update.update(status="answer", reply=model_response.content or "", pending=None)
 
-    return update
+    return state_update

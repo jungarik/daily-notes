@@ -10,16 +10,23 @@ from common import helper
 def run(state: dict) -> dict:
     context = state.get("metadata_context") or {}
     metadata = helper.normalize(
-        state.get("raw_metadata") or {}, state.get("metadata_text") or "",
-        context.get("root_folders"), context.get("default_root"))
-    trace = [*(state.get("metadata_trace") or []),
-             {"kind": "node", "node": "classify_normalize", "status": "ok"}]
+        state.get("raw_metadata") or {},
+        state.get("metadata_text") or "",
+        context.get("root_folders"),
+        context.get("default_root"))
+    trace = [
+        *(state.get("metadata_trace") or []), {
+            "kind": "node", 
+            "node": "classify_normalize", 
+            "status": "ok"},
+    ]
     update = {"metadata": metadata, "metadata_trace": trace}
-    call = state.get("tool_call")
+    tool_call = state.get("tool_call")
 
-    if call and call.get("name") == "enrich_note":
+    if tool_call and tool_call.get("name") == "enrich_note":
         update["tool_call"] = {
-            **call, "args": {**(call.get("args") or {}), **metadata},
+            **tool_call, 
+            "args": {**(tool_call.get("args") or {}), **metadata},
         }
 
     return update

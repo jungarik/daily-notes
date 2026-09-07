@@ -1,16 +1,17 @@
 """Approve node: human approval, then idempotent execution via the specialist.
 
-Interrupts the graph with the staged action, resumes on the user's decision, and
-executes it exactly once through the owning specialist (or records a decline). A
-select action (link_notes) carries the user's chosen note ids. The only public
-entry point is `run`.
+Interrupts the graph with the staged action and resumes on the user's decision.
+Execution — selecting the owning specialist, applying a select action's chosen
+note ids, and running it exactly once — belongs to the handoff broker; this node
+only shapes the outcome back into graph state. The only public entry point is
+`run`.
 """
 
 from langgraph.types import interrupt
 
-from agents.bootstrap import registry
+from agents.bootstrap import broker
 from agents.conversation.state import ChatState, context_from_state, context_update
-from agents.runtime import execution_ledger
+from agents.runtime.handoff_broker import DECLINED
 
 
 def _decision(raw) -> tuple:
@@ -20,44 +21,6 @@ def _decision(raw) -> tuple:
         return bool(raw.get("approve")), raw.get("selection")
 
     return bool(raw), None
-
-
-def _with_selection(action: dict, selection) -> dict:
-    """For a select action (link_notes), replace its targets with the user's pick."""
-    if selection is None or action.get("name") != "link_notes":
-        return action
-
-    chosen = []
-
-    for value in selection:
-        try:
-            note_id = int(value)
-        except (TypeError, ValueError):
-            continue
-
-        if note_id not in chosen:
-            chosen.append(note_id)
-
-    return {**action, "args": {**action.get("args", {}), "linked_note_ids": chosen}}
-
-
-def _execute(pending: dict, ctx) -> str:
-    service = registry.get("enrich")
-    action = _with_selection(pending["action"], pending.get("selection"))
-
-    return execution_ledger.execute_once(
-        pending["action_id"],
-        ctx.user_id,
-        "enrich",
-        action,
-        lambda: service.execute_action(
-            ctx.user_id,
-            action,
-            ctx.now,
-            ctx.tz,
-            ctx.locale,
-        ),
-    )
 
 
 def run(state: ChatState) -> dict:
@@ -80,9 +43,9 @@ def run(state: ChatState) -> dict:
     ctx = context_from_state(state)
 
     if approved:
-        result = _execute({**pending, "selection": selection}, ctx)
+        result = broker.execute(pending, ctx, selection)
     else:
-        result = "The user declined this action; do not perform it. Acknowledge and continue."
+        result = DECLINED
 
     message = {
         "role": "tool",
@@ -90,11 +53,13 @@ def run(state: ChatState) -> dict:
         "content": str(result),
     }
 
+    messages = state.get("messages") or []
+
     return {
-        "messages": [*state["messages"], message],
+        "messages": [*messages, message],
         "pending": None,
         "action": None,
         "completed_action_id": pending["action_id"],
         "status": "answer",
-        **context_update(ctx),
+        **context_update(ctx), #Flatten context into the top-level dictionary
     }

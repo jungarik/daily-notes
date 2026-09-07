@@ -9,6 +9,8 @@ from unittest.mock import patch
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.runtime import checkpoint
+from agents import bootstrap
+from agents.runtime import execution_ledger
 from agents.conversation import graph as chat_loop
 from agents.conversation import api as chat_service
 from agents.conversation.nodes import approve as chat_approve
@@ -52,12 +54,12 @@ class LangGraphPersistenceTests(unittest.TestCase):
                        arguments='{"instruction": "save Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(chat_reason, "_complete", side_effect=replies), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
+        with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
+                patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=action) as plan, \
-                patch.object(chat_approve.execution_ledger, "execute_once",
+                patch.object(execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approve.registry.get("enrich"), "execute_action",
+                patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}') as execute:
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -126,12 +128,12 @@ class LangGraphPersistenceTests(unittest.TestCase):
                              side_effect=lambda user_id, thread_id: dict(projection)), \
                 patch.object(chat_service.db, "save_thread",
                              side_effect=save_thread), \
-                patch.object(chat_reason, "_complete", side_effect=replies), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
+                patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
+                patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=action), \
-                patch.object(chat_approve.execution_ledger, "execute_once",
+                patch.object(execution_ledger, "execute_once",
                              side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approve.registry.get("enrich"), "execute_action",
+                patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 11}') as execute:
             paused = chat_service.start_turn(7, "Save Idea", None, now, timezone.utc, "en")
             resumed = chat_service.confirm(7, 51, True, now, timezone.utc, "en")

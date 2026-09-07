@@ -32,7 +32,7 @@ def assistant_message(message) -> dict:
     return data
 
 
-def tool_call(message) -> dict | None:
+def extract_tool(message) -> dict | None:
     if not message.tool_calls:
         return None
 

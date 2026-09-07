@@ -9,6 +9,8 @@ from unittest.mock import Mock, patch
 from langgraph.checkpoint.memory import InMemorySaver
 
 import config
+from agents import bootstrap
+from agents.runtime import execution_ledger
 from agents.conversation import api as chat_api
 from agents.conversation import graph as chat_loop
 from agents.conversation.nodes import approve as chat_approve
@@ -64,7 +66,7 @@ class AgentGraphTests(unittest.TestCase):
             completion(tool_name="get_note", arguments='{"note_id": 4}'),
             completion(content="The answer."),
         ]
-        with patch.object(chat_reason, "_complete", side_effect=replies), \
+        with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(chat_act, "execute_tool", return_value='{"id": 4}') as tool:
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Read it"}], "now", "tz", "en")
@@ -75,7 +77,7 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("tool", result["messages"][-2]["role"])
 
     def test_chat_reason_provider_error_returns_answer(self):
-        with patch.object(chat_reason, "_complete",
+        with patch.object(chat_reason.model_gateway, "chat_completion",
                           side_effect=chat_reason.model_gateway.ModelGatewayError(
                               "model_rate_limited", "429 Too Many Requests")):
             result = chat_api.evaluate_turn(
@@ -105,9 +107,9 @@ class AgentGraphTests(unittest.TestCase):
         graph = chat_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "chat:handoff"}}
         ctx = context()
-        with patch.object(chat_reason, "_complete", return_value=completion(
+        with patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(
                 tool_name="perform_action", arguments='{"instruction": "save Idea"}')), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
+                patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=action):
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -117,11 +119,11 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual(action, paused["action"])
         self.assertIn("action_id", paused["pending"])
 
-        with patch.object(chat_approve.execution_ledger, "execute_once",
+        with patch.object(execution_ledger, "execute_once",
                           side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approve.registry.get("enrich"), "execute_action",
+                patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}'), \
-                patch.object(chat_reason, "_complete", return_value=completion(content="Created.")):
+                patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(content="Created.")):
             resumed = chat_loop.resume(graph, graph_config, True)
 
         self.assertEqual("answer", resumed["status"])
@@ -136,8 +138,8 @@ class AgentGraphTests(unittest.TestCase):
                        arguments='{"instruction": "add a tag to that note"}'),
             completion(content="Which note should I update?"),
         ]
-        with patch.object(chat_reason, "_complete", side_effect=replies), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
+        with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
+                patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=None):
             result = chat_loop.invoke(
                 graph, graph_config,
@@ -224,10 +226,10 @@ class AgentGraphTests(unittest.TestCase):
         graph = chat_loop.build_graph(InMemorySaver())
         graph_config = {"configurable": {"thread_id": "chat:reminder"}}
         ctx = context()
-        with patch.object(chat_reason, "_complete", return_value=completion(
+        with patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(
                 tool_name="set_reminder",
                 arguments='{"instruction": "Call tomorrow"}')), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action",
+                patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=action):
             paused = chat_loop.invoke(
                 graph, graph_config,
@@ -236,11 +238,11 @@ class AgentGraphTests(unittest.TestCase):
         self.assertEqual("confirm", paused["status"])
         self.assertEqual("enrich", paused["pending"]["agent"])
 
-        with patch.object(chat_approve.execution_ledger, "execute_once",
+        with patch.object(execution_ledger, "execute_once",
                           side_effect=lambda *args: args[-1]()), \
-                patch.object(chat_approve.registry.get("enrich"), "execute_action",
+                patch.object(bootstrap.registry.get("enrich"), "execute_action",
                           return_value='{"reminder_id": 3}') as reminder_execute, \
-                patch.object(chat_reason, "_complete", return_value=completion(content="Scheduled.")):
+                patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(content="Scheduled.")):
             resumed = chat_loop.resume(graph, graph_config, True)
 
         reminder_execute.assert_called_once()
@@ -376,7 +378,7 @@ class AgentGraphTests(unittest.TestCase):
             completion(content="I couldn't complete the lookup."),
         ]
         with patch.object(chat_loop.config, "AGENT_MAX_STEPS", 1), \
-                patch.object(chat_reason, "_complete", side_effect=replies), \
+                patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(chat_act, "execute_tool", return_value="[]"):
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Paths"}], "now", "tz", "en")

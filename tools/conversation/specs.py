@@ -2,11 +2,11 @@
 
 # A handoff tool name -> the specialist mode that plans/executes it. Adding a
 # new handoff is one entry here plus its tool spec — no new graph node/branch.
-HANDOFF_SPECIALIST = {
+HANDOFF_SPECIALISTS = {
     "perform_action": "enrich",
     "set_reminder": "reminder",
 }
-HANDOFF_TOOLS = set(HANDOFF_SPECIALIST)
+HANDOFF_TOOLS = set(HANDOFF_SPECIALISTS)
 
 
 def _fn(name, description, properties, required):

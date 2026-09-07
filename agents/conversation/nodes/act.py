@@ -12,7 +12,7 @@ from agents.conversation.state import (
     apply_tool_result,
     context_from_state,
     context_update,
-    merge_references,
+    merge_reference_notes,
     tool_context,
 )
 from tools import conversation as tools
@@ -27,7 +27,7 @@ def _result_text(result) -> str:
 
 
 def run(state: ChatState) -> dict:
-    tool_call = state["tool_call"]
+    tool_call = state.get("tool_call") or {}
     ctx = context_from_state(state)
     result = execute_tool(
         tools.TOOLS,
@@ -49,10 +49,12 @@ def run(state: ChatState) -> dict:
         "content": str(text),
     }
 
+    messages = state.get("messages") or []
+
     return {
-        "messages": [*state["messages"], message],
+        "messages": [*messages, message],
         "tool_call": None,
-        "reference_notes": merge_references(
+        "reference_notes": merge_reference_notes(
             state.get("reference_notes") or [],
             ctx.citations,
         ),

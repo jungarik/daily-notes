@@ -10,7 +10,7 @@ from tools.conversation import (
     search_notes,
 )
 from tools.conversation.specs import (
-    HANDOFF_SPECIALIST,
+    HANDOFF_SPECIALISTS,
     HANDOFF_TOOLS,
     HANDOFF_TOOL_SPECS,
     READ_TOOL_SPECS,
@@ -29,6 +29,6 @@ TOOLS = {
 
 
 __all__ = [
-    "HANDOFF_SPECIALIST", "HANDOFF_TOOLS", "HANDOFF_TOOL_SPECS",
+    "HANDOFF_SPECIALISTS", "HANDOFF_TOOLS", "HANDOFF_TOOL_SPECS",
     "READ_TOOL_SPECS", "TOOL_SPECS", "TOOLS",
 ]

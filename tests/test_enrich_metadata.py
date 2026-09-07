@@ -65,7 +65,7 @@ class EnrichMetadataTests(unittest.TestCase):
         with patch.object(classify_gather, "execute_allowed_tool", context_tool), \
                 patch.object(classify_propose.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create):
-            result = enrich_graph.METADATA_GRAPH.invoke({
+            result = enrich_graph.CLASSIFY_GRAPH.invoke({
                 "user_id": 7,
                 "metadata_text": "Build a pocket garden",
                 "metadata_note_id": None,
@@ -84,7 +84,7 @@ class EnrichMetadataTests(unittest.TestCase):
              if event.get("kind") == "tool"])
         self.assertEqual(
             {"classify_gather", "classify_propose", "classify_normalize"},
-            set(enrich_graph.METADATA_GRAPH.get_graph().nodes) -
+            set(enrich_graph.CLASSIFY_GRAPH.get_graph().nodes) -
             {"__start__", "__end__"})
 
     def test_existing_note_plan_contains_exact_metadata_before_approval(self):

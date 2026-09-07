@@ -8,6 +8,7 @@ from unittest.mock import ANY, Mock, patch
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.contracts import ToolResult
+from agents import bootstrap
 from agents.conversation import api as chat_service
 from agents.conversation import graph as chat_loop
 from agents.conversation.nodes import handoff as chat_handoff
@@ -55,9 +56,9 @@ class HandoffContextTests(unittest.TestCase):
                 citations=[{"note_id": 4, "title": "Product roadmap"}],
             )
 
-        with patch.object(chat_reason, "_complete", side_effect=replies), \
+        with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(chat_act, "execute_tool", side_effect=read_tool), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action", planner):
+                patch.object(bootstrap.registry.get("enrich"), "plan_action", planner):
             result = chat_service.evaluate_turn(
                 7, [{"role": "user", "content": "Open the product roadmap"}],
                 now, timezone.utc, "en")
@@ -87,7 +88,7 @@ class HandoffContextTests(unittest.TestCase):
             completion(content="Here is the roadmap."),
         ]
         first_ctx = ChatCtx(7, now, timezone.utc, "en")
-        with patch.object(chat_reason, "_complete", side_effect=first_replies), \
+        with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=first_replies), \
                 patch.object(chat_act, "execute_tool", side_effect=read_tool):
             first = chat_loop.invoke(
                 graph, graph_config,
@@ -100,10 +101,10 @@ class HandoffContextTests(unittest.TestCase):
         })
         second_messages = [*first["messages"],
                            {"role": "user", "content": "Enrich that note"}]
-        with patch.object(chat_reason, "_complete", return_value=completion(
+        with patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(
                 tool_name="perform_action",
                 arguments='{"instruction": "Enrich that note"}', call_id="write-1")), \
-                patch.object(chat_handoff.registry.get("enrich"), "plan_action", planner):
+                patch.object(bootstrap.registry.get("enrich"), "plan_action", planner):
             second = chat_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(

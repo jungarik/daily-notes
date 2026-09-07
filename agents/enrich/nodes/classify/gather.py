@@ -110,7 +110,8 @@ def run(state: dict) -> dict:
         known_tags = ([(item["tag"], item["count"]) for item in tags]
                       if isinstance(tags, list) else [])
         context = {
-            "known_paths": known_paths, "known_tags": known_tags,
+            "known_paths": known_paths, 
+            "known_tags": known_tags,
             "related_notes": related if isinstance(related, list) else [],
             "root_folders": vault["root_folders"],
             "default_root": vault["default_root"],
@@ -137,9 +138,8 @@ def run(state: dict) -> dict:
         "status": "ok",
         "related_note_ids": [
             item.get("note_id")
-            for item in context["related_notes"]
-            if item.get("note_id") is not None
-        ],
+              for item in context["related_notes"]
+                if item.get("note_id") is not None]
     })
 
     return {

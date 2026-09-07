@@ -123,7 +123,7 @@ def initial_state(ctx: Ctx, messages: list, pending: dict | None = None,
     }
 
 
-def merge_references(existing: list[dict], current: list[dict]) -> list[dict]:
+def merge_reference_notes(existing: list[dict], current: list[dict]) -> list[dict]:
     merged = list(existing)
     for citation in current:
         merged = [item for item in merged

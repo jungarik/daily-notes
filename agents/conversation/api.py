@@ -35,12 +35,17 @@ def _load(user_id, thread_id):
 
 
 def _shape(thread_id, result):
-    out = {"thread_id": thread_id, "status": result["status"],
-           "citations": result.get("citations") or []}
+    out = {
+        "thread_id": thread_id,
+        "status": result["status"],
+        "citations": result.get("citations") or [],
+    }
+
     if result["status"] == "answer":
         out["reply"] = result["reply"]
     else:
         out["action"] = result["action"]
+
     return out
 
 

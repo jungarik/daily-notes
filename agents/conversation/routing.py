@@ -35,4 +35,5 @@ def after_reason(state: ChatState):
 
 def after_handoff(state: ChatState):
     """A staged action pauses for approval; nothing concrete loops back."""
+    
     return "approve" if state.get("pending") else "reason"

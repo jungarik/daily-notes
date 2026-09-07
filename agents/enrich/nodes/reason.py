@@ -13,7 +13,7 @@ from agents.enrich.nodes._llm import (
     UNAVAILABLE_REPLY,
     assistant_message,
     complete,
-    tool_call,
+    extract_tool,
 )
 from agents.enrich.state import EnrichState
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def _unavailable(state: EnrichState, kind: str) -> dict:
     return {
         "messages": [
-            *state["messages"],
+            *state.get("messages", []),
             {"role": "assistant", "content": UNAVAILABLE_REPLY},
         ],
         "steps": state.get("steps", 0) + 1,
@@ -36,23 +36,36 @@ def _unavailable(state: EnrichState, kind: str) -> dict:
 
 
 def run(state: EnrichState) -> dict:
+    messages = state.get("messages") or []
     use_tools = state.get("steps", 0) < config.ENRICH_AGENT_MAX_STEPS
 
     try:
-        message = complete(state["messages"], use_tools).choices[0].message
+        model_response = complete(messages, use_tools).choices[0].message
+
     except model_gateway.ModelGatewayError as exc:
         logger.warning("Enrich model call failed: %s", exc.kind)
 
-        return _unavailable(state, exc.kind)
+        return {
+            "messages": [
+                *state.get("messages", []),
+                {"role": "assistant", "content": UNAVAILABLE_REPLY},
+            ],
+            "steps": state.get("steps", 0) + 1,
+            "tool_call": None,
+            "status": "answer",
+            "reply": UNAVAILABLE_REPLY,
+            "pending": None,
+            "model_error": exc.kind}
 
-    call = tool_call(message) if use_tools else None
+
+    tool_call = extract_tool(model_response) if use_tools else None
     update = {
-        "messages": [*state["messages"], assistant_message(message)],
+        "messages": [*messages, assistant_message(model_response)],
         "steps": state.get("steps", 0) + 1,
-        "tool_call": call,
+        "tool_call": tool_call,
     }
 
-    if call is None:
-        update.update(status="answer", reply=message.content or "", pending=None)
+    if tool_call is None:
+        update.update(status="answer", reply=model_response.content or "", pending=None)
 
     return update

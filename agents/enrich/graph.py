@@ -29,6 +29,7 @@ def _add_classify(builder) -> None:
     builder.add_node("classify_gather", classify_gather.run)
     builder.add_node("classify_propose", classify_propose.run)
     builder.add_node("classify_normalize", classify_normalize.run)
+    
     builder.add_edge("classify_gather", "classify_propose")
     builder.add_edge("classify_propose", "classify_normalize")
 
@@ -92,7 +93,7 @@ def _build_action_plan_graph():
     return builder.compile()
 
 
-def build_metadata_graph():
+def build_classify_graph():
     builder = StateGraph(MetadataState)
     _add_classify(builder)
     builder.add_edge(START, "classify_gather")
@@ -114,7 +115,7 @@ def build_reminder_plan_graph():
 
 ENRICH_GRAPH = build_graph(InMemorySaver())
 ACTION_PLAN_GRAPH = _build_action_plan_graph()
-METADATA_GRAPH = build_metadata_graph()
+CLASSIFY_GRAPH = build_classify_graph()
 REMINDER_PLAN_GRAPH = build_reminder_plan_graph()
 
 

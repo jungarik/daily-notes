@@ -20,7 +20,7 @@ class EnrichCaptureTests(unittest.TestCase):
                 "metadata_trace": [{"node": "metadata_validation", "status": "ok"}]}
 
     def test_propose_returns_editable_preview_without_writing(self):
-        with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
+        with patch.object(enrich.CLASSIFY_GRAPH, "invoke", return_value=self.analysis()):
             proposal = enrich.propose_capture(7, "Build a pocket garden")
 
         self.assertEqual("proposed", proposal["status"])
@@ -30,7 +30,7 @@ class EnrichCaptureTests(unittest.TestCase):
         self.assertEqual(9, proposal["related_notes"][0]["note_id"])
 
     def test_revision_is_validated_and_gets_a_new_action_id(self):
-        with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
+        with patch.object(enrich.CLASSIFY_GRAPH, "invoke", return_value=self.analysis()):
             original = enrich.propose_capture(7, "Build a pocket garden")
         with patch.object(enrich.helper, "localized_root_folders",
                           return_value=({"Projects": "projects"}, "Projects")), \
@@ -45,7 +45,7 @@ class EnrichCaptureTests(unittest.TestCase):
         self.assertEqual([9], revised["action"]["args"]["linked_note_ids"])
 
     def test_revision_rejects_another_users_link(self):
-        with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
+        with patch.object(enrich.CLASSIFY_GRAPH, "invoke", return_value=self.analysis()):
             proposal = enrich.propose_capture(7, "Build a pocket garden")
         with patch.object(enrich.helper, "localized_root_folders",
                           return_value=({"Projects": "projects"}, "Projects")), \
@@ -55,7 +55,7 @@ class EnrichCaptureTests(unittest.TestCase):
                 enrich.revise_capture(7, proposal, {"linked_note_ids": [99]})
 
     def test_confirm_uses_idempotency_ledger(self):
-        with patch.object(enrich.METADATA_GRAPH, "invoke", return_value=self.analysis()):
+        with patch.object(enrich.CLASSIFY_GRAPH, "invoke", return_value=self.analysis()):
             proposal = enrich.propose_capture(7, "Build a pocket garden")
         with patch.object(enrich.execution_ledger, "execute_once",
                           return_value=json.dumps({"note_id": 12,

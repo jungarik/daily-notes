@@ -1,4 +1,8 @@
-"""Polymorphic specialist lookup used by the Conversation controller."""
+"""Polymorphic specialist lookup, owned by the composition root.
+
+The registry holds the concrete specialist instances; the handoff broker
+resolves them by name, so no graph node ever names a specialist itself.
+"""
 
 from typing import Protocol
 

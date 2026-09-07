@@ -40,13 +40,13 @@ def _retry_after(exc: Exception) -> float | None:
         return None
 
 
-def chat_completion(**kwargs):
+def chat_completion(**model_request):
     attempts = max(1, config.OPENAI_GATEWAY_MAX_ATTEMPTS)
     last_error = None
 
     for attempt in range(attempts):
         try:
-            return openai_client.get_client().chat.completions.create(**kwargs)
+            return openai_client.get_client().chat.completions.create(**model_request)
         except Exception as exc:
             last_error = exc
             kind = _kind(exc)

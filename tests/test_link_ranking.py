@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import config
-from agents.enrich.nodes.write import _rank, _shared
+from agents.enrich.nodes.write import _rank, link
 from agents.runtime import model_gateway
 
 
@@ -82,11 +82,11 @@ class LinkRankingTests(unittest.TestCase):
 
 class LinkCandidateTests(unittest.TestCase):
     def _candidates(self, ranked, preselect_ids=()):
-        with patch.object(_shared.embedings, "embed", return_value="vector"), \
-                patch.object(_shared.db, "link_candidates", return_value=ROWS), \
-                patch.object(_shared.db, "owned_note_ids", return_value=set()), \
-                patch.object(_shared._rank, "rank", return_value=ranked):
-            return _shared._link_candidates(7, SOURCE, list(preselect_ids), "en")
+        with patch.object(link.embedings, "embed", return_value="vector"), \
+                patch.object(link.db, "link_candidates", return_value=ROWS), \
+                patch.object(link.db, "owned_note_ids", return_value=set()), \
+                patch.object(link._rank, "rank", return_value=ranked):
+            return link._link_candidates(7, SOURCE, list(preselect_ids), "en")
 
     def test_idea_links_are_offered_first_and_preselected(self):
         ranked = [
