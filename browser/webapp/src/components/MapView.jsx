@@ -4,10 +4,11 @@ import { createGraphEngine } from "../graph/engine.js";
 import NoteMiniCard from "./NoteMiniCard.jsx";
 import { pathColor } from "../lib/format.js";
 
-// Connections map: a canvas force-directed graph. Tapping a note rebuilds the
-// map around it (depth rings + perspective); holding one opens the note. The
-// engine owns the canvas and every per-frame style; this component owns the
-// card list and the lifecycle.
+// Connections map: the vault as a globe. Notes are laid out on the sphere;
+// dragging rolls it under the finger, two fingers scale it, and the folder
+// filter decides what is on it. Tapping a note turns it to the front, holding
+// one opens it. The engine owns the canvas and every per-frame style; this
+// component owns the card list and the lifecycle.
 export default function MapView({ hidden }) {
   const { state, openNote } = useApp();
   const filterSel = state.filterSel;
@@ -101,7 +102,7 @@ export default function MapView({ hidden }) {
           </div>
         ))}
       </div>
-      <div className="map-hint">Drag to pan · tap a note · hold to open it</div>
+      <div className="map-hint">Roll · pinch to scale · tap a note · hold to open</div>
     </div>
   );
 }

@@ -36,7 +36,7 @@ def _load(user_id, thread_id):
     return db.create_thread(user_id), [], None
 
 
-def _shape(thread_id, result):
+def _map(thread_id, result):
     out = {"thread_id": thread_id, "status": result["status"]}
     if result["status"] == "answer":
         out["reply"] = result["reply"]
@@ -94,7 +94,7 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
                 recovered = loop.retry(graph, graph_config)
                 _project(thread_id, recovered)
 
-                return _shape(thread_id, recovered)
+                return _map(thread_id, recovered)
 
             if pending:
                 pending = _checkpoint_action_id(thread_id, messages, pending)
@@ -110,7 +110,7 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
 
         _project(thread_id, result)
 
-        return _shape(thread_id, result)
+        return _map(thread_id, result)
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
@@ -141,7 +141,7 @@ def confirm(user_id, thread_id, approve, now, tz, locale):
             return {"thread_id": thread_id, "status": "answer",
                     "reply": "There's nothing to confirm."}
         _project(thread_id, result)
-        return _shape(thread_id, result)
+        return _map(thread_id, result)
 
 
 # ----- standalone fast-capture API (transport adapters call these) --------
