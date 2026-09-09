@@ -32,6 +32,7 @@ SYSTEM_PROMPT = (
 def with_system(messages: list[dict]) -> list[dict]:
     if not messages or messages[0].get("role") != "system":
         return [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+
     return messages
 
 

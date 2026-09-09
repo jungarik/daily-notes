@@ -95,7 +95,7 @@ def _restore(value, factory):
 
 
 def context_from_state(state: ChatState) -> Ctx:
-    data = state["context"]
+    data = state.get("context") or {}
     ctx = Ctx(data["user_id"], _restore(data.get("now"), datetime.fromisoformat),
               tz=_restore(data.get("tz"), ZoneInfo),
               locale=data.get("locale") or "en")

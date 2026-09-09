@@ -16,8 +16,7 @@ def build_graph(checkpointer):
     builder.add_node("act", act.run)
     builder.add_node("handoff", handoff.run)
     builder.add_node("approve", approve.run)
-    builder.add_conditional_edges(START, routing.entry,
-                                  {"reason": "reason", "approve": "approve"})
+    builder.add_conditional_edges(START, routing.entry, {"reason": "reason", "approve": "approve"})
     builder.add_conditional_edges("reason", routing.after_reason,
                                   {"act": "act", "handoff": "handoff", END: END})
     builder.add_edge("act", "reason")

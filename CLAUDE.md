@@ -85,6 +85,15 @@ Consequences (follow these):
   own line, and put the closing bracket on its own line. For example, use
   `helper.json_text({` and `result.append({`, not a standalone `{` on the next
   line.
+- **One responsibility per method.** Don't fold "build the input" and "perform
+  the side effect" into the same method. A method that assembles a payload (e.g.
+  a request/args/config dict) should just build and return it; the caller makes
+  the external call. For example, prefer a `_build_request(...) -> dict` helper
+  that returns the request, and let the caller invoke
+  `model_gateway.chat_completion(**_build_request(...))`, rather than a single
+  `_complete()` that both builds the request and calls the API. This keeps the
+  payload construction independently testable and reusable, and keeps the
+  side-effecting call visible at the call site.
 - Prefer these rules for new and changed code in this project; do not reformat
   unrelated code just for style.
 

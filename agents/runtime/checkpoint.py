@@ -26,8 +26,8 @@ def _connect():
 def _saver(conn) -> PostgresSaver:
     # State is deliberately JSON/msgpack-safe. Do not allow arbitrary classes
     # to be reconstructed from a compromised checkpoint database.
-    serializer = JsonPlusSerializer(allowed_msgpack_modules=None)
-    return PostgresSaver(conn, serde=serializer)
+    
+    return PostgresSaver(conn, serde=JsonPlusSerializer(allowed_msgpack_modules=None))
 
 
 def setup() -> None:
@@ -42,8 +42,8 @@ def session(build_graph, namespace: str, thread_id: int):
     with _connect() as conn:
         graph = build_graph(_saver(conn))
         graph_config = {
-            "configurable": {"thread_id": f"{namespace}:{thread_id}"},
-        }
+            "configurable": {"thread_id": f"{namespace}:{thread_id}"}}
+        
         yield graph, graph_config
 
 

@@ -21,7 +21,7 @@ from agents.enrich.nodes import act as enrich_act
 from agents.enrich.nodes.write import validate as enrich_write_validate
 from agents.enrich.state import Ctx as EnrichCtx
 from agents.enrich.state import context_to_dict as enrich_context_data
-from agents.enrich import api as enrich_service
+from agents.enrich import handoff_api as enrich_service
 from tools import enrich as enrich_tools
 
 

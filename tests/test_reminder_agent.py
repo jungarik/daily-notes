@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from agents.enrich import api as enrich_service
+from agents.enrich import handoff_api as enrich_service
 from agents.enrich.nodes.schedule import resolve as schedule_resolve
 from tools.enrich import create_reminder
 

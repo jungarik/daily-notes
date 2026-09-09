@@ -7,6 +7,7 @@ concrete came back. The only public entry point is `run`.
 """
 
 from agents.bootstrap import broker
+from agents.runtime import handoff_broker
 from agents.conversation.state import (
     ChatState,
     context_from_state,
@@ -33,22 +34,20 @@ def _no_action(state: ChatState, ctx, call: dict, content: str) -> dict:
 def run(state: ChatState) -> dict:
     tool_call = state.get("tool_call") or {}
     ctx = context_from_state(state)
-    references = merge_reference_notes(
+    reference_notes = merge_reference_notes(
         state.get("reference_notes") or [],
-        ctx.citations,
-    )
-    plan = broker.plan(
-        tool_call["name"],
+        ctx.citations)
+    plan = handoff_broker.plan(
+        broker.route(tool_call["name"]),
+        broker.registry,
         state.get("messages") or [],
         tool_call["args"],
-        references,
-        ctx,
-    )
+        reference_notes,
+        ctx)
     ctx.record_tool(
         tool_call["name"],
         tool_call["args"],
-        plan.action,
-    )
+        plan.action)
     ctx.record_route(plan.route.mode)
 
     if not plan.planned:
@@ -57,7 +56,7 @@ def run(state: ChatState) -> dict:
     return {
         "status": "confirm",
         "action": plan.action,
-        "pending": broker.stage(tool_call["id"], plan),
+        "pending": handoff_broker.pending(tool_call["id"], plan),
         "tool_call": None,
         **context_update(ctx),
     }

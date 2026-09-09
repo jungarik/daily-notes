@@ -1,6 +1,6 @@
 """Composition root: the only module that wires concrete specialists together."""
 
-from agents.enrich import api as enrich_api
+from agents.enrich import handoff_api as enrich_handoff
 from agents.runtime.handoff_broker import HandoffBroker
 from agents.runtime.specialist_registry import SpecialistRegistry
 from tools.conversation import HANDOFF_SPECIALISTS
@@ -14,7 +14,7 @@ MODE_AGENTS = {
 }
 
 registry = SpecialistRegistry()
-registry.register("enrich", enrich_api)
+registry.register("enrich", enrich_handoff)
 
 broker = HandoffBroker(registry)
 

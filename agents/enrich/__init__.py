@@ -17,9 +17,10 @@ Public entry points:
 """
 
 from agents.enrich.api import (
-    cancel_capture, confirm, confirm_capture, execute_action, plan_action,
-    propose_capture, revise_capture, start_turn,
+    cancel_capture, confirm, confirm_capture, propose_capture, revise_capture,
+    start_turn,
 )
+from agents.enrich.handoff_api import execute_action, plan_action
 
 __all__ = [
     "start_turn", "confirm", "plan_action", "execute_action",

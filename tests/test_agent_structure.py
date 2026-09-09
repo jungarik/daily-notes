@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agents import bootstrap, conversation
 from agents.enrich import api as enrich
+from agents.enrich import handoff_api as enrich_handoff
 
 
 class AgentStructureTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class AgentStructureTests(unittest.TestCase):
             "enrich/api.py", "enrich/state.py",
             "enrich/graph.py", "enrich/routing.py",
             "enrich/db.py",
+            "enrich/handoff_api.py",
             "enrich/prompts.py",
             "enrich/nodes/reason.py", "enrich/nodes/plan.py",
             "enrich/nodes/act.py", "enrich/nodes/approve.py",
@@ -64,11 +66,11 @@ class AgentStructureTests(unittest.TestCase):
         self.assertTrue(callable(conversation.start_turn))
         self.assertTrue(callable(conversation.confirm))
         self.assertTrue(callable(conversation.evaluate_turn))
-        self.assertTrue(callable(enrich.plan_action))
-        self.assertTrue(callable(enrich.execute_action))
+        self.assertTrue(callable(enrich_handoff.plan_action))
+        self.assertTrue(callable(enrich_handoff.execute_action))
         self.assertTrue(callable(enrich.propose_capture))
         self.assertTrue(callable(enrich.confirm_capture))
-        self.assertIs(bootstrap.registry.get("enrich"), enrich)
+        self.assertIs(bootstrap.registry.get("enrich"), enrich_handoff)
 
 
 if __name__ == "__main__":

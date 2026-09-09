@@ -29,8 +29,10 @@ def locale(state) -> str | None:
 
 
 def contract(state: ReminderPlanState | EnrichState) -> dict:
-    if state.get("contract"):
-        return state["contract"]
+    existing = state.get("contract")
+
+    if existing:
+        return existing
 
     call = state.get("tool_call") or {}
     args = call.get("args") or {}

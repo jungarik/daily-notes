@@ -5,10 +5,6 @@ Not a graph node — just the OpenAI call plumbing used by `reason` and `plan`.
 
 import json
 
-import config
-from agents.runtime import model_gateway
-from tools.enrich import TOOL_SPECS
-
 UNAVAILABLE_REPLY = (
     "I couldn't reach the AI provider right now. Please try again in a moment."
 )
@@ -48,20 +44,3 @@ def extract_tool(message) -> dict | None:
         "name": tool_call.function.name,
         "args": args,
     }
-
-
-def complete(messages: list[dict], use_tools: bool):
-    kwargs = {
-        "model": config.ENRICH_AGENT_MODEL,
-        "messages": messages,
-        "temperature": 0.2,
-    }
-
-    if use_tools:
-        kwargs.update(
-            tools=TOOL_SPECS,
-            tool_choice="auto",
-            parallel_tool_calls=False,
-        )
-
-    return model_gateway.chat_completion(**kwargs)

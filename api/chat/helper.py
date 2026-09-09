@@ -12,7 +12,7 @@ import i18n
 from agents import conversation as chat_agent
 
 
-def settings(tz_name: str | None, lang: str | None) -> tuple[ZoneInfo, str]:
+def normalize_settings(tz_name: str | None, lang: str | None) -> tuple[ZoneInfo, str]:
     tz = config.DEFAULT_TZ
     if tz_name:
         try:

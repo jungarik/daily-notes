@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from agents.conversation.state import ConversationContext as ChatCtx
-from agents.runtime.handoff_broker import HandoffBroker
+from agents.runtime import handoff_broker
+from agents.runtime.handoff_broker import HandoffBroker, pending
 from agents.runtime.specialist_registry import SpecialistRegistry
 
 NOW = datetime(2026, 9, 7, 9, 0, tzinfo=timezone.utc)
@@ -37,8 +38,9 @@ class HandoffBrokerTests(unittest.TestCase):
         specialist = SimpleNamespace(plan_action=Mock(return_value=ACTION))
         broker = build_broker(specialist)
 
-        plan = broker.plan(
-            "set_reminder",
+        plan = handoff_broker.plan(
+            broker.route("set_reminder"),
+            broker.registry,
             [{"role": "user", "content": "remind me tomorrow"}],
             {"instruction": "remind me tomorrow"},
             [],
@@ -55,7 +57,7 @@ class HandoffBrokerTests(unittest.TestCase):
     def test_plan_without_an_action_is_not_planned(self):
         broker = build_broker(SimpleNamespace(plan_action=Mock(return_value=None)))
 
-        plan = broker.plan("perform_action", [], {"instruction": "do a thing"}, [], ctx())
+        plan = handoff_broker.plan(broker.route("perform_action"), broker.registry, [], {"instruction": "do a thing"}, [], ctx())
 
         self.assertFalse(plan.planned)
         self.assertIsNone(plan.error)
@@ -65,7 +67,7 @@ class HandoffBrokerTests(unittest.TestCase):
         specialist = SimpleNamespace(plan_action=Mock(side_effect=RuntimeError("boom")))
         broker = build_broker(specialist)
 
-        plan = broker.plan("perform_action", [], {"instruction": "do a thing"}, [], ctx())
+        plan = handoff_broker.plan(broker.route("perform_action"), broker.registry, [], {"instruction": "do a thing"}, [], ctx())
 
         self.assertFalse(plan.planned)
         self.assertEqual(plan.error, "boom")
@@ -75,14 +77,14 @@ class HandoffBrokerTests(unittest.TestCase):
         broker = build_broker(SimpleNamespace(plan_action=Mock()))
 
         with self.assertRaises(LookupError):
-            broker.plan("unknown_tool", [], {}, [], ctx())
+            broker.route("unknown_tool")
 
     def test_stage_carries_the_agent_and_contract(self):
         specialist = SimpleNamespace(plan_action=Mock(return_value=ACTION))
         broker = build_broker(specialist)
-        plan = broker.plan("perform_action", [], {"instruction": "move it"}, [], ctx())
+        plan = handoff_broker.plan(broker.route("perform_action"), broker.registry, [], {"instruction": "move it"}, [], ctx())
 
-        pending = broker.stage("call-1", plan)
+        pending = pending("call-1", plan)
 
         self.assertEqual(pending["tool_call_id"], "call-1")
         self.assertEqual(pending["agent"], "enrich")
@@ -99,7 +101,7 @@ class HandoffBrokerTests(unittest.TestCase):
         broker = build_broker(specialist, ledger)
         pending = {"action_id": "a-1", "agent": "enrich", "action": ACTION}
 
-        result = broker.execute(pending, ctx())
+        result = handoff_broker.execute(pending, broker.registry, broker.ledger, ctx())
 
         self.assertEqual(result, "moved")
         self.assertEqual(ledger.execute_once.call_args.args[:4],
@@ -121,7 +123,7 @@ class HandoffBrokerTests(unittest.TestCase):
             },
         }
 
-        broker.execute(pending, ctx(), selection=["9", 9, "nope", 10])
+        handoff_broker.execute(pending, broker.registry, broker.ledger, ctx(), selection=["9", 9, "nope", 10])
 
         executed = specialist.execute_action.call_args.args[1]
         self.assertEqual(executed["args"]["linked_note_ids"], [9, 10])

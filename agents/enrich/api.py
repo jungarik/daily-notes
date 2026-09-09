@@ -11,11 +11,6 @@ import logging
 import uuid
 
 from agents.contracts import CaptureProposal
-from agents.contracts import ToolResult
-from tools import enrich as tools
-from tools.enrich import TOOL_SPECS
-from agents.runtime.execute_tool import execute_tool
-from agents.contracts import handoff
 from agents.runtime import checkpoint
 from agents.runtime import execution_ledger
 from common import embedings
@@ -23,20 +18,13 @@ from common import helper
 from agents.enrich import graph as loop
 from agents.enrich import db
 from agents.enrich.graph import CLASSIFY_GRAPH
-from agents.enrich.prompts import SYSTEM_PROMPT, planning_messages, with_system
-from agents.enrich.state import Ctx, context_to_dict
+from agents.enrich.prompts import with_system
+from agents.enrich.state import Ctx
 
 logger = logging.getLogger(__name__)
 
 EDITABLE_CAPTURE_FIELDS = {"text", "title", "path", "tags", "type", "priority",
                            "linked_note_ids"}
-
-
-def _tool_text(result) -> str:
-    if isinstance(result, ToolResult):
-        return helper.json_text(result.data)
-
-    return str(result)
 
 
 def _load(user_id, thread_id):
@@ -80,7 +68,9 @@ def _checkpoint_action_id(thread_id, messages, pending):
         "args": pending.get("args"),
     }, sort_keys=True, separators=(",", ":"), default=str)
     pending["action_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, identity))
+
     db.save_thread(thread_id, messages, pending)
+
     return pending
 
 
@@ -88,24 +78,38 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user instruction. Returns {thread_id, status, reply|action}."""
     thread_id, messages, pending = _load(user_id, thread_id)
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
+
     with checkpoint.session(loop.build_graph, "enrich", thread_id) as (graph, graph_config):
         snapshot, messages, pending = _latest_or_projection(
-            graph, graph_config, messages, pending)
+            graph,
+            graph_config,
+            messages,
+            pending,
+        )
+
         if snapshot.values and checkpoint.is_interrupted(snapshot):
             result = dict(snapshot.values)
         else:
             if snapshot.values and snapshot.next:
                 recovered = loop.retry(graph, graph_config)
                 _project(thread_id, recovered)
+
                 return _shape(thread_id, recovered)
+
             if pending:
                 pending = _checkpoint_action_id(thread_id, messages, pending)
             else:
                 messages = with_system(messages)
                 messages.append({"role": "user", "content": message})
+
             result = loop.invoke(
-                graph, graph_config, loop.initial_state(ctx, messages, pending))
+                graph,
+                graph_config,
+                loop.initial_state(ctx, messages, pending),
+            )
+
         _project(thread_id, result)
+
         return _shape(thread_id, result)
 
 
@@ -138,58 +142,6 @@ def confirm(user_id, thread_id, approve, now, tz, locale):
                     "reply": "There's nothing to confirm."}
         _project(thread_id, result)
         return _shape(thread_id, result)
-
-
-# ----- stateless handoff API (used by the chat agent) ----------------------
-
-def plan_action(user_id: int, request, now, tz, locale) -> dict | None:
-    """One-shot: decide the single write action a natural-language instruction
-    implies. Returns {name, args, summary} for a write tool, or None if no
-    concrete action could be determined. Does not execute anything."""
-    contract = handoff.normalize(request, now, tz, locale)
-    if (contract.get("resolved_entities") or {}).get("specialist_mode") == "reminder":
-        notes = []
-        for note_id in contract["referenced_note_ids"]:
-            note = db.get_note_for_user(user_id, note_id)
-            if note:
-                note = dict(note)
-                note["note_id"] = note.get("id", note_id)
-                notes.append(note)
-        contract["resolved_entities"]["referenced_notes"] = notes
-        result = loop.REMINDER_PLAN_GRAPH.invoke({
-            "contract": contract, "now": now, "action": None,
-            "reminder_trace": [], "locale": locale,
-        })
-        return result.get("action")
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
-    messages = planning_messages(contract)
-    try:
-        result = loop.ACTION_PLAN_GRAPH.invoke({
-            "messages": messages,
-            "context": context_to_dict(ctx),
-            "tool_specs": TOOL_SPECS,
-            "steps": 0,
-            "tool_call": None,
-            "action": None,
-        })
-        return result.get("action")
-    except Exception:
-        logger.exception("plan_action failed for user %s", user_id)
-        return None
-
-
-def execute_action(user_id: int, action: dict, now, tz, locale) -> str:
-    """Run a planned write action (after the user approved it). Returns the tool's
-    result string."""
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
-
-    return _tool_text(execute_tool(
-        tools.TOOLS,
-        context_to_dict(ctx),
-        action["name"],
-        action.get("args") or {},
-        "enrich",
-    ))
 
 
 # ----- standalone fast-capture API (transport adapters call these) --------

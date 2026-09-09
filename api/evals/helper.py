@@ -12,7 +12,7 @@ import config
 import i18n
 from agents.runtime import model_gateway
 from agents.conversation import api as chat_service
-from agents.enrich import api as enrich_service
+from agents.enrich import handoff_api as enrich_service
 from api.evals import db
 
 logger = logging.getLogger(__name__)

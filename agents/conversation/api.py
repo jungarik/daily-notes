@@ -25,16 +25,19 @@ def _ctx(user_id, now, tz, locale):
     return Ctx(user_id, now, tz=tz, locale=locale)
 
 
-def _load(user_id, thread_id):
+def _get_or_create_thread(user_id, thread_id):
     """Return (thread_id, messages, pending) for an existing thread, or a fresh one."""
+    
     if thread_id is not None:
-        t = db.get_thread(user_id, thread_id)
-        if t is not None:
-            return t["id"], list(t["messages"]), t.get("pending")
+        thread = db.get_thread(user_id, thread_id)
+
+        if thread is not None:
+            return thread["id"], list(thread["messages"]), thread.get("pending")
+
     return db.create_thread(user_id), [], None
 
 
-def _shape(thread_id, result):
+def _map(thread_id, result):
     out = {
         "thread_id": thread_id,
         "status": result["status"],
@@ -47,10 +50,6 @@ def _shape(thread_id, result):
         out["action"] = result["action"]
 
     return out
-
-
-def _project(thread_id, result):
-    db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
 
 
 def _latest_or_projection(graph, graph_config, messages, pending):
@@ -90,13 +89,10 @@ def evaluate_turn(user_id: int, messages: list[dict], now, tz, locale) -> dict:
 
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user message. Returns {thread_id, status, reply|action, citations}."""
-    thread_id, messages, pending = _load(user_id, thread_id)
-    ctx = _ctx(
-        user_id,
-        now,
-        tz,
-        locale,
-    )
+
+    thread_id, messages, pending = _get_or_create_thread(user_id, thread_id)
+    ctx = _ctx(user_id, now, tz, locale)
+
     with checkpoint.session(loop.build_graph, "chat", thread_id) as (graph, graph_config):
         snapshot, messages, pending = _latest_or_projection(
             graph,
@@ -104,6 +100,7 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
             messages,
             pending,
         )
+
         if snapshot.values and checkpoint.is_interrupted(snapshot):
             result = dict(snapshot.values)
         else:
@@ -111,16 +108,22 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
                 # This request is recovering an unfinished prior turn. Return
                 # that turn's result instead of appending the retried message.
                 recovered = loop.retry(graph, graph_config)
-                _project(thread_id, recovered)
-                return _shape(thread_id, recovered)
+
+                db.save_thread(thread_id, recovered.get("messages") or [], recovered.get("pending"))
+
+                return _map(thread_id, recovered)
+
             if pending:
                 pending = _checkpoint_action_id(thread_id, messages, pending)
             else:
                 messages = with_system(messages, now, tz)
                 messages.append({"role": "user", "content": message})
+
             references = []
+
             if snapshot.values:
                 references = snapshot.values.get("reference_notes") or []
+
             result = loop.invoke(
                 graph,
                 graph_config,
@@ -131,9 +134,10 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
                     references,
                 ),
             )
-        _project(thread_id, result)
 
-        return _shape(thread_id, result)
+        db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+
+        return _map(thread_id, result)
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale, selection=None):
@@ -190,5 +194,6 @@ def confirm(user_id, thread_id, approve, now, tz, locale, selection=None):
               "reply": "There's nothing to confirm.", 
               "citations": []}
 
-        _project(thread_id, result)
-        return _shape(thread_id, result)
+        db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+
+        return _map(thread_id, result)
