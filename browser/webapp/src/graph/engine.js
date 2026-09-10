@@ -38,6 +38,11 @@ const ALPHA_REST = 0.004;
 // the horizon a node fades over so nothing pops in or out.
 const GLOBE_FILL = 0.42, LIMB_FADE = 0.28;
 
+// Notes round the back are never hidden — the globe is see-through, so the whole
+// vault stays countable at a glance. Past the horizon a note shrinks to
+// GHOST_SCALE and fades to GHOST_ALPHA instead, and the near face draws over it.
+const GHOST_SCALE = 0.55, GHOST_ALPHA = 0.14;
+
 function lerp(from, to, mix) { return from + (to - from) * mix; }
 
 function smoothstep(t) { return t * t * (3 - 2 * t); }
@@ -253,8 +258,9 @@ export function createGraphEngine(canvas, opts) {
   function spinBy(m) { G.rot = multiply(m, G.rot); }
 
   // A node's place on screen. `tilt` is how square-on it is (1 facing the viewer,
-  // 0 at the horizon), which shrinks it towards the limb the way a sphere should;
-  // `vis` fades it out as it goes over the edge.
+  // 0 at the horizon); `vis` is how far onto the near face it is (1 in front, 0
+  // round the back), which decides whether it can be touched. Neither hides it:
+  // size and opacity only fall to the ghost floor.
   function project(n) {
     const c = applyRotation(G.rot, n);
     const R = globeRadius(), o = centre();
@@ -265,10 +271,11 @@ export function createGraphEngine(canvas, opts) {
       x: o.x + R * c.x,
       y: o.y + R * c.y,
       z: c.z, tilt, vis,
-      // Cards keep most of their size across the face and lose a little at the
-      // edge — enough to read as curvature without becoming unreadable.
-      cardK: lerp(0.72, 1, tilt),
-      alpha: vis,
+      // Cards keep most of their size across the face and lose a little towards
+      // the horizon; behind it they keep shrinking to the ghost size.
+      cardK: c.z >= 0 ? lerp(0.72, 1, c.z) : lerp(0.72, GHOST_SCALE, -c.z),
+      dotK: Math.max(GHOST_SCALE, tilt),
+      alpha: lerp(GHOST_ALPHA, 1, vis),
     };
   }
 
@@ -284,23 +291,18 @@ export function createGraphEngine(canvas, opts) {
     easeSides(G.dt, h);
     placeDots(h);
 
-    // An edge with an end round the back would cut straight through the globe.
+    // An edge reaching round the back takes the fainter end's opacity, so links
+    // into the far side read as ghosts too rather than vanishing.
     for (const e of sim.edges) {
       const a = pos.get(e.a.id), b = pos.get(e.b.id);
-
-      if (a.vis <= 0 || b.vis <= 0) continue;
-
       const da = G.dots.get(e.a.id), db = G.dots.get(e.b.id);
-      ctx.globalAlpha = Math.min(a.vis, b.vis) * Math.min(a.alpha, b.alpha) * 0.55;
+      ctx.globalAlpha = Math.min(a.alpha, b.alpha) * 0.55;
       ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(da.x, da.y); ctx.lineTo(db.x, db.y); ctx.stroke();
     }
 
     for (const n of sim.nodes) {
       const p = pos.get(n.id);
-
-      if (p.vis <= 0) continue;
-
       const d = G.dots.get(n.id);
       ctx.globalAlpha = p.alpha;
       ctx.beginPath();
@@ -343,10 +345,6 @@ export function createGraphEngine(canvas, opts) {
 
       if (!from || !to || !pf || !pt) continue;
 
-      const vis = Math.min(pf.vis, pt.vis);
-
-      if (vis <= 0) continue;
-
       const head = clamp(ph.t, 0, 1), tail = Math.max(0, head - PHOTON_TAIL);
       const hx = lerp(from.x, to.x, head), hy = lerp(from.y, to.y, head);
       const tx = lerp(from.x, to.x, tail), ty = lerp(from.y, to.y, tail);
@@ -354,7 +352,7 @@ export function createGraphEngine(canvas, opts) {
       trail.addColorStop(0, "rgba(255,255,255,0)");
       trail.addColorStop(1, ph.colour);
 
-      ctx.globalAlpha = vis;
+      ctx.globalAlpha = Math.min(pf.alpha, pt.alpha);
       ctx.strokeStyle = trail; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
       ctx.beginPath(); ctx.arc(hx, hy, 2.6, 0, Math.PI * 2);
@@ -364,9 +362,9 @@ export function createGraphEngine(canvas, opts) {
     for (const [id, life] of G.flashes) {
       const dot = G.dots.get(id), p = G.pos.get(id);
 
-      if (!dot || !p || p.vis <= 0) continue;
+      if (!dot || !p) continue;
 
-      ctx.globalAlpha = life * p.vis;
+      ctx.globalAlpha = life * p.alpha;
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(dot.x, dot.y, dot.r + (1 - life) * 11, 0, Math.PI * 2);
@@ -386,7 +384,7 @@ export function createGraphEngine(canvas, opts) {
 
     for (const n of G.sim.nodes) {
       const p = G.pos.get(n.id);
-      const r = Math.max(1.2, nodeRadius(n) * G.scale * p.tilt);
+      const r = Math.max(1.2, nodeRadius(n) * G.scale * p.dotK);
       const side = smoothstep(G.sides.get(n.id) ?? (p.y < h / 2 ? 1 : 0));
       const inward = (CARD_H * p.cardK) / 2 + CARD_GAP + r;
       dots.set(n.id, { x: p.x, y: lerp(p.y - inward, p.y + inward, side), r });
@@ -395,8 +393,9 @@ export function createGraphEngine(canvas, opts) {
     G.dots = dots;
   }
 
-  // Every note on the near face gets a card, and they are allowed to overlap: the
-  // result is a heap, with the note nearest the viewer on top. `cards` is ordered
+  // Every note gets a card — the ones round the back as ghosts — and they are
+  // allowed to overlap: the result is a heap, with the note nearest the viewer on
+  // top, so the near face always draws over the far one. `cards` is ordered
   // front-to-back, which is both the stacking order (React maps it to a
   // descending z-index) and the hit-test order.
   function layoutCards() {
@@ -410,8 +409,6 @@ export function createGraphEngine(canvas, opts) {
       if (cards.length >= MAX_CARDS) break;
 
       const p = pos.get(n.id);
-
-      if (p.vis <= 0.15) continue;   // over the horizon
 
       // Cards keep their full width — one near the edge of the viewport is nudged
       // back inside rather than sliced off, since in a heap it is already offset
@@ -427,6 +424,7 @@ export function createGraphEngine(canvas, opts) {
         alpha: p.alpha, node: n,
         blur: focusBlur(x + cw / 2, y + ch / 2, w, h),
         marked: G.marked === n.id,
+        ghost: p.vis < 0.5,
       });
     }
 
@@ -509,7 +507,7 @@ export function createGraphEngine(canvas, opts) {
 
     const hit = (card) => px >= card.x && px <= card.x + card.w
                        && py >= card.y && py <= card.y + card.h;
-    const top = G.cards.find(hit);
+    const top = G.cards.find((card) => !card.ghost && hit(card));
 
     if (top) return top.node;
 
@@ -517,7 +515,7 @@ export function createGraphEngine(canvas, opts) {
     for (const n of (G.sim ? G.sim.nodes : [])) {
       const p = G.pos.get(n.id);
 
-      if (!p || p.vis <= 0) continue;   // round the back
+      if (!p || p.vis < 0.5) continue;   // round the back: visible, not touchable
 
       const dot = G.dots.get(n.id) || { x: p.x, y: p.y, r: nodeRadius(n) };
       const r = dot.r + 10;

@@ -6,8 +6,8 @@ import { pathColor } from "../lib/format.js";
 
 // Connections map: the vault as a globe. Notes are laid out on the sphere;
 // dragging rolls it under the finger, two fingers scale it, and the folder
-// filter decides what is on it. Tapping a note turns it to the front, holding
-// one opens it. The engine owns the canvas and every per-frame style; this
+// filter decides what is on it. Tapping a note pulses its links, holding one
+// opens it; notes round the back stay on screen as small faded ghosts. The engine owns the canvas and every per-frame style; this
 // component owns the card list and the lifecycle.
 export default function MapView({ hidden }) {
   const { state, openNote } = useApp();
@@ -84,9 +84,9 @@ export default function MapView({ hidden }) {
   return (
     <div id="map" className={"view" + (hidden ? " hidden" : "")}>
       <canvas id="graph" ref={canvasRef} />
-      {/* The engine hands the nodes over front-to-back — nearest depth first, then
-          most-linked — and that order becomes a descending z-index. A tapped note
-          is depth 0, so it leads the pile without needing any highlight. */}
+      {/* The engine hands the nodes over front-to-back — nearest the viewer
+          first — and that order becomes a descending z-index, so the near face
+          always sits over the ghosts on the far side. */}
       <div className="map-cards" aria-hidden="true">
         {cards.map((n, i) => (
           <div key={n.id} ref={(el) => setCardEl(n.id, el)}
