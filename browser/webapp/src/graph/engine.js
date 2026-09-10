@@ -1,8 +1,8 @@
 // Canvas graph engine: the vault as a globe.
 //
-// Notes are laid out *on* a sphere — a force-directed simulation whose nodes are
-// unit vectors, so repulsion spreads them over the whole surface while links pull
-// connected notes together. Dragging rolls the globe under the finger (a rotation
+// Notes are laid out *on* a sphere by `sphereLayout.js` — a force-directed
+// simulation whose nodes are unit vectors, with linked notes grouped into
+// clusters so their links stay short and cross less. Dragging rolls the globe under the finger (a rotation
 // about the axis perpendicular to the drag, by arc length / radius), two fingers
 // scale it, and the folder filter decides which notes are on it at all.
 //
@@ -18,6 +18,7 @@
 import { fetchGraph } from "../lib/api.js";
 import { pathColor } from "../lib/format.js";
 import { tg } from "../lib/telegram.js";
+import { buildSim, stepSim } from "./sphereLayout.js";
 
 // Cards are fixed screen-size, so scaling the globe changes how many fit rather
 // than how big they are.
@@ -30,9 +31,6 @@ const LONG_PRESS_MS = 450, TAP_SLOP = 6;
 // folder colour, and the arrival flashes the far dot — so a tap answers "what
 // does this connect to?" without disturbing the layout.
 const PHOTON_MS = 620, PHOTON_TAIL = 0.14, FLASH_MS = 520;
-
-// Below this the layout is settled and stops moving entirely.
-const ALPHA_REST = 0.004;
 
 // How much of the viewport the globe fills at scale 1, and how far either side of
 // the horizon a node fades over so nothing pops in or out.
@@ -145,78 +143,6 @@ function orthonormalise(m) {
 
 // A faint folder-coloured dot anchors every node; the card carries the detail.
 function nodeRadius(n) { return 3 + Math.min(6, (n.degree || 0) * 0.8); }
-
-// Seed on a Fibonacci spiral: the cheapest way to cover a sphere evenly, so the
-// simulation starts from full coverage and only has to pull linked notes
-// together rather than discover the spread itself.
-function seedSphere(count, index) {
-  const y = count === 1 ? 0 : 1 - (index / (count - 1)) * 2;
-  const r = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = Math.PI * (3 - Math.sqrt(5)) * index;
-
-  return { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r };
-}
-
-function buildSim(data) {
-  const count = data.nodes.length;
-  const nodes = data.nodes.map((n, i) => ({ ...n, ...seedSphere(count, i), vx: 0, vy: 0, vz: 0 }));
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const edges = (data.edges || [])
-    .map((e) => ({ a: byId.get(e.source), b: byId.get(e.target) }))
-    .filter((e) => e.a && e.b);
-
-  return { nodes, edges, alpha: 1 };
-}
-
-// Forces act on the chord between two nodes; after integrating, every node is
-// pushed back onto the unit sphere and its velocity flattened into the tangent
-// plane, so everything slides along the surface instead of leaving it.
-function stepSim(sim) {
-  const nodes = sim.nodes, a = sim.alpha;
-  const REPEL = 0.22, SPRING = 0.055, LINK_CHORD = 0.6, DAMP = 0.82;
-
-  for (let i = 0; i < nodes.length; i++) {
-    const ni = nodes[i];
-    for (let j = i + 1; j < nodes.length; j++) {
-      const nj = nodes[j];
-      let dx = ni.x - nj.x, dy = ni.y - nj.y, dz = ni.z - nj.z;
-      let d2 = dx * dx + dy * dy + dz * dz;
-
-      if (d2 < 1e-6) {
-        dx = Math.random() - .5; dy = Math.random() - .5; dz = Math.random() - .5;
-        d2 = dx * dx + dy * dy + dz * dz + 1e-6;
-      }
-
-      const inv = 1 / Math.sqrt(d2), f = REPEL / Math.max(d2, 0.02);
-      const fx = dx * inv * f, fy = dy * inv * f, fz = dz * inv * f;
-      ni.vx += fx; ni.vy += fy; ni.vz += fz;
-      nj.vx -= fx; nj.vy -= fy; nj.vz -= fz;
-    }
-  }
-
-  for (const e of sim.edges) {
-    const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, dz = e.b.z - e.a.z;
-    const d = Math.hypot(dx, dy, dz) || 1e-4;
-    const f = (d - LINK_CHORD) * SPRING;
-    const fx = dx / d * f, fy = dy / d * f, fz = dz / d * f;
-    e.a.vx += fx; e.a.vy += fy; e.a.vz += fz;
-    e.b.vx -= fx; e.b.vy -= fy; e.b.vz -= fz;
-  }
-
-  for (const n of nodes) {
-    n.x += n.vx * a; n.y += n.vy * a; n.z += n.vz * a;
-
-    const len = Math.hypot(n.x, n.y, n.z) || 1;
-    n.x /= len; n.y /= len; n.z /= len;
-
-    const radial = n.vx * n.x + n.vy * n.y + n.vz * n.z;
-    n.vx = (n.vx - radial * n.x) * DAMP;
-    n.vy = (n.vy - radial * n.y) * DAMP;
-    n.vz = (n.vz - radial * n.z) * DAMP;
-  }
-
-  sim.alpha = a < ALPHA_REST ? 0 : a * 0.978;
-}
 
 // One engine instance per mounted canvas.
 export function createGraphEngine(canvas, opts) {
