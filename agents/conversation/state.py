@@ -111,16 +111,25 @@ def context_update(ctx: Ctx) -> dict:
     return {"citations": ctx.citations, "trace": ctx.trace}
 
 
-def initial_state(ctx: Ctx, messages: list, pending: dict | None = None,
-                  reference_notes: list[dict] | None = None) -> ChatState:
+def initial_state(
+        ctx: Ctx, 
+        messages: list, 
+        pending: dict | None = None,
+        reference_notes: list[dict] | None = None) -> ChatState:
     return {
-        "context": _context_to_dict(ctx), "messages": list(messages), "steps": 0,
-        "tool_call": None, "pending": pending,
+        "context": _context_to_dict(ctx), 
+        "messages": list(messages), 
+        "steps": 0,
+        "tool_call": None, 
+        "pending": pending,
         "action": pending.get("action") if pending else None,
-        "completed_action_id": None, "citations": [],
+        "completed_action_id": None, 
+        "citations": [],
         "reference_notes": list(reference_notes or []),
-        "trace": {"tools": [], "retrieved_chunks": [], "routes": []},
-    }
+        "trace": {
+            "tools": [], 
+            "retrieved_chunks": [], 
+            "routes": []}}
 
 
 def merge_reference_notes(existing: list[dict], current: list[dict]) -> list[dict]:

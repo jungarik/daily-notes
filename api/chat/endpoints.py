@@ -22,7 +22,7 @@ def chat(req: ChatRequest, user_id: int = Depends(current_user)) -> ChatResponse
     (proposed by the enrich agent)."""
 
     tz, locale = helper.normalize_settings(*db.get_settings(user_id))
-    result = chat_agent.start_turn(
+    result = chat_agent.entry_point(
         user_id,
         req.message,
         req.thread_id,

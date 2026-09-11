@@ -27,15 +27,6 @@ EDITABLE_CAPTURE_FIELDS = {"text", "title", "path", "tags", "type", "priority",
                            "linked_note_ids"}
 
 
-def _load(user_id, thread_id):
-    """Return (thread_id, messages, pending) for an existing thread, or a fresh one."""
-    if thread_id is not None:
-        t = db.get_thread(user_id, thread_id)
-        if t is not None:
-            return t["id"], list(t["messages"]), t.get("pending")
-    return db.create_thread(user_id), [], None
-
-
 def _map(thread_id, result):
     out = {"thread_id": thread_id, "status": result["status"]}
     if result["status"] == "answer":
@@ -45,59 +36,61 @@ def _map(thread_id, result):
     return out
 
 
-def _project(thread_id, result):
-    db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+def _latest_or_projection(state_snapshot, messages, pending):
+    """Use the checkpoint as truth, falling back to pre-checkpointer thread data."""
+    if state_snapshot.values:
+        return (
+            list(state_snapshot.values.get("messages") or []),
+            state_snapshot.values.get("pending"),
+        )
+
+    return list(messages), pending
 
 
-def _latest_or_projection(graph, graph_config, messages, pending):
-    snapshot = graph.get_state(graph_config)
-    if snapshot.values:
-        return snapshot, list(snapshot.values.get("messages") or []), snapshot.values.get("pending")
-    return snapshot, list(messages), pending
-
-
-def _checkpoint_action_id(thread_id, messages, pending):
-    """Upgrade older pending writes and persist their stable id before execution."""
-    if pending.get("action_id"):
-        return pending
-    pending = dict(pending)
-    identity = json.dumps({
+def _with_action_id(thread_id, pending) -> dict:
+    """The pending write plus a stable action id, so a retry reuses the same one."""
+    fingerprint = json.dumps({
         "thread_id": thread_id,
         "tool_call_id": pending.get("tool_call_id"),
         "name": pending.get("name"),
         "args": pending.get("args"),
     }, sort_keys=True, separators=(",", ":"), default=str)
-    pending["action_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, identity))
 
-    db.save_thread(thread_id, messages, pending)
-
-    return pending
+    return {**pending, "action_id": str(uuid.uuid5(uuid.NAMESPACE_URL, fingerprint))}
 
 
 def start_turn(user_id, message, thread_id, now, tz, locale):
     """Run one user instruction. Returns {thread_id, status, reply|action}."""
-    thread_id, messages, pending = _load(user_id, thread_id)
+    thread = db.get_thread(user_id, thread_id) if thread_id is not None else None
+
+    if thread is None:
+        thread_id, messages, pending = db.create_thread(user_id), [], None
+    else:
+        thread_id, messages, pending = (
+            thread["id"],
+            list(thread["messages"]),
+            thread.get("pending"),
+        )
+
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
 
     with checkpoint.session(loop.build_graph, "enrich", thread_id) as (graph, graph_config):
-        snapshot, messages, pending = _latest_or_projection(
-            graph,
-            graph_config,
-            messages,
-            pending,
-        )
+        state_snapshot = graph.get_state(graph_config)
+        messages, pending = _latest_or_projection(state_snapshot, messages, pending)
 
-        if snapshot.values and checkpoint.is_interrupted(snapshot):
-            result = dict(snapshot.values)
+        if state_snapshot.values and checkpoint.has_interrupts(state_snapshot.tasks):
+            result = dict(state_snapshot.values)
         else:
-            if snapshot.values and snapshot.next:
+            if state_snapshot.values and state_snapshot.next:
                 recovered = loop.retry(graph, graph_config)
-                _project(thread_id, recovered)
+                db.save_thread(thread_id, recovered.get("messages") or [], recovered.get("pending"))
 
                 return _map(thread_id, recovered)
 
             if pending:
-                pending = _checkpoint_action_id(thread_id, messages, pending)
+                if not pending.get("action_id"):
+                    pending = _with_action_id(thread_id, pending)
+                    db.save_thread(thread_id, messages, pending)
             else:
                 messages = with_system(messages)
                 messages.append({"role": "user", "content": message})
@@ -108,39 +101,59 @@ def start_turn(user_id, message, thread_id, now, tz, locale):
                 loop.initial_state(ctx, messages, pending),
             )
 
-        _project(thread_id, result)
+        db.save_thread(
+            thread_id,
+            result.get("messages") or [],
+            result.get("pending"),
+        )
 
         return _map(thread_id, result)
 
 
 def confirm(user_id, thread_id, approve, now, tz, locale):
     """Resume a thread paused on a write: execute (or decline) it and continue."""
-    t = db.get_thread(user_id, thread_id)
-    if t is None:
+    thread = db.get_thread(user_id, thread_id)
+
+    if thread is None:
         return {"thread_id": thread_id, "status": "answer", "reply": "There's nothing to confirm."}
+
     ctx = Ctx(user_id, now, tz=tz, locale=locale)
+
     with checkpoint.session(loop.build_graph, "enrich", thread_id) as (graph, graph_config):
-        snapshot = graph.get_state(graph_config)
-        if not snapshot.values:
-            if not t.get("pending"):
+        state_snapshot = graph.get_state(graph_config)
+
+        if not state_snapshot.values:
+            if not thread.get("pending"):
                 return {"thread_id": thread_id, "status": "answer",
                         "reply": "There's nothing to confirm."}
-            pending = _checkpoint_action_id(thread_id, list(t["messages"]), t["pending"])
+
+            messages = list(thread["messages"])
+            pending = thread["pending"]
+
+            if not pending.get("action_id"):
+                pending = _with_action_id(thread_id, pending)
+                db.save_thread(thread_id, messages, pending)
+
             loop.invoke(
                 graph, graph_config,
-                loop.initial_state(ctx, list(t["messages"]), pending),
+                loop.initial_state(ctx, messages, pending),
             )
-            snapshot = graph.get_state(graph_config)
-        if checkpoint.is_interrupted(snapshot):
+            state_snapshot = graph.get_state(graph_config)
+
+        if checkpoint.has_interrupts(state_snapshot.tasks):
             result = loop.resume(graph, graph_config, bool(approve))
-        elif snapshot.next:
+        elif state_snapshot.next:
             result = loop.retry(graph, graph_config)
-        elif snapshot.values.get("completed_action_id"):
-            result = dict(snapshot.values)
+        elif state_snapshot.values.get("completed_action_id"):
+            result = dict(state_snapshot.values)
         else:
             return {"thread_id": thread_id, "status": "answer",
                     "reply": "There's nothing to confirm."}
-        _project(thread_id, result)
+        db.save_thread(
+            thread_id,
+            result.get("messages") or [],
+            result.get("pending"),
+        )
         return _map(thread_id, result)
 
 

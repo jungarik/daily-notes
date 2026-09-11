@@ -30,9 +30,10 @@ def build_graph(checkpointer):
 CHAT_GRAPH = build_graph(InMemorySaver())
 
 
-def _invoke(graph, value, graph_config: dict) -> dict:
+def _invoke(graph, state, graph_config: dict) -> dict:
     limit = max(20, config.AGENT_MAX_STEPS * 3 + 5)
-    return graph.invoke(value, {**graph_config, "recursion_limit": limit})
+    
+    return graph.invoke(state, {**graph_config, "recursion_limit": limit})
 
 
 def invoke(graph, graph_config: dict, state: ChatState) -> dict:

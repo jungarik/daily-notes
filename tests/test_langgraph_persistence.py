@@ -70,7 +70,7 @@ class LangGraphPersistenceTests(unittest.TestCase):
             action_id = paused["pending"]["action_id"]
             resumed = chat_loop.resume(graph, graph_config, True)
 
-        self.assertTrue(checkpoint.is_interrupted(snapshot))
+        self.assertTrue(checkpoint.has_interrupts(snapshot.tasks))
         self.assertEqual(("approve",), snapshot.next)
         self.assertEqual(action_id, snapshot.values["pending"]["action_id"])
         self.assertEqual("Created.", resumed["reply"])
@@ -84,7 +84,7 @@ class LangGraphPersistenceTests(unittest.TestCase):
             completion(tool_name="create_note", arguments='{"text": "Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(enrich_reason, "complete", side_effect=replies), \
+        with patch.object(enrich_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(enrich_approve.execution_ledger, "execute_once",
                              return_value='{"note_id": 10}') as execute_once:
             paused = enrich_loop.invoke(
@@ -95,7 +95,7 @@ class LangGraphPersistenceTests(unittest.TestCase):
             snapshot = graph.get_state(graph_config)
             resumed = enrich_loop.resume(graph, graph_config, True)
 
-        self.assertTrue(checkpoint.is_interrupted(snapshot))
+        self.assertTrue(checkpoint.has_interrupts(snapshot.tasks))
         self.assertEqual(paused["pending"]["action_id"],
                          snapshot.values["pending"]["action_id"])
         self.assertEqual("Created.", resumed["reply"])
@@ -135,7 +135,7 @@ class LangGraphPersistenceTests(unittest.TestCase):
                              side_effect=lambda *args: args[-1]()), \
                 patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 11}') as execute:
-            paused = chat_service.start_turn(7, "Save Idea", None, now, timezone.utc, "en")
+            paused = chat_service.entry_point(7, "Save Idea", None, now, timezone.utc, "en")
             resumed = chat_service.confirm(7, 51, True, now, timezone.utc, "en")
             repeated = chat_service.confirm(7, 51, True, now, timezone.utc, "en")
 

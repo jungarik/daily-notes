@@ -4,6 +4,13 @@
 system the owner uses daily. Treat it accordingly: correctness, resilience, and
 maintainability matter more than shipping fast.
 
+**The agentic system is the core of this product, and it is built on an
+extremely clean, extendable, maintainable, scalable and readable architecture.**
+Agent behaviour will keep growing — new tools, new steps, new specialists — so
+the structure must stay obvious enough to extend without re-reading the whole
+graph. When a change makes an agent harder to read or extend, it is the wrong
+change, even if it works. See **Agentic architecture standards** below.
+
 ## What it is
 
 A backend for capturing thoughts (text / voice / photos), enriching them into
@@ -72,12 +79,101 @@ Consequences (follow these):
   `note_service.delete_bare_note` collects the keys *before* deleting and removes
   them after a successful delete.
 
+## Agentic architecture standards
+
+These are binding for `agents/` and `tools/`. They exist so a new capability is
+additive — a file plus an edge or a map entry — and never a rewrite of the loop.
+
+- **One node, one module, one public `run`.** Every graph node is its own module
+  exposing exactly `run(state) -> dict`. Everything else in the module is private
+  (`_`-prefixed). No module hosts two nodes.
+- **Name nodes for their role, not their implementation.** The loop primitives
+  are `reason` (model step), `act` (run a tool), `plan` (one-shot planning),
+  `approve` (human confirmation + execution), `handoff` (route to a specialist).
+  Multi-step phases live in subpackages named for their goal — `classify/`,
+  `schedule/`, `write/`. Graph node ids, module names, and trace labels match.
+- **Nodes are pure state transitions.** `run` takes state and returns a partial
+  state patch — never a mutation of the state it was handed. No cross-node
+  imports, no shared mutable module state. The node's `run` is the one place that
+  may be impure (retrieval, LLM, tool execution); everything it calls below that
+  takes data as parameters and returns data. A local `_shared.py` is allowed only
+  for genuinely pure helpers — mapping and retrieval stay in the node.
+- **Routing is declarative and lives in `routing.py`.** Small predicate functions
+  returning a node id; the graph shape is documented in the module docstring. No
+  business logic in edges.
+- **Extend by data, not by branching.** Prefer a registry/map over a new `if`:
+  a new specialist is a `HANDOFF_SPECIALIST` entry plus a tool spec; a new tool
+  is a file in `tools/<agent>/` registered in that package. Never edit the loop
+  to add a capability.
+- **Deterministic work belongs in its own node, not inside a write node.**
+  Retrieval, classification, and time resolution are separate, testable steps
+  (`classify_gather`, `schedule_resolve`, `link_context`); the write nodes stay
+  plain checks.
+- **No redundant nodes.** If a node is another node in a different mode, fold it
+  in (as the tool-free budget exhaustion path folded into `reason`).
+- **Keep the graph small enough to hold in your head.** Prefer the fewest nodes
+  that express the flow; a reader should be able to follow `START → END` from
+  `graph.py` + `routing.py` alone.
+- **Docs and tests track the structure.** When node names or the graph change,
+  update `devdoc/agent-workflows-langgraph.md`, the relevant `devdoc/agentic-*.md`,
+  and the node-set assertions in `tests/`.
+
 ## Project code style
 
 - Keep standalone `if` blocks separated from surrounding logic with a single
   empty line.
 - If a method has a multi-line body, leave one empty line before its final
   `return` statement. Do not add that empty line for a single-return method.
+- **Resolve to one value, then branch once.** When several conditions lead to
+  the same outcome, don't give each its own branch — collapse them first. Guard
+  the lookup with a ternary so a missing input and a missing row both arrive as
+  `None`, then write a single `if/else` over that one value. The result is two
+  lines of control flow for what is genuinely two outcomes, with both calls
+  visible in the caller and no helper to look up:
+
+  ```python
+  # wrong — nested branches, and the tail return quietly serves two cases
+  def _get_or_create_thread(user_id, thread_id):
+      if thread_id is not None:
+          thread = db.get_thread(user_id, thread_id)
+
+          if thread is not None:
+              return thread["id"], list(thread["messages"]), thread.get("pending")
+
+      return db.create_thread(user_id), [], None
+
+  # also wrong — flat, but it invents a helper and repeats the create call
+  # once per way of not having a thread
+  def _get_or_create_thread(user_id, thread_id):
+      if thread_id is None:
+          return db.create_thread(user_id), [], None
+
+      thread = db.get_thread(user_id, thread_id)
+
+      if thread is None:
+          return db.create_thread(user_id), [], None
+
+      return thread["id"], list(thread["messages"]), thread.get("pending")
+
+  # right — normalise to `thread`, then one branch on "have it / don't"
+  thread = db.get_thread(user_id, thread_id) if thread_id is not None else None
+
+  if thread is None:
+      thread_id, messages, pending = db.create_thread(user_id), [], None
+  else:
+      thread_id, messages, pending = (
+          thread["id"],
+          list(thread["messages"]),
+          thread.get("pending"),
+      )
+  ```
+
+  A ternary is the right tool for that guarded lookup: it says "read only if
+  there is something to read" in one line, and the read still happens in the
+  top-level caller where the rest of the I/O lives. Reach for early-return
+  guards instead when the cases have genuinely *different* outcomes — an
+  unreachable state, a validation failure, a short-circuit reply; don't nest the
+  real work inside an `if` to reach them.
 - If a function or method call passes more than 3–4 arguments, put each argument
   on its own line.
 - For Python multi-line call/object/dict/list blocks, keep the opening bracket
@@ -94,6 +190,89 @@ Consequences (follow these):
   `_complete()` that both builds the request and calls the API. This keeps the
   payload construction independently testable and reusable, and keeps the
   side-effecting call visible at the call site.
+- **Functions are pure by default.** A function takes data as parameters and
+  returns new data. It does not perform I/O (DB, network, filesystem, LLM), does
+  not read or write mutable module/global state, and does not depend on anything
+  it wasn't given. Impurity is allowed only where it is the point — the top-level
+  caller (a node's `run`, an endpoint handler, a tool's `invoke`).
+- **Retrieve and map at the top-level caller.** The caller fetches the rows,
+  resolves the context, and maps them into plain values, then passes those values
+  down as parameters. A lower-level function never reaches out for what it needs;
+  if it needs a note, the note is a parameter — not a `note_id` it will look up.
+- **Never pass a handle so the callee can fetch.** If a function's job is to
+  select, extract, or shape, give it the *data* — never the thing that can
+  produce the data (`graph`, `db`, a client, a session, a checkpointer, a
+  registry). Passing a handle plus its config buries I/O inside what reads like a
+  mapper, and hides from the call site what was actually read:
+
+  ```python
+  # wrong — takes the graph + config only to fetch inside, and hands the
+  # snapshot straight back out again
+  def _latest_or_projection(graph, graph_config, messages, pending):
+      snapshot = graph.get_state(graph_config)
+      ...
+
+  # right — the caller performs the read, the helper only chooses
+  state_snapshot = graph.get_state(graph_config)
+  messages, pending = _latest_or_projection(state_snapshot, messages, pending)
+  ```
+- **Don't return a parameter back to the caller.** A helper returns only what it
+  derived. Handing an input back out in a tuple (the snapshot the caller just
+  fetched) blurs who owns the value and makes the signature lie about the work.
+- **Take the field, never the container it came from.** If the body only reads
+  one attribute off a parameter, that attribute *is* the parameter. Reaching
+  through an argument (`state_snapshot.tasks`, `note.id`, `response.choices`)
+  couples the helper to a type it has no business knowing and hides what it
+  actually operates on. The caller owns the object and does the attribute access:
+
+  ```python
+  # wrong — takes a whole snapshot to look at one collection, and the name
+  # describes the snapshot rather than the check
+  def is_interrupted(snapshot) -> bool:
+      return any(task.interrupts for task in snapshot.tasks)
+
+  # right — it checks tasks, so it takes tasks, and says so
+  def has_interrupts(tasks) -> bool:
+      return any(task.interrupts for task in tasks)
+
+  checkpoint.has_interrupts(state_snapshot.tasks)
+  ```
+
+  Corollary: **name the function after the question it answers about its own
+  parameter** — `has_interrupts(tasks)`, not `is_interrupted(snapshot)`.
+- **Never accept a parameter the body doesn't use.**
+- **Don't wrap a single call in a helper.** A private function whose whole body
+  is one call adds a name to read past and hides the real operation — especially
+  when the name is vague. Call it directly at the call site:
+
+  ```python
+  # wrong — "project" hides that this saves the thread, and saves nothing else
+  def _project(thread_id, result):
+      db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+
+  # right — the call site says what happens
+  db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
+  ```
+
+  Extract a helper only when it removes real duplication of *logic* (branching,
+  shaping, validation), not to alias a call or to save a few characters.
+- **Name a value for what it is, not its shape.** `state_snapshot` not
+  `snapshot`; `tool_call` not `call`; `model_request`/`model_response` not
+  `request`/`response`. Avoid bare generic nouns (`data`, `result`, `info`,
+  `item`, `obj`, `value`) wherever a domain-qualified name exists.
+- **Never mutate by reference.** Do not modify a passed dict/list/object in place
+  and never use that mutation as an output channel. Build and return a new value
+  (`{**data, "field": x}`, a new list); the caller uses the returned result. The
+  only thing a function communicates back is its return value.
+- **No shared/common module unless it is 100% pure.** A helper may be shared only
+  if it is completely side-effect-free and self-contained. Anything that fetches,
+  resolves context, or carries state stays local to the vertical that uses it.
+  **A mapper does not count as pure for this rule** — mapping belongs to its
+  caller, not to a shared module.
+- **Prefer duplication over an impure shared helper.** Copying a mapping/shaping
+  function into two verticals is the correct trade here; it keeps verticals
+  decoupled (same reasoning as "no shared domain layer" above). Do not create a
+  `common`/`shared` home for convenience.
 - Prefer these rules for new and changed code in this project; do not reformat
   unrelated code just for style.
 

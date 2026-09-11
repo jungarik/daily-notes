@@ -47,5 +47,6 @@ def session(build_graph, namespace: str, thread_id: int):
         yield graph, graph_config
 
 
-def is_interrupted(snapshot) -> bool:
-    return any(task.interrupts for task in snapshot.tasks)
+def has_interrupts(tasks) -> bool:
+    """True when any pending task is parked on an interrupt (awaiting approval)."""
+    return any(task.interrupts for task in tasks)

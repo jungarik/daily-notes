@@ -63,7 +63,7 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], list((root / "reminder").rglob("*.py")))
 
     def test_public_facades_and_registry(self):
-        self.assertTrue(callable(conversation.start_turn))
+        self.assertTrue(callable(conversation.entry_point))
         self.assertTrue(callable(conversation.confirm))
         self.assertTrue(callable(conversation.evaluate_turn))
         self.assertTrue(callable(enrich_handoff.plan_action))
