@@ -1,4 +1,9 @@
-"""Chat router — POST /api/chat and /api/chat/confirm (the Mini App chat tab)."""
+"""Chat router — POST /api/chat and /api/chat/confirm (the Mini App chat tab).
+
+This section owns the thread projection: it loads the thread, hands the data to
+the conversation agent, persists the result the agent returns, and shapes the
+response. The agent itself touches no database.
+"""
 
 import logging
 
@@ -22,20 +27,36 @@ def chat(req: ChatRequest, user_id: int = Depends(current_user)) -> ChatResponse
     (proposed by the enrich agent)."""
 
     tz, locale = helper.normalize_settings(*db.get_settings(user_id))
-    result = chat_agent.start_turn(
-        user_id,
+    thread = db.get_thread(user_id, req.thread_id) if req.thread_id is not None else None
+
+    if thread is None:
+        thread_id, messages, pending = db.create_thread(user_id), [], None
+    else:
+        thread_id, messages, pending = (
+            thread["id"],
+            list(thread["messages"]),
+            thread.get("pending"),
+        )
+
+    result = chat_agent.run_turn(
+        thread_id,
+        messages,
+        pending,
         req.message,
-        req.thread_id,
+        user_id,
         datetime.now(tz),
         tz,
-        locale)
+        locale,
+    )
+
+    db.save_thread(thread_id, result.get("messages") or [], result.get("pending"))
     logger.info(
         "chat turn user=%s thread=%s -> %s",
         user_id,
-        result["thread_id"],
+        thread_id,
         result["status"])
 
-    return ChatResponse(**result)
+    return helper.turn_response(thread_id, result)
 
 
 @router.post("/confirm", response_model=ChatResponse)
@@ -44,14 +65,27 @@ def chat_confirm(req: ChatConfirmRequest,
     """Approve or decline the action the agent handed off, then continue the turn."""
 
     tz, locale = helper.normalize_settings(*db.get_settings(user_id))
-    result = chat_agent.confirm(
-        user_id,
+    thread = db.get_thread(user_id, req.thread_id)
+
+    if thread is None:
+        return helper.nothing_to_confirm(req.thread_id)
+
+    result = chat_agent.run_confirmation(
         req.thread_id,
+        list(thread["messages"]),
+        thread.get("pending"),
         req.approve,
+        req.selection,
+        user_id,
         datetime.now(tz),
         tz,
         locale,
-        selection=req.selection)
+    )
+
+    if result is None:
+        return helper.nothing_to_confirm(req.thread_id)
+
+    db.save_thread(req.thread_id, result.get("messages") or [], result.get("pending"))
     logger.info(
         "chat confirm user=%s thread=%s approve=%s -> %s",
         user_id,
@@ -59,4 +93,4 @@ def chat_confirm(req: ChatConfirmRequest,
         req.approve,
         result["status"])
 
-    return ChatResponse(**result)
+    return helper.turn_response(req.thread_id, result)

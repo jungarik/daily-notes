@@ -62,10 +62,11 @@ as “that note” without guessing from an isolated sentence.
 - `graph.py` + `nodes/classify/`: reusable metadata proposal workflow.
 - `domain.py`: deterministic note chunking, normalization, reminder proposal
   assembly, and persistence.
-- `db.py`: owner-scoped reads, note writes, metadata writes, and optional direct
-  agent thread persistence.
-- `api.py`: `start_turn` / `confirm` for a future direct surface, plus
-  `plan_action` / `execute_action` used by Chat.
+- `db.py`: owner-scoped reads, note writes and metadata writes. No thread
+  persistence — a calling section owns that, as `api/chat` does for Chat.
+- `api.py`: the standalone fast-capture flow (`propose_capture` /
+  `revise_capture` / `confirm_capture` / `cancel_capture`).
+- `handoff_api.py`: `plan_action` / `execute_action` used by Chat.
 
 The agent is client-agnostic and imports only shared infrastructure. Note
 creation is text-only. Telegram keeps fast capture and its deferred Enrich

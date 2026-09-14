@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agents import bootstrap, conversation
 from agents.enrich import api as enrich
+from agents.enrich import db as enrich_db
 from agents.enrich import handoff_api as enrich_handoff
 
 
@@ -14,7 +15,6 @@ class AgentStructureTests(unittest.TestCase):
         expected = {
             "conversation/api.py", "conversation/state.py", "conversation/graph.py",
             "conversation/routing.py", "conversation/prompts.py",
-            "conversation/db.py",
             "conversation/nodes/reason.py", "conversation/nodes/act.py",
             "conversation/nodes/handoff.py", "conversation/nodes/approve.py",
             "enrich/api.py", "enrich/state.py",
@@ -62,9 +62,19 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
         self.assertEqual([], list((root / "reminder").rglob("*.py")))
 
+    def test_agents_own_no_thread_persistence(self):
+        """Thread state belongs to the calling section, not to the agents."""
+        root = Path(__file__).parents[1] / "agents"
+        self.assertFalse((root / "conversation" / "db.py").exists())
+        self.assertEqual(
+            [],
+            [name for name in ("create_thread", "get_thread", "save_thread")
+             if hasattr(enrich_db, name)],
+        )
+
     def test_public_facades_and_registry(self):
-        self.assertTrue(callable(conversation.start_turn))
-        self.assertTrue(callable(conversation.confirm))
+        self.assertTrue(callable(conversation.run_turn))
+        self.assertTrue(callable(conversation.run_confirmation))
         self.assertTrue(callable(conversation.evaluate_turn))
         self.assertTrue(callable(enrich_handoff.plan_action))
         self.assertTrue(callable(enrich_handoff.execute_action))

@@ -84,14 +84,14 @@ class HandoffBrokerTests(unittest.TestCase):
         broker = build_broker(specialist)
         plan = handoff_broker.plan(broker.route("perform_action"), broker.registry, [], {"instruction": "move it"}, [], ctx())
 
-        pending = pending("call-1", plan)
+        staged = pending("call-1", plan)
 
-        self.assertEqual(pending["tool_call_id"], "call-1")
-        self.assertEqual(pending["agent"], "enrich")
-        self.assertEqual(pending["action"], ACTION)
-        self.assertEqual(pending["summary"], "Move note 4")
-        self.assertEqual(pending["handoff"], plan.contract)
-        self.assertTrue(pending["action_id"])
+        self.assertEqual(staged["tool_call_id"], "call-1")
+        self.assertEqual(staged["agent"], "enrich")
+        self.assertEqual(staged["action"], ACTION)
+        self.assertEqual(staged["summary"], "Move note 4")
+        self.assertEqual(staged["handoff"], plan.contract)
+        self.assertTrue(staged["action_id"])
 
     def test_execute_runs_the_action_through_the_ledger_once(self):
         specialist = SimpleNamespace(execute_action=Mock(return_value="moved"))

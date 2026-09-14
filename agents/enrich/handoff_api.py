@@ -13,7 +13,7 @@ from agents.runtime.execute_tool import execute_tool
 from tools import enrich as tools
 from tools.enrich import TOOL_SPECS
 from common import helper
-from agents.enrich import graph as loop
+from agents.enrich import graph as graphs
 from agents.enrich import db
 from agents.enrich.prompts import planning_messages
 from agents.enrich.state import Ctx, context_to_dict
@@ -42,17 +42,17 @@ def plan_action(user_id: int, request, now, tz, locale) -> dict | None:
                 note["note_id"] = note.get("id", note_id)
                 notes.append(note)
         contract["resolved_entities"]["referenced_notes"] = notes
-        result = loop.REMINDER_PLAN_GRAPH.invoke({
+        result = graphs.REMINDER_PLAN_GRAPH.invoke({
             "contract": contract, "now": now, "action": None,
             "reminder_trace": [], "locale": locale,
         })
         return result.get("action")
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
+
     messages = planning_messages(contract)
     try:
-        result = loop.ACTION_PLAN_GRAPH.invoke({
+        result = graphs.ACTION_PLAN_GRAPH.invoke({
             "messages": messages,
-            "context": context_to_dict(ctx),
+            "context": context_to_dict(Ctx(user_id, now, tz=tz, locale=locale)),
             "tool_specs": TOOL_SPECS,
             "steps": 0,
             "tool_call": None,

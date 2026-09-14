@@ -33,10 +33,12 @@ def with_system(messages: list[dict], now=None, tz=None) -> list[dict]:
 
     if now is not None:
         value = now.isoformat() if hasattr(now, "isoformat") else str(now)
-        content += (f" Current local date and time: {value}. Timezone: {tz}. "
-                    "Resolve relative agenda dates from this value.")
+        content += (
+            f" Current local date and time: {value}. Timezone: {tz}. "
+            "Resolve relative agenda dates from this value."
+        )
 
-    if not messages or messages[0].get("role") != "system":
-        return [{"role": "system", "content": content}, *messages]
+    has_system = bool(messages) and messages[0].get("role") == "system"
+    tail = messages[1:] if has_system else messages
 
-    return [{"role": "system", "content": content}, *messages[1:]]
+    return [{"role": "system", "content": content}, *tail]

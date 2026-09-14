@@ -37,15 +37,24 @@ def setup() -> None:
 
 
 @contextmanager
-def session(build_graph, namespace: str, thread_id: int):
-    """Yield a graph compiled with a durable saver and its scoped config."""
+def saver_session():
+    """Scope a durable checkpoint saver to one open connection."""
     with _connect() as conn:
-        graph = build_graph(_saver(conn))
-        graph_config = {
-            "configurable": {"thread_id": f"{namespace}:{thread_id}"}}
-        
-        yield graph, graph_config
+        yield _saver(conn)
 
 
-def is_interrupted(snapshot) -> bool:
-    return any(task.interrupts for task in snapshot.tasks)
+def graph_config(namespace: str, thread_id, max_steps: int) -> dict:
+    """The LangGraph config for one run: which thread it belongs to, and how far
+    it may travel. A step may take a tool or approve edge as well as its own, so
+    the budget is widened into graph hops."""
+    return {
+        "configurable": {
+            "thread_id": f"{namespace}:{thread_id}",
+        },
+        "recursion_limit": max(20, max_steps * 3 + 5),
+    }
+
+
+def has_interrupts(tasks) -> bool:
+    """True when any pending task is parked on an interrupt (awaiting approval)."""
+    return any(task.interrupts for task in tasks)

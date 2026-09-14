@@ -1,5 +1,9 @@
-"""Conversation controller public surface."""
+"""Conversation controller public surface.
 
-from agents.conversation.api import confirm, evaluate_turn, start_turn
+The agent runs the graph over thread data the caller supplies and returns the
+raw result; the calling section loads, persists and shapes the response.
+"""
 
-__all__ = ["start_turn", "confirm", "evaluate_turn"]
+from agents.conversation.api import evaluate_turn, run_confirmation, run_turn
+
+__all__ = ["run_turn", "run_confirmation", "evaluate_turn"]

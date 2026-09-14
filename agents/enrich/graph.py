@@ -1,15 +1,14 @@
-"""Composition and invocation for the Enrich LangGraph workflows.
+"""Composition of the Enrich LangGraph workflows.
 
 Four graphs share the same nodes: the interactive `ENRICH_GRAPH` (capture loop),
 the stateless `ACTION_PLAN_GRAPH` (plan one write for a chat handoff), and the
-`METADATA_GRAPH` / `REMINDER_PLAN_GRAPH` sub-pipelines reused by both.
+`CLASSIFY_GRAPH` / `REMINDER_PLAN_GRAPH` sub-pipelines reused by both.
+Running a compiled graph is `agents.runtime.loop`; this module only builds.
 """
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
 
-import config
 from agents.enrich import routing
 from agents.enrich.nodes import act, approve, plan, reason
 from agents.enrich.nodes.classify import gather as classify_gather
@@ -117,21 +116,3 @@ ENRICH_GRAPH = build_graph(InMemorySaver())
 ACTION_PLAN_GRAPH = _build_action_plan_graph()
 CLASSIFY_GRAPH = build_classify_graph()
 REMINDER_PLAN_GRAPH = build_reminder_plan_graph()
-
-
-def _invoke(graph, value, graph_config: dict) -> dict:
-    limit = max(20, config.ENRICH_AGENT_MAX_STEPS * 3 + 5)
-
-    return graph.invoke(value, {**graph_config, "recursion_limit": limit})
-
-
-def invoke(graph, graph_config: dict, state: EnrichState) -> dict:
-    return _invoke(graph, state, graph_config)
-
-
-def resume(graph, graph_config: dict, approve: bool) -> dict:
-    return _invoke(graph, Command(resume=bool(approve)), graph_config)
-
-
-def retry(graph, graph_config: dict) -> dict:
-    return _invoke(graph, None, graph_config)

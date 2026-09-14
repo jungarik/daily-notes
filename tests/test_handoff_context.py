@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.contracts import ToolResult
 from agents import bootstrap
+from agents.runtime import loop as agent_loop
 from agents.conversation import api as chat_service
 from agents.conversation import graph as chat_loop
 from agents.conversation.nodes import handoff as chat_handoff
@@ -90,7 +91,7 @@ class HandoffContextTests(unittest.TestCase):
         first_ctx = ChatCtx(7, now, timezone.utc, "en")
         with patch.object(chat_reason.model_gateway, "chat_completion", side_effect=first_replies), \
                 patch.object(chat_act, "execute_tool", side_effect=read_tool):
-            first = chat_loop.invoke(
+            first = agent_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(
                     first_ctx, [{"role": "user", "content": "Show the roadmap"}]),
@@ -105,7 +106,7 @@ class HandoffContextTests(unittest.TestCase):
                 tool_name="perform_action",
                 arguments='{"instruction": "Enrich that note"}', call_id="write-1")), \
                 patch.object(bootstrap.registry.get("enrich"), "plan_action", planner):
-            second = chat_loop.invoke(
+            second = agent_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(
                     ChatCtx(7, now, timezone.utc, "en"), second_messages,

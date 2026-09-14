@@ -9,6 +9,7 @@ from unittest.mock import patch
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agents.runtime import checkpoint
+from agents.runtime import loop as agent_loop
 from agents import bootstrap
 from agents.runtime import execution_ledger
 from agents.conversation import graph as chat_loop
@@ -43,6 +44,15 @@ def context():
 
 
 class LangGraphPersistenceTests(unittest.TestCase):
+    def test_graph_config_scopes_and_bounds_the_run(self):
+        self.assertEqual(
+            {"configurable": {"thread_id": "chat:42"}, "recursion_limit": 23},
+            checkpoint.graph_config("chat", 42, 6),
+        )
+
+    def test_graph_config_keeps_a_floor_under_a_small_step_budget(self):
+        self.assertEqual(20, checkpoint.graph_config("enrich", 1, 1)["recursion_limit"])
+
     def test_chat_resumes_same_checkpoint_without_replanning_action(self):
         saver = InMemorySaver()
         graph = chat_loop.build_graph(saver)
@@ -61,16 +71,16 @@ class LangGraphPersistenceTests(unittest.TestCase):
                              side_effect=lambda *args: args[-1]()), \
                 patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 9}') as execute:
-            paused = chat_loop.invoke(
+            paused = agent_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(
                     context(), [{"role": "user", "content": "Save Idea"}]),
             )
             snapshot = graph.get_state(graph_config)
             action_id = paused["pending"]["action_id"]
-            resumed = chat_loop.resume(graph, graph_config, True)
+            resumed = agent_loop.resume(graph, graph_config, True)
 
-        self.assertTrue(checkpoint.is_interrupted(snapshot))
+        self.assertTrue(checkpoint.has_interrupts(snapshot.tasks))
         self.assertEqual(("approve",), snapshot.next)
         self.assertEqual(action_id, snapshot.values["pending"]["action_id"])
         self.assertEqual("Created.", resumed["reply"])
@@ -84,35 +94,40 @@ class LangGraphPersistenceTests(unittest.TestCase):
             completion(tool_name="create_note", arguments='{"text": "Idea"}'),
             completion(content="Created."),
         ]
-        with patch.object(enrich_reason, "complete", side_effect=replies), \
+        with patch.object(enrich_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(enrich_approve.execution_ledger, "execute_once",
                              return_value='{"note_id": 10}') as execute_once:
-            paused = enrich_loop.invoke(
+            paused = agent_loop.invoke(
                 graph, graph_config,
                 enrich_loop.initial_state(
                     context(), [{"role": "user", "content": "Save Idea"}]),
             )
             snapshot = graph.get_state(graph_config)
-            resumed = enrich_loop.resume(graph, graph_config, True)
+            resumed = agent_loop.resume(graph, graph_config, True)
 
-        self.assertTrue(checkpoint.is_interrupted(snapshot))
+        self.assertTrue(checkpoint.has_interrupts(snapshot.tasks))
         self.assertEqual(paused["pending"]["action_id"],
                          snapshot.values["pending"]["action_id"])
         self.assertEqual("Created.", resumed["reply"])
         execute_once.assert_called_once()
 
-    def test_chat_service_resumes_postgres_style_session_by_thread_id(self):
+    def test_chat_agent_resumes_postgres_style_session_by_thread_id(self):
+        """The agent takes thread data in and hands a result back; the calling
+        section owns the projection. This test plays that section."""
         saver = InMemorySaver()
         projection = {"id": 51, "messages": [], "pending": None}
 
         @contextmanager
-        def session(build_graph, namespace, thread_id):
-            self.assertEqual("chat", namespace)
-            graph = build_graph(saver)
-            yield graph, {"configurable": {"thread_id": f"{namespace}:{thread_id}"}}
+        def saver_session():
+            yield saver
 
-        def save_thread(thread_id, messages, pending):
-            projection.update(id=thread_id, messages=messages, pending=pending)
+        def persist(result):
+            projection.update(
+                messages=result.get("messages") or [],
+                pending=result.get("pending"),
+            )
+
+            return result
 
         action = {"name": "create_note", "args": {"text": "Idea"},
                   "summary": "Create a note"}
@@ -122,12 +137,8 @@ class LangGraphPersistenceTests(unittest.TestCase):
             completion(content="Created."),
         ]
         now = datetime(2026, 8, 31, tzinfo=timezone.utc)
-        with patch.object(chat_service.checkpoint, "session", side_effect=session), \
-                patch.object(chat_service.db, "create_thread", return_value=51), \
-                patch.object(chat_service.db, "get_thread",
-                             side_effect=lambda user_id, thread_id: dict(projection)), \
-                patch.object(chat_service.db, "save_thread",
-                             side_effect=save_thread), \
+        with patch.object(chat_service.checkpoint, "saver_session",
+                          side_effect=saver_session), \
                 patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
                 patch.object(bootstrap.registry.get("enrich"), "plan_action",
                              return_value=action), \
@@ -135,15 +146,24 @@ class LangGraphPersistenceTests(unittest.TestCase):
                              side_effect=lambda *args: args[-1]()), \
                 patch.object(bootstrap.registry.get("enrich"), "execute_action",
                              return_value='{"note_id": 11}') as execute:
-            paused = chat_service.start_turn(7, "Save Idea", None, now, timezone.utc, "en")
-            resumed = chat_service.confirm(7, 51, True, now, timezone.utc, "en")
-            repeated = chat_service.confirm(7, 51, True, now, timezone.utc, "en")
+            paused = persist(chat_service.run_turn(
+                51, [], None, "Save Idea", 7, now, timezone.utc, "en"))
+            resumed = persist(chat_service.run_confirmation(
+                51, list(projection["messages"]), projection["pending"],
+                True, None, 7, now, timezone.utc, "en"))
+            repeated = persist(chat_service.run_confirmation(
+                51, list(projection["messages"]), projection["pending"],
+                True, None, 7, now, timezone.utc, "en"))
 
         self.assertEqual("confirm", paused["status"])
         self.assertEqual("Created.", resumed["reply"])
         self.assertEqual("Created.", repeated["reply"])
         execute.assert_called_once()
         self.assertIsNone(projection["pending"])
+
+    def test_agent_surface_performs_no_thread_persistence(self):
+        """The conversation surface must not reach for the thread projection."""
+        self.assertFalse(hasattr(chat_service, "db"))
 
 
 if __name__ == "__main__":
