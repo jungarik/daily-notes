@@ -19,10 +19,12 @@ from agents.conversation.state import ConversationContext as ChatCtx, initial_st
 from agents.enrich import graph as enrich_loop
 from agents.enrich.nodes import plan as enrich_plan
 from agents.enrich.nodes import act as enrich_act
-from agents.enrich.nodes.write import validate as enrich_write_validate
-from agents.enrich.state import Ctx as EnrichCtx
+from agents.enrich.state import UserContext as EnrichCtx
 from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich import handoff_api as enrich_service
+from tools.enrich import db as enrich_tools_db
+from agents.reminder import handoff_api as reminder_service
+from tools.reminder import db as reminder_tools_db
 from tools import enrich as enrich_tools
 
 
@@ -133,11 +135,11 @@ class HandoffContextTests(unittest.TestCase):
                           side_effect=client.chat.completions.create), \
                 patch.object(enrich_act, "execute_tool",
                              return_value='{"id": 4, "title": "Roadmap"}') as read, \
-                patch.object(enrich_write_validate.db, "get_note_for_user",
+                patch.object(enrich_tools_db, "get_note_for_user",
                              return_value={"id": 4}):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Move that note"}],
-                "context": enrich_context_data(ctx),
+                "user_context": enrich_context_data(ctx),
                 "tool_specs": enrich_tools.TOOL_SPECS,
                 "steps": 0, "tool_call": None, "action": None,
             })
@@ -164,10 +166,10 @@ class HandoffContextTests(unittest.TestCase):
             completions=SimpleNamespace(create=Mock(side_effect=replies))))
         with patch.object(enrich_plan.model_gateway, "chat_completion",
                           side_effect=client.chat.completions.create), \
-                patch.object(enrich_write_validate.db, "get_note_for_user", return_value=None):
+                patch.object(enrich_tools_db, "get_note_for_user", return_value=None):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich that note"}],
-                "context": enrich_context_data(ctx),
+                "user_context": enrich_context_data(ctx),
                 "tool_specs": enrich_tools.TOOL_SPECS,
                 "steps": 0, "tool_call": None, "action": None,
             })
@@ -177,7 +179,9 @@ class HandoffContextTests(unittest.TestCase):
         second_messages = client.chat.completions.create.call_args_list[1].kwargs["messages"]
         self.assertIn("valid user-owned note id", second_messages[-1]["content"])
 
-    def test_reminder_resolves_second_referenced_note(self):
+    def test_reminder_agent_hydrates_the_notes_its_instruction_references(self):
+        """The reminder specialist looks its own notes up through its own tool;
+        the enrich agent is not involved."""
         now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
         contract = {
             "instruction": "Remind me about the second one tomorrow",
@@ -188,26 +192,28 @@ class HandoffContextTests(unittest.TestCase):
         }
 
         def note(_user_id, note_id):
-            return {"note_id": note_id, "title": "First" if note_id == 10 else "Second",
-                    "text": "", "path": "Projects"}
+            return {"id": note_id, "title": "First" if note_id == 10 else "Second",
+                    "text": ""}
 
         remind_at = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
-        action = {"name": "create_reminder",
-                  "args": {"text": "Remind me about the second one tomorrow\n"
-                                   "Referenced note: “Second” (id 20).",
-                           "remind_at": remind_at.isoformat(), "note_id": 20},
-                  "summary": "Create a reminder."}
-        with patch.object(enrich_service.db, "get_note_for_user", side_effect=note), \
-                patch.object(enrich_service.loop.REMINDER_PLAN_GRAPH, "invoke",
-                             return_value={"action": action}) as graph:
-            action = enrich_service.plan_action(7, contract, now, timezone.utc, "en")
+        planned = {"name": "create_reminder",
+                   "args": {"text": "Remind me about the second one tomorrow\n"
+                                    "Referenced note: “Second” (id 20).",
+                            "remind_at": remind_at.isoformat(), "note_id": 20},
+                   "summary": "Create a reminder."}
+        plan_graph = SimpleNamespace(invoke=Mock(return_value={"action": planned}))
 
-        self.assertEqual([10, 20],
-                         graph.call_args.args[0]["contract"]["referenced_note_ids"])
-        self.assertIn("Second", action["args"]["text"])
-        self.assertEqual(20, action["args"]["note_id"])
-        self.assertIn("(id 20)", action["args"]["text"])
-        self.assertNotIn("(id 10)", action["args"]["text"])
+        with patch.object(reminder_tools_db, "get_note_for_user", side_effect=note), \
+                patch.object(reminder_service, "PLAN_GRAPH", plan_graph):
+            action = reminder_service.plan_action(7, contract, now, timezone.utc, "en")
+
+        planned_contract = plan_graph.invoke.call_args.args[0]["contract"]
+        self.assertEqual([10, 20], planned_contract["referenced_note_ids"])
+        self.assertEqual(
+            [10, 20],
+            [item["note_id"] for item in
+             planned_contract["resolved_entities"]["referenced_notes"]])
+        self.assertEqual(planned, action)
 
 
 if __name__ == "__main__":

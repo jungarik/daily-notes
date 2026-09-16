@@ -10,8 +10,10 @@ from datetime import datetime
 
 import config
 import i18n
-from tools.enrich import db
-from agents.enrich.state import ActionPlanState, context_from_state
+from agents.contracts import ToolResult
+from agents.runtime.execute_tool import execute_allowed_tool
+from tools import enrich as tools
+from agents.enrich.state import ActionPlanState, context_from_state, context_to_dict
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
 _NOTE_TARGETED = {"set_note_path", "enrich_note", "add_note_tags"}
@@ -120,6 +122,24 @@ def _rejected(messages: list[dict], tool_call_id: str, error: str) -> dict:
     }
 
 
+def _owns_note(context: dict, note_id: int) -> bool:
+    """Whether the note the write targets is the caller's, asked through the
+    context tool rather than the database."""
+    result = execute_allowed_tool(
+        tools.TOOLS,
+        tools.CONTEXT_TOOLS,
+        context,
+        "get_note_context",
+        {"note_id": note_id},
+        "enrich",
+    )
+
+    if not isinstance(result, ToolResult):
+        return False
+
+    return bool(result.data) and not result.data.get("error")
+
+
 def run(state: ActionPlanState) -> dict:
     tool_call = _guardrail_call(state.get("tool_call") or {})
     messages = state.get("messages") or []
@@ -135,10 +155,10 @@ def run(state: ActionPlanState) -> dict:
 
     if tool_call["name"] in _NOTE_TARGETED:
         note_id = _target_note_id(tool_call["args"])
-        owned = note_id is not None and bool(db.get_note_for_user(
-            context_from_state(state).user_id,
+        owned = note_id is not None and _owns_note(
+            context_to_dict(context_from_state(state)),
             note_id,
-        ))
+        )
 
         if not owned:
             return _rejected(messages, tool_call["id"], _BAD_NOTE_ID)

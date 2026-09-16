@@ -4,12 +4,26 @@ import unittest
 from pathlib import Path
 
 from agents import bootstrap, conversation
-from agents.enrich import api as enrich
-from agents.enrich import db as enrich_db
 from agents.enrich import handoff_api as enrich_handoff
+from agents.reminder import handoff_api as reminder_handoff
+from tools import enrich as enrich_tools, reminder as reminder_tools
 
 
 class AgentStructureTests(unittest.TestCase):
+    def test_specialist_tool_specs_match_registered_handlers(self):
+        for specialist in (enrich_tools, reminder_tools):
+            with self.subTest(specialist=specialist.__name__):
+                advertised = {
+                    spec["function"]["name"] for spec in specialist.TOOL_SPECS
+                }
+                self.assertLessEqual(advertised, set(specialist.TOOLS))
+                self.assertLessEqual(specialist.WRITE_TOOLS, advertised)
+
+        self.assertNotIn("create_reminder", enrich_tools.TOOLS)
+        self.assertNotIn("create_reminder", {
+            spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS
+        })
+
     def test_two_agent_structure(self):
         root = Path(__file__).parents[1] / "agents"
         expected = {
@@ -17,16 +31,17 @@ class AgentStructureTests(unittest.TestCase):
             "conversation/routing.py", "conversation/prompts.py",
             "conversation/nodes/reason.py", "conversation/nodes/act.py",
             "conversation/nodes/handoff.py", "conversation/nodes/approve.py",
-            "enrich/api.py", "enrich/state.py",
+            "enrich/state.py",
             "enrich/graph.py", "enrich/routing.py",
-            "enrich/db.py",
             "enrich/handoff_api.py",
             "enrich/prompts.py",
             "enrich/nodes/reason.py", "enrich/nodes/plan.py",
             "enrich/nodes/act.py", "enrich/nodes/approve.py",
             "enrich/nodes/classify/gather.py", "enrich/nodes/classify/propose.py",
             "enrich/nodes/classify/normalize.py",
-            "enrich/nodes/schedule/resolve.py", "enrich/nodes/schedule/build.py",
+            "reminder/handoff_api.py", "reminder/graph.py", "reminder/state.py",
+            "reminder/prompts.py",
+            "reminder/nodes/resolve.py", "reminder/nodes/build.py",
             "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
             "enrich/nodes/write/validate.py", "bootstrap.py",
             "runtime/execute_tool.py",
@@ -54,23 +69,39 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/enrich/set_note_path.py",
             "../tools/enrich/add_note_tags.py",
             "../tools/enrich/enrich_note.py",
-            "../tools/enrich/create_reminder.py",
+            "../tools/reminder/create_reminder.py",
+            "../tools/reminder/specs.py", "../tools/reminder/db.py",
+            "../tools/reminder/get_note_context.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
         self.assertEqual([], list((root / "conversation" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
-        self.assertEqual([], list((root / "reminder").rglob("*.py")))
 
-    def test_agents_own_no_thread_persistence(self):
-        """Thread state belongs to the calling section, not to the agents."""
+    def test_agents_reach_persistence_only_through_tools(self):
+        """No agent owns SQL, and none reaches into a tool's database module.
+        Every read and write goes through `execute_tool`; thread state belongs
+        to the calling section (`api/chat`). `runtime/execution_ledger.py` is the
+        one exception — the ledger is the runtime's own bookkeeping, not an
+        agent's domain data."""
         root = Path(__file__).parents[1] / "agents"
-        self.assertFalse((root / "conversation" / "db.py").exists())
         self.assertEqual(
             [],
-            [name for name in ("create_thread", "get_thread", "save_thread")
-             if hasattr(enrich_db, name)],
+            [str(path.relative_to(root)) for path in root.rglob("db.py")],
         )
+
+        reaching = []
+
+        for path in root.rglob("*.py"):
+            if path.name == "execution_ledger.py":
+                continue
+
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.startswith(("from db import", "import db")) or (
+                        line.startswith("from tools.") and line.endswith(" import db")):
+                    reaching.append(f"{path.relative_to(root)}: {line}")
+
+        self.assertEqual([], reaching)
 
     def test_public_facades_and_registry(self):
         self.assertTrue(callable(conversation.run_turn))
@@ -78,9 +109,10 @@ class AgentStructureTests(unittest.TestCase):
         self.assertTrue(callable(conversation.evaluate_turn))
         self.assertTrue(callable(enrich_handoff.plan_action))
         self.assertTrue(callable(enrich_handoff.execute_action))
-        self.assertTrue(callable(enrich.propose_capture))
-        self.assertTrue(callable(enrich.confirm_capture))
         self.assertIs(bootstrap.registry.get("enrich"), enrich_handoff)
+        self.assertTrue(callable(reminder_handoff.plan_action))
+        self.assertTrue(callable(reminder_handoff.execute_action))
+        self.assertIs(bootstrap.registry.get("reminder"), reminder_handoff)
 
 
 if __name__ == "__main__":

@@ -3,11 +3,9 @@
 Interactive graph (capture loop):
 
     START ─entry──▶ reason | approve
-    reason ─after_reason─▶ act | classify_gather | schedule_resolve
-                          | link_context | stage | END
+    reason ─after_reason─▶ act | classify_gather | link_context | stage | END
     act ──────────────────▶ reason
     classify_gather ▶ classify_propose ▶ classify_normalize ▶ stage
-    schedule_resolve ▶ schedule_build ─after_schedule_build─▶ stage | reason
     link_context ─────────▶ stage
     stage ────────────────▶ approve ─▶ reason
 
@@ -35,17 +33,10 @@ def after_reason(state: EnrichState):
     if tool_call["name"] == "enrich_note":
         return "classify_gather"
 
-    if tool_call["name"] == "create_reminder":
-        return "schedule_resolve"
-
     if tool_call["name"] == "link_notes":
         return "link_context"
 
     return "stage" if tool_call["name"] in WRITE_TOOLS else "act"
-
-
-def after_schedule_build(state: EnrichState):
-    return "stage" if state.get("action") else "reason"
 
 
 def after_plan(state: ActionPlanState):

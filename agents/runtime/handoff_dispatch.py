@@ -14,7 +14,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 
-from agents.contracts.handoff import HandoffContract
+from agents.contracts.handoff import HandoffRequest
 from agents.runtime import execution_ledger
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class HandoffPlan:
     """
 
     route: HandoffRoute
-    contract: dict
+    request: dict
     action: dict | None = None
     error: str | None = None
 
@@ -57,7 +57,7 @@ class HandoffPlan:
 
         return NO_ACTION
 
-class HandoffBroker:
+class HandoffDispatch:
     """Holds the handoff routing table plus the shared registry/ledger.
 
     Route resolution lives here; the plan/execute functions are free-standing and
@@ -142,7 +142,7 @@ def _conversation_summary(messages: list[dict], limit: int = 4000) -> str:
     return summary[-limit:]
 
 
-def _build_contract(messages: list[dict], tool_args: dict, citations: list[dict], ctx) -> HandoffContract:
+def _build_handoff_request(messages: list[dict], tool_args: dict, citations: list[dict], ctx) -> HandoffRequest:
     """Build ordered references from explicit args, prior tools, and citations."""
     ids = []
     for value in tool_args.get("referenced_note_ids") or []:
@@ -203,7 +203,7 @@ def pending(tool_call_id: str, plan: HandoffPlan) -> dict:
         "agent": plan.route.agent,
         "action": plan.action,
         "summary": plan.action["summary"],
-        "handoff": plan.contract,
+        "handoff": plan.request,
     }
 
 
@@ -214,18 +214,18 @@ def plan(route: HandoffRoute,
          references: list[dict],
          ctx) -> HandoffPlan:
     """Ask the specialist behind a resolved route for the single write it implies."""
-    contract = _build_contract(
+    handoff_request = _build_handoff_request(
         messages,
         tool_args,
         references,
         ctx,
     )
-    contract["resolved_entities"]["specialist_mode"] = route.mode
+    handoff_request["resolved_entities"]["specialist_mode"] = route.mode
 
     try:
         action = registry.get(route.agent).plan_action(
             ctx.user_id,
-            contract,
+            handoff_request,
             ctx.now,
             ctx.tz,
             ctx.locale,
@@ -238,7 +238,7 @@ def plan(route: HandoffRoute,
             ctx.user_id,
         )
 
-        return HandoffPlan(route, contract, error=str(exc))
+        return HandoffPlan(route, handoff_request, error=str(exc))
 
     if not action:
         logger.info(
@@ -248,7 +248,7 @@ def plan(route: HandoffRoute,
             ctx.user_id,
         )
 
-        return HandoffPlan(route, contract)
+        return HandoffPlan(route, handoff_request)
 
     logger.info(
         "handing off to %s: %s user=%s",
@@ -257,7 +257,7 @@ def plan(route: HandoffRoute,
         ctx.user_id,
     )
 
-    return HandoffPlan(route, contract, action=action)
+    return HandoffPlan(route, handoff_request, action=action)
 
 
 def execute(pending: dict, registry, ledger, ctx, selection=None) -> str:

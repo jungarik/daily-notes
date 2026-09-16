@@ -9,7 +9,7 @@ import config
 from agents.enrich import graph as enrich_graph
 from agents.enrich.nodes.classify import gather as classify_gather
 from agents.enrich.nodes.classify import propose as classify_propose
-from agents.enrich.state import Ctx, context_to_dict
+from agents.enrich.state import UserContext, context_to_dict
 from tools.enrich import METADATA_CONTEXT_TOOLS, TOOL_SPECS
 from tools import enrich as enrich_tools
 from tools.enrich import enrich_note, find_related_notes
@@ -33,7 +33,7 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertNotIn("get_vault_context", exposed)
         self.assertNotIn("find_related_notes", exposed)
         self.assertIn("find_related_notes", METADATA_CONTEXT_TOOLS)
-        ctx = Ctx(7, "now", tz="UTC", locale="en")
+        ctx = UserContext(7, "now", tz="UTC", locale="en")
         with patch.object(find_related_notes.embedings, "embed", return_value="vector"), \
                 patch.object(find_related_notes.db, "related_notes", return_value=[]) as related:
             result = execute_allowed_tool(
@@ -99,7 +99,7 @@ class EnrichMetadataTests(unittest.TestCase):
             create=Mock(side_effect=replies))))
         note = {"id": 4, "text": "Ship the app release", "title": None,
                 "path": None, "tags": [], "type": None, "priority": None}
-        ctx = Ctx(7, "2026-09-01T10:00:00+03:00", tz="Europe/Kiev", locale="en")
+        ctx = UserContext(7, "2026-09-01T10:00:00+03:00", tz="Europe/Kiev", locale="en")
         context_results = {
             "get_note_context": note, "list_paths": [], "list_tags": [],
             "get_vault_context": {"root_folders": {"Projects": "projects"},
@@ -111,10 +111,10 @@ class EnrichMetadataTests(unittest.TestCase):
         with patch.object(classify_gather, "execute_allowed_tool", context_tool), \
                 patch.object(classify_propose.model_gateway, "chat_completion",
                              side_effect=client.chat.completions.create), \
-                patch("agents.enrich.nodes.write.validate.db.get_note_for_user", return_value=note):
+                patch("tools.enrich.db.get_note_for_user", return_value=note):
             result = enrich_graph.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich note 4"}],
-                "context": context_to_dict(ctx),
+                "user_context": context_to_dict(ctx),
                 "tool_specs": [{"type": "function", "function": {
                     "name": "enrich_note", "parameters": {"type": "object"}}}],
                 "steps": 0, "tool_call": None, "action": None,
@@ -135,7 +135,7 @@ class EnrichMetadataTests(unittest.TestCase):
                 patch.object(find_related_notes.embedings, "embed",
                              side_effect=AssertionError("Embedding during confirmation")):
             result = enrich_note.invoke(
-                context_to_dict(Ctx(7, "now")),
+                context_to_dict(UserContext(7, "now")),
                 {"note_id": 4, **proposed},
             ).data
 

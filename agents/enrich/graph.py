@@ -1,8 +1,9 @@
 """Composition of the Enrich LangGraph workflows.
 
-Four graphs share the same nodes: the interactive `ENRICH_GRAPH` (capture loop),
+Three graphs share the same nodes: the interactive `ENRICH_GRAPH` (capture loop),
 the stateless `ACTION_PLAN_GRAPH` (plan one write for a chat handoff), and the
-`CLASSIFY_GRAPH` / `REMINDER_PLAN_GRAPH` sub-pipelines reused by both.
+`CLASSIFY_GRAPH` sub-pipeline reused by both. Reminders are their own
+agent (`agents/reminder/`).
 Running a compiled graph is `agents.runtime.loop`; this module only builds.
 """
 
@@ -14,13 +15,11 @@ from agents.enrich.nodes import act, approve, plan, reason
 from agents.enrich.nodes.classify import gather as classify_gather
 from agents.enrich.nodes.classify import normalize as classify_normalize
 from agents.enrich.nodes.classify import propose as classify_propose
-from agents.enrich.nodes.schedule import build as schedule_build
-from agents.enrich.nodes.schedule import resolve as schedule_resolve
 from agents.enrich.nodes.write import link as write_link
 from agents.enrich.nodes.write import stage as write_stage
 from agents.enrich.nodes.write import validate as write_validate
 from agents.enrich.state import (
-    ActionPlanState, EnrichState, MetadataState, ReminderPlanState, initial_state,
+    ActionPlanState, EnrichState, MetadataState, initial_state,
 )
 
 
@@ -37,8 +36,6 @@ def build_graph(checkpointer):
     builder = StateGraph(EnrichState)
     builder.add_node("reason", reason.run)
     builder.add_node("act", act.run)
-    builder.add_node("schedule_resolve", schedule_resolve.run)
-    builder.add_node("schedule_build", schedule_build.run)
     builder.add_node("link_context", write_link.run)
     builder.add_node("stage", write_stage.run)
     builder.add_node("approve", approve.run)
@@ -49,16 +46,12 @@ def build_graph(checkpointer):
     builder.add_conditional_edges("reason", routing.after_reason, {
         "act": "act",
         "classify_gather": "classify_gather",
-        "schedule_resolve": "schedule_resolve",
         "link_context": "link_context",
         "stage": "stage",
         END: END,
     })
     builder.add_edge("act", "reason")
     builder.add_edge("classify_normalize", "stage")
-    builder.add_edge("schedule_resolve", "schedule_build")
-    builder.add_conditional_edges("schedule_build", routing.after_schedule_build,
-                                  {"stage": "stage", "reason": "reason"})
     builder.add_edge("link_context", "stage")
     builder.add_edge("stage", "approve")
     builder.add_edge("approve", "reason")
@@ -101,18 +94,6 @@ def build_classify_graph():
     return builder.compile()
 
 
-def build_reminder_plan_graph():
-    builder = StateGraph(ReminderPlanState)
-    builder.add_node("schedule_resolve", schedule_resolve.run)
-    builder.add_node("schedule_build", schedule_build.run)
-    builder.add_edge(START, "schedule_resolve")
-    builder.add_edge("schedule_resolve", "schedule_build")
-    builder.add_edge("schedule_build", END)
-
-    return builder.compile()
-
-
 ENRICH_GRAPH = build_graph(InMemorySaver())
 ACTION_PLAN_GRAPH = _build_action_plan_graph()
 CLASSIFY_GRAPH = build_classify_graph()
-REMINDER_PLAN_GRAPH = build_reminder_plan_graph()

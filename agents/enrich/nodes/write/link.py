@@ -9,10 +9,11 @@ error) is stashed for the downstream node. Single public `run`.
 
 import config
 import i18n
+from agents.contracts import ToolResult
 from agents.enrich.nodes.write import _rank
-from agents.enrich.state import context_from_state
-from common import embedings
-from tools.enrich import db
+from agents.enrich.state import EnrichState, context_from_state, context_to_dict
+from agents.runtime.execute_tool import execute_allowed_tool
+from tools import enrich as tools
 
 _BAD_SOURCE = "Error: choose a valid user-owned source note id."
 _NO_CANDIDATES = "Error: no related notes were found to link."
@@ -113,31 +114,54 @@ def _proposal(note_id: int,
     }
 
 
-def run(state) -> dict:
+def _tool_data(result) -> dict:
+    """What a context tool returned, or {} when it could not answer."""
+    if not isinstance(result, ToolResult):
+        return {}
+
+    data = result.data or {}
+
+    return {} if data.get("error") else data
+
+
+def _context_tool(context: dict, name: str, args: dict) -> dict:
+    """Run one internal context tool. The allowlist keeps this seam read-only."""
+    return _tool_data(execute_allowed_tool(
+        tools.TOOLS,
+        tools.CONTEXT_TOOLS,
+        context,
+        name,
+        args,
+        "enrich",
+    ))
+
+
+def run(state: EnrichState) -> dict:
     ctx = context_from_state(state)
+    context = context_to_dict(ctx)
     args = dict((state.get("tool_call") or {}).get("args") or {})
     note_id = _target_note_id(args)
-    note = db.get_note_for_user(ctx.user_id, note_id) if note_id is not None else None
+    note = (_context_tool(context, "get_note_context", {"note_id": note_id})
+            if note_id is not None else {})
 
-    if note is None:
+    if not note:
         return {"link_proposal": {"error": _BAD_SOURCE}}
 
     preselect_ids = _preselect_ids(args, note_id)
     text = _source_text(note)
-    rows = db.link_candidates(
-        ctx.user_id,
-        embedings.embed(text),
-        note_id,
-        config.LINK_RECALL_LIMIT,
-    ) if text else []
+    rows = _context_tool(context, "find_link_candidates", {
+        "text": text,
+        "exclude_note_id": note_id,
+        "limit": config.LINK_RECALL_LIMIT,
+    }).get("notes") or [] if text else []
     ranked = _rank.rank(note, rows, ctx.locale)[:config.ENRICH_SIMILAR_LIMIT]
-    owned = db.owned_note_ids(ctx.user_id, preselect_ids) if preselect_ids else set()
-    owned_preselect = [
-        candidate_id for candidate_id in preselect_ids if candidate_id in owned
-    ]
+    owned_preselect = _context_tool(context, "filter_owned_notes", {
+        "note_ids": preselect_ids,
+    }).get("note_ids") or [] if preselect_ids else []
     ranked_ids = {row["note_id"] for row in ranked}
     explicit = [
-        (explicit_id, db.get_note_for_user(ctx.user_id, explicit_id))
+        (explicit_id,
+         _context_tool(context, "get_note_context", {"note_id": explicit_id}))
         for explicit_id in owned_preselect
         if explicit_id not in ranked_ids
     ]

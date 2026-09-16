@@ -74,21 +74,6 @@ def _extract_first_tool(message) -> dict | None:
     }
 
 
-def _unavailable(messages: list[dict], steps: int, kind: str) -> dict:
-    return {
-        "messages": [
-            *messages,
-            {"role": "assistant", "content": _UNAVAILABLE_REPLY},
-        ],
-        "steps": steps + 1,
-        "tool_call": None,
-        "status": "answer",
-        "reply": _UNAVAILABLE_REPLY,
-        "pending": None,
-        "model_error": kind,
-    }
-
-
 def run(state: EnrichState) -> dict:
     messages = state.get("messages") or []
     steps = state.get("steps", 0)
@@ -100,7 +85,18 @@ def run(state: EnrichState) -> dict:
     except model_gateway.ModelGatewayError as exc:
         logger.warning("Enrich model call failed: %s", exc.kind)
 
-        return _unavailable(messages, steps, exc.kind)
+        return {
+            "messages": [
+                *messages,
+                {"role": "assistant", "content": _UNAVAILABLE_REPLY},
+            ],
+            "steps": steps + 1,
+            "tool_call": None,
+            "status": "answer",
+            "reply": _UNAVAILABLE_REPLY,
+            "pending": None,
+            "model_error": exc.kind,
+        }
 
     tool_call = _extract_first_tool(model_response) if use_tools else None
     state_update = {

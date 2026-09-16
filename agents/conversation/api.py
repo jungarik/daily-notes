@@ -58,7 +58,7 @@ def _with_action_id(thread_id, pending) -> dict:
 
 def evaluate_turn(user_id: int, messages: list[dict], now, tz, locale) -> dict:
     """Run an isolated turn for evaluation without creating a saved thread."""
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
+    
     graph = build_graph(InMemorySaver())
     graph_config = checkpoint.graph_config("eval", uuid.uuid4(),
                                            config.AGENT_MAX_STEPS)
@@ -66,13 +66,12 @@ def evaluate_turn(user_id: int, messages: list[dict], now, tz, locale) -> dict:
     return loop.invoke(
         graph,
         graph_config,
-        initial_state(ctx, with_system(list(messages), now, tz)))
+        initial_state(Ctx(user_id, now, tz=tz, locale=locale), with_system(list(messages), now, tz)))
 
 
 def run_turn(thread_id, messages, pending, message, user_id, now, tz, locale) -> dict:
     """Drive the graph for one user message over the given thread data and return
     its result. Persistence and response shaping belong to the caller."""
-    ctx = Ctx(user_id, now, tz=tz, locale=locale)
 
     with checkpoint.saver_session() as checkpointer:
         graph = build_graph(checkpointer)
@@ -100,7 +99,7 @@ def run_turn(thread_id, messages, pending, message, user_id, now, tz, locale) ->
             graph,
             graph_config,
             initial_state(
-                ctx,
+                Ctx(user_id, now, tz=tz, locale=locale),
                 messages,
                 pending,
                 (state_snapshot.values or {}).get("reference_notes") or []))

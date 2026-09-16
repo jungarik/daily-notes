@@ -154,7 +154,7 @@ def run(state: EnrichState) -> dict:
     logger.info(
         "enrich agent pausing for confirmation: %s user=%s",
         tool_call["name"],
-        (state.get("context") or {}).get("user_id"),
+        (state.get("user_context") or {}).get("user_id"),
     )
 
     return _staged(tool_call, args, summary, kind)

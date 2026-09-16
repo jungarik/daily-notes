@@ -4,18 +4,25 @@ WRITE_TOOLS = {
     "create_note",
     "set_note_path",
     "enrich_note",
-    "create_reminder",
     "add_note_tags",
     "link_notes",
 }
 
-METADATA_CONTEXT_TOOLS = {
+# Internal workflow tools: a graph node invokes these deterministically, they
+# are never offered to the model in TOOL_SPECS. The allowlist is what keeps a
+# node from reaching a write tool through the same seam.
+CONTEXT_TOOLS = {
     "get_note_context",
     "list_paths",
     "list_tags",
     "get_vault_context",
     "find_related_notes",
+    "find_link_candidates",
+    "filter_owned_notes",
 }
+
+# Back-compat alias for the classify phase's original name.
+METADATA_CONTEXT_TOOLS = CONTEXT_TOOLS
 
 
 def _fn(name, description, properties, required):
@@ -111,16 +118,5 @@ TOOL_SPECS = [
             },
         },
         ["note_id"],
-    ),
-    _fn(
-        "create_reminder",
-        "Create or attach a reminder after confirmation. "
-        "Pass the reminder request text; the graph resolves remind_at before approval.",
-        {
-            "text": {"type": "string"},
-            "remind_at": {"type": "string"},
-            "note_id": {"type": "integer"},
-        },
-        ["text"],
     ),
 ]

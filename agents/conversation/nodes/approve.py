@@ -11,8 +11,8 @@ from langgraph.types import interrupt
 
 from agents.bootstrap import broker
 from agents.conversation.state import ChatState, context_from_state, context_update
-from agents.runtime import handoff_broker
-from agents.runtime.handoff_broker import DECLINED
+from agents.runtime import handoff_dispatch
+from agents.runtime.handoff_dispatch import DECLINED
 
 
 def _decision(raw) -> tuple:
@@ -44,7 +44,7 @@ def run(state: ChatState) -> dict:
     ctx = context_from_state(state)
 
     if approved:
-        result = handoff_broker.execute(pending, broker.registry, broker.ledger, ctx, selection)
+        result = handoff_dispatch.execute(pending, broker.registry, broker.ledger, ctx, selection)
     else:
         result = DECLINED
 
@@ -62,5 +62,5 @@ def run(state: ChatState) -> dict:
         "action": None,
         "completed_action_id": pending["action_id"],
         "status": "answer",
-        **context_update(ctx), #Flatten context into the top-level dictionary
+        **context_update(ctx),
     }

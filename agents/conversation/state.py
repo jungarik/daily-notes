@@ -83,6 +83,7 @@ def apply_tool_result(ctx: Ctx, result: ToolResult) -> None:
             citation.get("date"),
         )
 
+
     if result.retrieved_chunks:
         ctx.trace.setdefault("retrieved_chunks", []).extend(result.retrieved_chunks)
 
@@ -96,14 +97,14 @@ def _restore(value, factory):
 
 def context_from_state(state: ChatState) -> Ctx:
     data = state.get("context") or {}
-    ctx = Ctx(data["user_id"], _restore(data.get("now"), datetime.fromisoformat),
-              tz=_restore(data.get("tz"), ZoneInfo),
-              locale=data.get("locale") or "en")
+    ctx = Ctx(
+        data["user_id"],
+        _restore(data.get("now"), datetime.fromisoformat),
+        tz=_restore(data.get("tz"), ZoneInfo),
+        locale=data.get("locale") or "en",
+    )
     ctx.citations = list(state.get("citations") or [])
     ctx._cited = {item["note_id"] for item in ctx.citations}
-    ctx.trace = dict(state.get("trace") or {
-        "tools": [], "retrieved_chunks": [], "routes": [],
-    })
     return ctx
 
 

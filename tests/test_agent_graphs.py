@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+import config
 from agents import bootstrap
 from agents.runtime import loop as agent_loop
 from agents.runtime import execution_ledger
@@ -22,11 +23,13 @@ from agents.enrich import graph as enrich_loop
 from agents.enrich.nodes import approve as enrich_approve
 from agents.enrich.nodes import plan as enrich_plan
 from agents.enrich.nodes import reason as enrich_reason
-from agents.enrich.nodes.schedule import resolve as enrich_schedule_resolve
-from agents.enrich.state import Ctx as EnrichCtx
+from agents.reminder import graph as reminder_graph
+from agents.reminder.nodes import resolve as reminder_resolve
+from agents.enrich.state import UserContext as EnrichCtx
 from agents.enrich.state import context_to_dict as enrich_context_data
 from agents.enrich.state import initial_state as enrich_initial_state
 from tools import enrich as enrich_tools
+from tools import reminder as reminder_tools
 from tools.enrich import add_note_tags, create_note, list_paths
 from agents.runtime.execute_tool import execute_tool as execute_enrich_tool
 
@@ -56,7 +59,7 @@ class AgentGraphTests(unittest.TestCase):
         )
         self.assertEqual(
             {"reason", "act", "classify_gather", "classify_propose",
-             "classify_normalize", "schedule_resolve", "schedule_build",
+             "classify_normalize",
              "link_context", "stage", "approve"},
             set(enrich_loop.ENRICH_GRAPH.get_graph().nodes) - {"__start__", "__end__"},
         )
@@ -229,18 +232,18 @@ class AgentGraphTests(unittest.TestCase):
         with patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(
                 tool_name="set_reminder",
                 arguments='{"instruction": "Call tomorrow"}')), \
-                patch.object(bootstrap.registry.get("enrich"), "plan_action",
+                patch.object(bootstrap.registry.get("reminder"), "plan_action",
                              return_value=action):
             paused = agent_loop.invoke(
                 graph, graph_config,
                 chat_initial_state(ctx, [{"role": "user", "content": "Remind me"}]))
 
         self.assertEqual("confirm", paused["status"])
-        self.assertEqual("enrich", paused["pending"]["agent"])
+        self.assertEqual("reminder", paused["pending"]["agent"])
 
         with patch.object(execution_ledger, "execute_once",
                           side_effect=lambda *args: args[-1]()), \
-                patch.object(bootstrap.registry.get("enrich"), "execute_action",
+            patch.object(bootstrap.registry.get("reminder"), "execute_action",
                           return_value='{"reminder_id": 3}') as reminder_execute, \
                 patch.object(chat_reason.model_gateway, "chat_completion", return_value=completion(content="Scheduled.")):
             resumed = agent_loop.resume(graph, graph_config, True)
@@ -248,63 +251,29 @@ class AgentGraphTests(unittest.TestCase):
         reminder_execute.assert_called_once()
         self.assertEqual("Scheduled.", resumed["reply"])
 
-    def test_main_enrich_graph_resolves_reminder_before_confirmation(self):
-        graph = enrich_loop.build_graph(InMemorySaver())
-        graph_config = {"configurable": {"thread_id": "enrich:reminder"}}
-        raw = '{"is_reminder": true, "remind_at": "2026-09-01T09:00:00+00:00"}'
-        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
-            create=Mock(return_value=SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content=raw))])))))
-
-        def model_call(**kwargs):
-            # reason and schedule_resolve now share model_gateway.chat_completion;
-            # the reminder extraction is the one asking for JSON.
-            if kwargs.get("response_format"):
-                return client.chat.completions.create()
-
-            return completion(tool_name="create_reminder",
-                              arguments='{"text": "Call tomorrow"}')
-
-        with patch.object(enrich_reason.model_gateway, "chat_completion",
-                          side_effect=model_call):
-            paused = agent_loop.invoke(
-                graph, graph_config,
-                enrich_initial_state(
-                    SimpleNamespace(
-                        user_id=7, now=datetime(2026, 8, 31, 10, 0,
-                                                tzinfo=timezone.utc),
-                        tz=timezone.utc, locale="en"),
-                    [{"role": "user", "content": "Remind me to call tomorrow"}]))
-
-        self.assertEqual("confirm", paused["status"])
-        self.assertEqual("create_reminder", paused["action"]["name"])
-        self.assertEqual("2026-09-01T09:00:00+00:00",
-                         paused["action"]["args"]["remind_at"])
-        self.assertEqual(
-            ["schedule_resolve", "schedule_build"],
-            [event["node"] for event in paused["reminder_trace"]])
 
     def test_reminder_graph_resolves_time_before_confirmation(self):
         now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
         remind_at = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
         contract = {"instruction": "Call tomorrow", "resolved_entities": {}}
-        with patch.object(enrich_schedule_resolve, "run", return_value={
-            "reminder_raw": {"is_reminder": True,
+        with patch.object(reminder_resolve, "run", return_value={
+            "extracted_time": {"is_reminder": True,
                              "remind_at": remind_at.isoformat()},
-            "reminder_trace": [{"node": "schedule_resolve", "status": "ok"}],
+            "events": [{"kind": "node", "node": "resolve", "status": "ok"}],
         }):
-            graph = enrich_loop.build_reminder_plan_graph()
+            graph = reminder_graph.build_plan_graph()
             action = graph.invoke({
                 "contract": contract, "now": now, "action": None,
-                "reminder_trace": [],
+                "locale": "en", "events": [],
             })["action"]
 
         self.assertEqual("create_reminder", action["name"])
         self.assertEqual(remind_at.isoformat(), action["args"]["remind_at"])
 
-    def test_enrich_owns_reminder_tool(self):
-        self.assertIn("create_reminder", enrich_tools.WRITE_TOOLS)
-        names = {spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS}
+    def test_reminder_specialist_owns_reminder_tool(self):
+        self.assertIn("create_reminder", reminder_tools.WRITE_TOOLS)
+        self.assertNotIn("create_reminder", enrich_tools.WRITE_TOOLS)
+        names = {spec["function"]["name"] for spec in reminder_tools.TOOL_SPECS}
         self.assertIn("create_reminder", names)
 
     def test_enrich_add_note_tags_merges_existing_tags(self):
@@ -355,7 +324,7 @@ class AgentGraphTests(unittest.TestCase):
                           side_effect=client.chat.completions.create):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],
-                "context": enrich_context_data(context()), "tool_specs": specs,
+                "user_context": enrich_context_data(context()), "tool_specs": specs,
                 "steps": 0, "tool_call": None, "action": None,
             })
             action = result.get("action")
@@ -370,7 +339,7 @@ class AgentGraphTests(unittest.TestCase):
                               "model_rate_limited", "429 Too Many Requests")):
             result = enrich_loop.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Save Graph idea"}],
-                "context": enrich_context_data(context()),
+                "user_context": enrich_context_data(context()),
                 "tool_specs": enrich_tools.TOOL_SPECS,
                 "steps": 0, "tool_call": None, "action": None,
             })
@@ -378,18 +347,21 @@ class AgentGraphTests(unittest.TestCase):
         self.assertIsNone(result.get("action"))
         self.assertIn("model_error", result)
 
-    def test_step_budget_routes_to_tool_free_final_node(self):
+    def test_step_budget_uses_tool_free_reason_call(self):
         replies = [
             completion(tool_name="list_paths"),
             completion(content="I couldn't complete the lookup."),
         ]
-        with patch.object(chat_loop.config, "AGENT_MAX_STEPS", 1), \
-                patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies), \
+        with patch.object(config, "AGENT_MAX_STEPS", 1), \
+                patch.object(chat_reason.model_gateway, "chat_completion", side_effect=replies) as model, \
                 patch.object(chat_act, "execute_tool", return_value="[]"):
             result = chat_api.evaluate_turn(
                 7, [{"role": "user", "content": "Paths"}], "now", "tz", "en")
 
         self.assertEqual("I couldn't complete the lookup.", result["reply"])
+        self.assertEqual(2, model.call_count)
+        self.assertIn("tools", model.call_args_list[0].kwargs)
+        self.assertNotIn("tools", model.call_args_list[1].kwargs)
 
 
 if __name__ == "__main__":

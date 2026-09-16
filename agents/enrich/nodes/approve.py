@@ -57,7 +57,11 @@ def _completed(messages: list[dict], pending: dict, result: str) -> dict:
 
 
 def run(state: EnrichState) -> dict:
-    pending = state["pending"]
+    pending = state.get("pending")
+
+    if not pending:
+        raise ValueError("No pending action to approve")
+
     approved = bool(interrupt(_interrupt_payload(pending, state.get("action"))))
     ctx = context_from_state(state)
     action = _action(pending)

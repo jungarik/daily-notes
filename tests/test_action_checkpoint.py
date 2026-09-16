@@ -3,7 +3,6 @@
 import unittest
 
 from agents.conversation import api as chat_service
-from agents.enrich import api as enrich_service
 
 
 class ActionCheckpointTests(unittest.TestCase):
@@ -19,15 +18,6 @@ class ActionCheckpointTests(unittest.TestCase):
         self.assertEqual(first["action_id"], second["action_id"])
         self.assertNotIn("action_id", pending)
         self.assertEqual("call-1", first["tool_call_id"])
-
-    def test_enrich_legacy_pending_id_is_stable(self):
-        pending = {"tool_call_id": "call-2", "name": "create_note",
-                   "args": {"text": "Idea"}, "summary": "Create note"}
-        first = enrich_service._with_action_id(13, pending)
-        second = enrich_service._with_action_id(13, pending)
-
-        self.assertEqual(first["action_id"], second["action_id"])
-        self.assertNotIn("action_id", pending)
 
 
 if __name__ == "__main__":

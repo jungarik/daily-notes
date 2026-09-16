@@ -12,17 +12,17 @@ import time
 from common import helper
 from agents.contracts import ToolResult
 from tools import enrich as tools
-from agents.enrich.state import Ctx, context_to_dict
+from agents.enrich.state import UserContext, context_to_dict
 from agents.runtime.execute_tool import execute_allowed_tool
 
 _EMPTY_NOTE = "note not found or empty"
 
 
 def _tool_context(state: dict) -> dict:
-    data = state.get("context") or {}
-    user_id = int(state.get("user_id") or state["context"]["user_id"])
+    data = state.get("user_context") or state.get("context") or {}
+    user_id = int(state.get("user_id") or data["user_id"])
 
-    return context_to_dict(Ctx(
+    return context_to_dict(UserContext(
         user_id,
         data.get("now"),
         tz=data.get("tz"),

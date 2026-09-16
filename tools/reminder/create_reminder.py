@@ -1,4 +1,4 @@
-"""create_reminder enrichment tool."""
+"""create_reminder tool: persist a reminder, creating its backing note if needed."""
 
 import logging
 import re
@@ -7,7 +7,7 @@ from datetime import datetime
 import config
 from common import embedings, helper
 from agents.contracts import ToolResult
-from tools.enrich import db
+from tools.reminder import db
 
 logger = logging.getLogger(__name__)
 

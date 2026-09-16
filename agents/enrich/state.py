@@ -5,7 +5,7 @@ from typing import Literal, TypedDict
 from zoneinfo import ZoneInfo
 
 
-class Ctx:
+class UserContext:
     def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
         self.user_id = user_id
         self.now = now
@@ -15,13 +15,13 @@ class Ctx:
 
 class EnrichState(TypedDict, total=False):
     messages: list[dict]
-    context: dict
+    user_context: dict
     steps: int
     tool_call: dict | None
+    model_error: str | None
     status: Literal["answer", "confirm"]
     reply: str
     action: dict | None
-    model_error: str | None
     pending: dict | None
     completed_action_id: str | None
     link_proposal: dict
@@ -32,19 +32,16 @@ class EnrichState(TypedDict, total=False):
     metadata: dict
     metadata_error: str | None
     metadata_trace: list[dict]
-    reminder_raw: dict
-    reminder_error: str | None
-    reminder_trace: list[dict]
 
 
 class ActionPlanState(TypedDict, total=False):
     messages: list[dict]
-    context: dict
+    user_context: dict
     tool_specs: list[dict]
     steps: int
     tool_call: dict | None
-    action: dict | None
     model_error: str | None
+    action: dict | None
     link_proposal: dict
     metadata_text: str
     metadata_note_id: int | None
@@ -53,9 +50,6 @@ class ActionPlanState(TypedDict, total=False):
     metadata: dict
     metadata_error: str | None
     metadata_trace: list[dict]
-    reminder_raw: dict
-    reminder_error: str | None
-    reminder_trace: list[dict]
 
 
 class MetadataState(TypedDict, total=False):
@@ -71,23 +65,13 @@ class MetadataState(TypedDict, total=False):
     context: dict
 
 
-class ReminderPlanState(TypedDict, total=False):
-    contract: dict
-    now: object
-    locale: str | None
-    reminder_raw: dict
-    action: dict | None
-    reminder_error: str | None
-    reminder_trace: list[dict]
-
-
-def context_to_dict(ctx: Ctx) -> dict:
+def context_to_dict(ctx: UserContext) -> dict:
     now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
 
     return {
         "user_id": ctx.user_id,
         "now": now,
-        "tz": str(ctx.tz),
+        "tz": str(ctx.tz) if ctx.tz is not None else None,
         "locale": ctx.locale,
     }
 
@@ -99,10 +83,10 @@ def _restore(value, factory):
         return value
 
 
-def context_from_state(state: EnrichState | ActionPlanState) -> Ctx:
-    data = state.get("context") or {}
+def context_from_state(state: EnrichState | ActionPlanState) -> UserContext:
+    data = state.get("user_context") or {}
 
-    return Ctx(
+    return UserContext(
         data["user_id"],
         _restore(data.get("now"), datetime.fromisoformat),
         tz=_restore(data.get("tz"), ZoneInfo),
@@ -110,7 +94,7 @@ def context_from_state(state: EnrichState | ActionPlanState) -> Ctx:
     )
 
 
-def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> EnrichState:
+def initial_state(ctx: UserContext, messages: list, pending: dict | None = None) -> EnrichState:
     action = None
 
     if pending:
@@ -121,7 +105,7 @@ def initial_state(ctx: Ctx, messages: list, pending: dict | None = None) -> Enri
         }
 
     return {
-        "context": context_to_dict(ctx),
+        "user_context": context_to_dict(ctx),
         "messages": list(messages),
         "steps": 0,
         "tool_call": None,
