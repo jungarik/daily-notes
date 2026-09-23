@@ -1,4 +1,9 @@
-"""Who runs next — the farm's routing policy, and nothing else.
+"""The router: who runs the next hop.
+
+Named `agent.py` for the folder's shape, not because it is a peer in the farm —
+it is the one `agent.py` with no `SPEC`, because it is what *chooses* the agents
+the registry holds. The broker takes it as a constructor argument; it is never
+registered and never takes a hop of its own.
 
 The broker (`agents/runtime/broker.py`) drives a turn; this decides each hop.
 Splitting them means each file has one reason to change: a new routing rule
@@ -17,14 +22,21 @@ The responder is an ordinary hop, not a step outside the loop: it is picked here
 like anyone else. The router will hand it back as often as it is asked — the
 broker stops asking once a hop has produced a reply, which is what ends a turn.
 
-`select_model` is the case-3 seam and is optional. Without one the router falls
-straight through to the responder after case 2, which is the farm's behaviour
-until a model router is built.
+Case 3 lives at the bottom of this file as `select_agent_name`, but reaches
+`Router` as the injected `select_model` callable rather than by being called
+directly. Same module, still a seam: routing stays testable with no model, and
+a different selection strategy is a different callable rather than an edit to
+the class. Without one the router falls straight through to the responder after
+case 2.
 """
 
+import json
 import logging
 
+import config
 from agents.contracts import AgentSpec, HistoryEntry
+from agents.router.prompts import SYSTEM, selection_request
+from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +113,85 @@ class Router:
         ran_agent = {turn.agent for turn in turns}
 
         return [agent for agent in self._registry.list_agents() if agent["name"] not in ran_agent]
+
+
+# --- Case 3: asking a model which agent runs next ---------------------------
+#
+# Deliberately conservative. A model that answers with a name nobody registered,
+# or with prose instead of JSON, ends the turn rather than routing somewhere
+# arbitrary — the responder still gets its hop, so the user is answered either
+# way. Routing badly is worse than routing nowhere.
+
+
+def render_hops(history: tuple[HistoryEntry, ...]) -> list[dict]:
+    """The turn history as plain JSON for the prompt."""
+    return [
+        {
+            "agent": entry.agent,
+            "status": entry.status,
+            "produced": [{"kind": ref.kind, "id": ref.id} for ref in entry.produced],
+            "error": entry.error,
+        }
+        for entry in history
+    ]
+
+
+def build_request(candidates: list[dict], message: str, history) -> dict:
+    return {
+        "model": config.ROUTER_MODEL,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [{
+            "role": "system",
+            "content": SYSTEM,
+        }, {
+            "role": "user",
+            "content": selection_request(candidates, message, render_hops(history)),
+        }],
+    }
+
+
+def choose_name(answer: str, candidates: list[dict]) -> str | None:
+    """The chosen agent's name, or None when the model declined or misbehaved.
+
+    Every failure mode collapses to None: unparseable JSON, a missing key, a
+    name that is not on the candidate list. The caller treats None as "nothing
+    left to do", which is the safe reading of a router that cannot be trusted.
+    """
+    try:
+        chosen = json.loads(answer).get("agent")
+    except (TypeError, ValueError, AttributeError):
+        logger.warning("router model returned unparseable JSON: %.200s", answer)
+
+        return None
+
+    if chosen is None:
+        return None
+
+    if chosen not in {candidate["name"] for candidate in candidates}:
+        logger.warning("router model chose an agent that was not offered: %r", chosen)
+
+        return None
+
+    return chosen
+
+
+def select_agent_name(candidates: list[dict], message: str, history) -> str | None:
+    """Ask the model which of these agents should take the next hop.
+
+    Never raises: a model that is down or slow must not take the turn with it,
+    and the router's own fallback — the responder — still applies.
+    """
+    try:
+        model_response = model_gateway.chat_completion(
+            **build_request(candidates, message, history))
+        # Reading the response is inside the guard too: a completion with no
+        # choices raises on subscript, and that is a model misbehaving just as
+        # much as a timeout is.
+        answer = model_response.choices[0].message.content or ""
+    except Exception as exc:
+        logger.warning("router model call failed, ending the turn: %s", exc)
+
+        return None
+
+    return choose_name(answer, candidates)

@@ -19,12 +19,12 @@ agents/
 │   ├── registry.py            the roster; rejects duplicate names/entry tools
 │   ├── state_store.py         the turn tree (agent_states)
 │   ├── execution_ledger.py    at-most-once confirmed writes
-│   ├── loop.py                entering a compiled LangGraph graph
 │   └── checkpoint, model_gateway, execute_tool
 ├── router/                    who runs next — the farm's routing policy
-│   ├── router.py              three cases, cheapest first
-│   ├── model_selector.py      case 3: a model picks from the roster
-│   └── routing_prompts.py
+│   ├── agent.py               `Router`: three cases, cheapest first, plus
+│   │                           case 3's model call. The one `agent.py`
+│   │                           with no SPEC — it picks agents, it is not one
+│   └── prompts.py
 ├── finder/                    reads and answers — the vault's reader
 ├── enrich/                    note writes: create, move, tag, link, classify
 ├── reminder/                  scheduling

@@ -31,7 +31,7 @@ from agents.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserCont
 from agents.finder.graph import FINDER_GRAPH
 from agents.finder.prompts import with_system
 from agents.finder.state import Ctx, initial_state
-from agents.runtime import checkpoint, loop
+from agents.runtime import checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +85,10 @@ def start(request: AgentRequest) -> AgentResult:
     now, tz, locale = _restore_clock(request.context)
     ctx = Ctx(request.context["user_id"], now, tz=tz, locale=locale)
     graph_config = checkpoint.graph_config(NAME, uuid.uuid4(), config.AGENT_MAX_STEPS)
-    state = loop.invoke(
-        FINDER_GRAPH,
-        graph_config,
+    state = FINDER_GRAPH.invoke(
         initial_state(ctx, _build_messages(request, now, tz),
-                      request.references.get("reference_notes")))
+                      request.references.get("reference_notes")),
+        graph_config)
     citations = state.get("citations") or []
 
     return AgentResult(

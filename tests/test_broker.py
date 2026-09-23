@@ -7,7 +7,14 @@ exercised without a database, a model, or LangGraph.
 
 import unittest
 
-from agents.router import Router
+# Importing `Router` reaches the model gateway — case 3 lives in the same
+# module — and this file is the suite's first importer of it. Stub before
+# that import or every later file inherits the real one.
+from tests import gateway_stub
+
+gateway_stub.install()
+
+from agents.router import Router  # noqa: E402
 from agents.runtime.registry import AgentRegistry
 from agents.runtime.broker import (
     Broker,

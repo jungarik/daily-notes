@@ -260,20 +260,22 @@ router; it is on in dev and in the eval harness. The path that production almost
 never takes is the path every local turn takes, which is the cheapest place to
 find out it broke.
 
-**Where it lives.** `agents/router/router.py` holds `Router.select_agent` and
+**Where it lives.** `agents/router/agent.py` holds `Router.select_agent` and
 nothing else; the broker owns the loop and is handed a router. A new routing rule
 changes one file, and a change to how a hop is saved or suspended never touches
 routing. `Router(registry, select_model=None, always_ask_model=False)` —
 `select_model` is the case-3 seam, filled by
-`agents/router/model_selector.py`: one JSON call naming an agent from the
+`select_agent_name`, in the same module: one JSON call naming an agent from the
 candidate list, or `null`. It is conservative by construction — an unparseable
 answer, a missing key, or a name that was not offered all collapse to `None`,
 and the router then falls through to the responder. Routing badly is worse than
 routing nowhere, and the user gets a reply either way.
 
-It is not re-exported from `agents/router/__init__.py`: it reaches the OpenAI
-client at import time, and importing the farm's contracts should not drag a
-network client along. The composition root imports it directly.
+It is not re-exported from `agents/router/__init__.py` — the package's surface
+is `Router` — but the old import-weight reason for keeping it in a separate
+module is gone: importing `Router` now reaches the OpenAI client either way.
+That is why `tests/test_broker.py`, the suite's first importer of `Router`,
+installs the shared gateway stub before it (`tests/gateway_stub.py`).
 
 The router is also the farm's only holder of the registry: `Broker` takes
 `(store, ledger, router)` and looks nothing up itself, resolving a suspended

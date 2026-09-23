@@ -97,4 +97,6 @@ cancel and snooze logic in `api/telegram_bot` and does not use this graph.
 - Agent chat-completion calls go through `agents/runtime/model_gateway.py`.
 - Tool selection is single-call and loops are bounded.
 - Reminder attachment is scoped by both note id and user id.
-- Entering a compiled graph is `agents/runtime/loop.py`; `graph.py` only builds.
+- `graph.py` only builds; the agent's `start`/`resume` enters the run with
+  `GRAPH.invoke(state, graph_config)`. There is no wrapper around that call —
+  one caller per graph made the indirection cost a name to read past.

@@ -47,11 +47,10 @@ class AgentStructureTests(unittest.TestCase):
             "finder/state.py", "finder/prompts.py",
             "finder/nodes/reason.py", "finder/nodes/act.py",
             "responder/agent.py", "responder/prompts.py",
-            "router/__init__.py", "router/router.py",
-            "router/model_selector.py", "router/routing_prompts.py",
+            "router/__init__.py", "router/agent.py", "router/prompts.py",
             "runtime/broker.py", "runtime/registry.py",
             "runtime/state_store.py", "runtime/execution_ledger.py",
-            "runtime/loop.py", "runtime/checkpoint.py",
+            "runtime/checkpoint.py",
             "runtime/model_gateway.py", "runtime/execute_tool.py",
             "contracts/__init__.py", "contracts/status.py",
             "contracts/user_context.py", "contracts/ref.py",
@@ -105,7 +104,8 @@ class AgentStructureTests(unittest.TestCase):
         for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
                      "agents/runtime/specialist_registry.py", "api/chat",
                      "tools/conversation", "agents/enrich/handoff_api.py",
-                     "agents/reminder/handoff_api.py"):
+                     "agents/reminder/handoff_api.py",
+                     "agents/runtime/loop.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
 
@@ -163,7 +163,7 @@ class AgentStructureTests(unittest.TestCase):
         the split back into one module with two reasons to change.
 
         Only the loop machinery is off limits, not all of `runtime/`: the rest
-        of that package is shared infrastructure, and `model_selector` using
+        of that package is shared infrastructure, and case 3 reaching
         `model_gateway` is exactly what it is there for."""
         root = Path(__file__).parents[1] / "agents"
         loop_machinery = ("agents.runtime.broker", "agents.runtime.registry",

@@ -12,6 +12,8 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from tests import gateway_stub
+
 
 def _stub_if_absent(name: str, **attributes) -> None:
     """Install a stand-in only where the real module cannot be imported.
@@ -50,8 +52,18 @@ def _install_stubs():
     # The graph is stubbed whole and unconditionally: this file tests the
     # adapter around it — what it starts the graph with, and what it makes of
     # the state that comes back — never LangGraph's own traversal.
+    #
+    # The stand-in carries an `invoke(state, config)` because that is the
+    # shape a compiled graph has, and the agent now calls it directly. The
+    # seam is the graph itself rather than a module function wrapping it, so
+    # nothing here can pass while the real call signature drifts.
+    def invoke(state, graph_config):
+        run["invoked"].append({"state": state, "graph_config": graph_config})
+
+        return run["state"] or {}
+
     graph = types.ModuleType("agents.finder.graph")
-    graph.FINDER_GRAPH = "finder-graph"
+    graph.FINDER_GRAPH = types.SimpleNamespace(invoke=invoke)
     sys.modules["agents.finder.graph"] = graph
 
     # The tool package reaches psycopg at import time; the nodes only need the
@@ -62,45 +74,12 @@ def _install_stubs():
     return run
 
 
-def _install_gateway():
-    """Stand in for the model gateway, which reaches `openai` at import time.
-
-    Idempotent and shared: more than one test module stubs this, and the last
-    one to install must not orphan the handle an earlier one already gave to an
-    agent module it imported.
-    """
-    existing = sys.modules.get("agents.runtime.model_gateway")
-
-    if existing is not None and hasattr(existing, "GATEWAY"):
-        return existing.GATEWAY
-
-    gateway = {"response": None, "error": None, "requests": []}
-
-    module = types.ModuleType("agents.runtime.model_gateway")
-
-    def chat_completion(**model_request):
-        gateway["requests"].append(model_request)
-
-        if gateway["error"] is not None:
-            raise gateway["error"]
-
-        return gateway["response"]
-
-    module.chat_completion = chat_completion
-    module.ModelGatewayError = RuntimeError
-    module.GATEWAY = gateway
-    sys.modules["agents.runtime.model_gateway"] = module
-
-    return gateway
-
-
 RUN = _install_stubs()
-GATEWAY = _install_gateway()
+GATEWAY = gateway_stub.install()
 
 import config  # noqa: E402
 from agents.contracts import AgentRequest, Ref, ToolResult  # noqa: E402
 from agents.finder import agent  # noqa: E402
-from agents.runtime import loop  # noqa: E402
 
 CONTEXT = {
     "user_id": 7,
@@ -141,20 +120,6 @@ class AdapterTests(unittest.TestCase):
 
     def setUp(self):
         RUN["invoked"].clear()
-        self._invoke = loop.invoke
-        loop.invoke = self._record_run
-
-    def tearDown(self):
-        loop.invoke = self._invoke
-
-    def _record_run(self, graph, graph_config, state):
-        RUN["invoked"].append({
-            "graph": graph,
-            "graph_config": graph_config,
-            "state": state,
-        })
-
-        return RUN["state"] or {}
 
     def test_the_answer_travels_in_state_not_as_a_reply(self):
         """The responder is the only agent that speaks to the user; finder's
@@ -213,17 +178,11 @@ class MessageTests(unittest.TestCase):
     def setUp(self):
         RUN["state"] = {"reply": "x", "citations": [], "trace": {}}
         RUN["invoked"].clear()
-        self._invoke = loop.invoke
-        loop.invoke = lambda graph, graph_config, state: (
-            RUN["invoked"].append(state) or RUN["state"])
-
-    def tearDown(self):
-        loop.invoke = self._invoke
 
     def _messages(self, request):
         agent.start(request)
 
-        return RUN["invoked"][0]["messages"]
+        return RUN["invoked"][0]["state"]["messages"]
 
     def test_the_turns_message_is_appended_as_the_user_turn(self):
         messages = self._messages(_request("where are my notes on tuning?"))
@@ -257,9 +216,19 @@ class MessageTests(unittest.TestCase):
     def test_the_owner_and_locale_reach_the_graph_context(self):
         agent.start(_request())
 
-        context = RUN["invoked"][0]["context"]
+        context = RUN["invoked"][0]["state"]["context"]
         self.assertEqual(7, context["user_id"])
         self.assertEqual("uk", context["locale"])
+
+    def test_the_state_leads_and_the_config_follows(self):
+        """`graph.invoke(state, config)` is LangGraph's own signature, and
+        the agent now calls it with no wrapper in between — so the argument
+        order is this file's to guard."""
+        agent.start(_request())
+
+        invoked = RUN["invoked"][0]
+        self.assertIn("messages", invoked["state"])
+        self.assertIn("finder:", invoked["graph_config"]["configurable"]["thread_id"])
 
 
 class ClockTests(unittest.TestCase):

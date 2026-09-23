@@ -102,12 +102,12 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
 - **Routing is declarative and lives in `routing.py`.** Small predicate functions
   returning a node id; the graph shape is documented in the module docstring. No
   business logic in edges.
-- **`graph.py` composes; `agents/runtime/loop.py` runs.** An agent's `graph.py`
-  only builds and compiles — it holds no `invoke`/`resume`/`retry` of its own.
-  Entering a run is the shared `loop.invoke(graph, graph_config, state)` /
-  `loop.resume(graph, graph_config, decision)` / `loop.retry(graph, graph_config)`.
-  The per-agent bound travels in `graph_config`, built by
-  `checkpoint.graph_config(namespace, thread_id, max_steps)`, so the shared loop
+- **`graph.py` composes; the agent runs.** An agent's `graph.py` only builds
+  and compiles — it holds no `invoke` of its own, and nothing else in the
+  package enters a run. The agent's `start`/`resume` calls
+  `GRAPH.invoke(state, graph_config)` directly: LangGraph's own signature, no
+  wrapper in between. The per-agent bound travels in `graph_config`, built by
+  `checkpoint.graph_config(namespace, thread_id, max_steps)`, so the graph
   reads no agent configuration.
 - **Extend by data, not by branching.** Prefer a registry/map over a new `if`:
   a new agent is an `AgentSpec` plus one line in `agents/bootstrap.py`; a new
@@ -462,7 +462,8 @@ next is `agents/router/`. They meet only in `bootstrap.py` and never import
 each other. `AGENT_MAX_HOPS` bounds the turn and counts the
 reply.
 
-**Routing** is `agents/router/`, cheapest case first: the responder is
+**Routing** is `agents/router/agent.py` — the one `agent.py` in the tree with
+no `SPEC`, because it picks agents rather than being one. Cheapest case first: the responder is
 taken unconditionally when the turn is finishing; otherwise an entry tool names
 the agent for free; otherwise `ROUTER_MODEL` picks from the agents that have not
 yet run, and declines rather than guessing (a decline falls through to the

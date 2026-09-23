@@ -9,6 +9,8 @@ import sys
 import types
 import unittest
 
+from tests import gateway_stub
+
 
 def _install_stubs():
     """Stand in for the model gateway, which reaches `openai` at import time.
@@ -66,7 +68,7 @@ def _install_state_rows():
     return rows
 
 
-GATEWAY = _install_stubs()
+GATEWAY = gateway_stub.install()
 STATES = _install_state_rows()
 
 from agents.contracts import AgentRequest, HistoryEntry, Ref  # noqa: E402
