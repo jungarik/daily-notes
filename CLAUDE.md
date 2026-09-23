@@ -457,10 +457,12 @@ The chat tab is served by a **farm of peer agents behind a broker**
 The broker asks the router who runs next, hands that agent an `AgentRequest`,
 saves the `AgentResult` as a row in `agent_states` (the turn tree, migration
 0022), folds it into the turn history, and repeats until an agent needs the user
-or the reply has been written. `AGENT_MAX_HOPS` bounds the turn and counts the
+or the reply has been written. The loop is `agents/runtime/broker.py`; who runs
+next is `agents/router/`. They meet only in `bootstrap.py` and never import
+each other. `AGENT_MAX_HOPS` bounds the turn and counts the
 reply.
 
-**Routing** is `agents/broker/router.py`, cheapest case first: the responder is
+**Routing** is `agents/router/`, cheapest case first: the responder is
 taken unconditionally when the turn is finishing; otherwise an entry tool names
 the agent for free; otherwise `ROUTER_MODEL` picks from the agents that have not
 yet run, and declines rather than guessing (a decline falls through to the
@@ -473,7 +475,9 @@ only module that names an agent — and never an edit to the loop.
 `responder` is the only one that writes prose to the user. A work agent puts its
 output in `AgentResult.state` and reports what it touched as typed
 `Ref(kind, id)`; the responder reaches an earlier hop's state through the
-`read_state` tool, bounded by that agent's `may_read`.
+`read_state` tool, bounded by that agent's `may_read`. It is the only agent
+that reads a peer's state today, so it is the only one with a non-empty
+`may_read` — an allowlist for a tool an agent never calls goes stale unseen.
 
 **Writes always pause.** An agent that wants to write returns `needs_input` with
 an `ask`; the section stores `TurnOutcome.pending` and
@@ -490,10 +494,19 @@ returns `{status:"answer", reply}` or `{status:"confirm", action}`.
 `api/telegram_bot` retains its own independent reminder detection, creation and
 delivery, and does not use the farm.
 
+**Contracts.** Every shape the farm exchanges lives in `agents/contracts/`, one
+type per module (`agent_spec.py`, `agent_request.py`, `ref.py`, …), imported
+from the package rather than the leaf: `from agents.contracts import AgentSpec`.
+The package imports nothing — not an agent, not a tool, not the broker, not
+`db` or `config` — and that is load-bearing: it is why four agents plus the
+loop, the router and the store can agree on shapes without importing each
+other. `tests/test_agent_structure.py` enforces both the no-imports rule and
+one-type-per-file.
+
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
 package, not inside `agents/*/tools`: `tools/finder/` for reads, `tools/enrich/`
-and `tools/reminder/` for writes, and `tools/broker/` for the farm's own
-`read_state`. Each tool file exposes `invoke(context: dict, args: dict)` and
+and `tools/reminder/` for writes, and `tools/responder/` for `read_state` —
+the responder's own tool, and its only caller. Each tool file exposes `invoke(context: dict, args: dict)` and
 returns `ToolResult` with typed `data: dict`; specs stay with their namespace as
 `tools/<agent>/specs.py`. Agents execute them through
 `agents/runtime/execute_tool.py`, and callers render `ToolResult.data` to JSON

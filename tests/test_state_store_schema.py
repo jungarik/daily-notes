@@ -42,7 +42,7 @@ def _read_columns() -> set[str]:
 
 def _read_selected_columns() -> set[str]:
     """Every bare column name the store's SELECTs ask `agent_states` for."""
-    source = (ROOT / "agents" / "broker" / "state_store.py").read_text(encoding="utf-8")
+    source = (ROOT / "agents" / "runtime" / "state_store.py").read_text(encoding="utf-8")
     selected = set()
 
     for clause in re.findall(r"SELECT(.+?)FROM\s+" + TABLE, source, re.S | re.I):
@@ -73,7 +73,7 @@ class ColumnTests(unittest.TestCase):
         self.assertEqual(set(), missing, f"agent_states has no {sorted(missing)}")
 
     def test_the_insert_names_only_real_columns(self):
-        source = (ROOT / "agents" / "broker" / "state_store.py").read_text(encoding="utf-8")
+        source = (ROOT / "agents" / "runtime" / "state_store.py").read_text(encoding="utf-8")
         clause = source.split(f"INSERT INTO {TABLE}", 1)[1].split(")", 1)[0]
         inserted = {
             name.strip().lower()
@@ -88,7 +88,7 @@ class EntryTests(unittest.TestCase):
     def test_the_rebuilt_entry_reports_no_error(self):
         """`error` is not stored, so the rebuild must not claim one. Left in the
         SELECT it was a crash; left in the row mapping it would be a lie."""
-        source = (ROOT / "agents" / "broker" / "state_store.py").read_text(encoding="utf-8")
+        source = (ROOT / "agents" / "runtime" / "state_store.py").read_text(encoding="utf-8")
         rebuild = source.split("def read_history", 1)[1]
 
         self.assertNotIn("error=", rebuild)

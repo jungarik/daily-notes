@@ -10,24 +10,24 @@ import unittest
 
 
 def _install_state_rows():
-    """Stand in for `tools.broker.db`, which reaches psycopg at import time.
+    """Stand in for `tools.responder.db`, which reaches psycopg at import time.
 
     Idempotent and shared for the same reason the gateway stub is: more than one
     test module installs it, and the loser of that race must not be left holding
     a dict nothing reads. The real tool still runs — only the SQL is stood in
     for, so the allowlist and the error shapes are exercised for real.
     """
-    existing = sys.modules.get("tools.broker.db")
+    existing = sys.modules.get("tools.responder.db")
 
     if existing is not None and hasattr(existing, "ROWS"):
         return existing.ROWS
 
     rows = {}
 
-    module = types.ModuleType("tools.broker.db")
+    module = types.ModuleType("tools.responder.db")
     module.get_state = lambda state_id, user_id: rows.get((str(state_id), user_id))
     module.ROWS = rows
-    sys.modules["tools.broker.db"] = module
+    sys.modules["tools.responder.db"] = module
 
     return rows
 
@@ -35,7 +35,7 @@ def _install_state_rows():
 ROWS = _install_state_rows()
 
 from agents.contracts import ToolResult  # noqa: E402
-from tools.broker import read_state  # noqa: E402
+from tools.responder import read_state  # noqa: E402
 
 
 class MayReadTests(unittest.TestCase):
@@ -119,12 +119,12 @@ class RegistrationTests(unittest.TestCase):
     def test_it_is_a_context_tool_the_model_is_never_offered(self):
         """A deterministic read: a node calls it, the allowlist in
         `execute_allowed_tool` keeps a model-driven path out."""
-        from tools import broker
+        from tools import responder
 
-        self.assertIn("read_state", broker.TOOLS)
-        self.assertIn("read_state", broker.CONTEXT_TOOLS)
-        self.assertEqual([], broker.TOOL_SPECS)
-        self.assertEqual(set(), broker.WRITE_TOOLS)
+        self.assertIn("read_state", responder.TOOLS)
+        self.assertIn("read_state", responder.CONTEXT_TOOLS)
+        self.assertEqual([], responder.TOOL_SPECS)
+        self.assertEqual(set(), responder.WRITE_TOOLS)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 """Who runs next — the farm's routing policy, and nothing else.
 
-The broker drives a turn; this decides each hop. Splitting them means each file
-has one reason to change: a new routing rule lands here without touching the
-loop, and a change to how a hop is saved or suspended never touches routing.
+The broker (`agents/runtime/broker.py`) drives a turn; this decides each hop.
+Splitting them means each file has one reason to change: a new routing rule
+lands here without touching the loop, and a change to how a hop is saved or
+suspended never touches routing. This package is the only one that holds the
+registry — the broker looks nothing up itself.
 
 Three cases, cheapest first (`devdoc/agent-broker.md`):
 
@@ -22,7 +24,7 @@ until a model router is built.
 
 import logging
 
-from agents.broker.contracts import AgentSpec, HistoryEntry
+from agents.contracts import AgentSpec, HistoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,7 @@ class Router:
     """Picks the next agent for one hop, and is the only holder of the registry.
 
     The broker asks it who runs next and looks nothing up itself, so the roster
-    has exactly one reader inside the farm. (The composition root keeps its own
-    reference — it built the registry and hands it to whatever else needs it,
-    such as the Phase 3 `read_state` tool and its `may_read` allowlist. That is
-    not routing, so it does not come through here.)
+    has exactly one reader inside the farm.
 
     `always_ask_model` forces case 3 for every hop, skipping the entry-tool
     shortcut. It is on in dev and in the eval harness, so the path production

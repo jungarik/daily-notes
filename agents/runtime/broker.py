@@ -5,8 +5,8 @@ state that comes back, folds the result into the turn history, and repeats until
 an agent needs the user or the responder has written the reply. Agents never name
 each other; the broker never looks inside an agent's state or its resume token.
 
-Which agent runs each hop is `router.py`'s decision, not this file's. This
-module owns only the loop around it — pick, run, save, fold in, suspend or
+Which agent runs each hop is `agents/router/`'s decision, not this file's.
+This module owns only the loop around it — pick, run, save, fold in, suspend or
 finish — plus the pure helpers that loop needs: the ledger codec, the action id,
 and the two rules that keep the turn history trustworthy (an entry is derived
 from a result rather than written by an agent, and one agent contributes exactly
@@ -17,7 +17,7 @@ import json
 import logging
 import uuid
 
-from agents.broker.contracts import (
+from agents.contracts import (
     AgentRequest,
     AgentResult,
     AgentSpec,

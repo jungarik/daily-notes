@@ -13,7 +13,7 @@ import uuid
 
 from psycopg.types.json import Json
 
-from agents.broker.contracts import HistoryEntry, Ref
+from agents.contracts import HistoryEntry, Ref
 from db import cursor
 
 

@@ -14,8 +14,8 @@ import json
 import logging
 
 import config
-from agents.broker.contracts import HistoryEntry
-from agents.broker.routing_prompts import SYSTEM, selection_request
+from agents.contracts import HistoryEntry
+from agents.router.routing_prompts import SYSTEM, selection_request
 from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)

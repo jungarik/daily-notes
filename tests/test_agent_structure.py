@@ -47,12 +47,19 @@ class AgentStructureTests(unittest.TestCase):
             "finder/state.py", "finder/prompts.py",
             "finder/nodes/reason.py", "finder/nodes/act.py",
             "responder/agent.py", "responder/prompts.py",
-            "broker/__init__.py", "broker/contracts.py", "broker/broker.py",
-            "broker/registry.py", "broker/state_store.py",
-            "broker/router.py", "broker/model_selector.py",
-            "broker/routing_prompts.py",
+            "router/__init__.py", "router/router.py",
+            "router/model_selector.py", "router/routing_prompts.py",
+            "runtime/broker.py", "runtime/registry.py",
+            "runtime/state_store.py", "runtime/execution_ledger.py",
+            "runtime/loop.py", "runtime/checkpoint.py",
+            "runtime/model_gateway.py", "runtime/execute_tool.py",
+            "contracts/__init__.py", "contracts/status.py",
+            "contracts/user_context.py", "contracts/ref.py",
+            "contracts/history_entry.py", "contracts/agent_request.py",
+            "contracts/agent_result.py", "contracts/agent_spec.py",
+            "contracts/turn_outcome.py", "contracts/plan_request.py",
+            "contracts/tool_result.py",
             "bootstrap.py",
-            "runtime/execute_tool.py",
             "../common/__init__.py", "../common/embedings.py", "../common/helper.py",
             "../tools/__init__.py",
             "../tools/finder/__init__.py",
@@ -80,9 +87,9 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/reminder/create_reminder.py",
             "../tools/reminder/specs.py", "../tools/reminder/db.py",
             "../tools/reminder/get_note_context.py",
-            "../tools/broker/__init__.py",
-            "../tools/broker/db.py",
-            "../tools/broker/read_state.py",
+            "../tools/responder/__init__.py",
+            "../tools/responder/db.py",
+            "../tools/responder/read_state.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
         self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
@@ -101,6 +108,82 @@ class AgentStructureTests(unittest.TestCase):
                      "agents/reminder/handoff_api.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
+
+    def test_the_contracts_sit_at_the_bottom_of_the_graph(self):
+        """A contract may import its own package and the standard library, and
+        nothing else.
+
+        This is the property the whole farm rests on: four agents, the loop, the
+        router and the store agree on shapes without importing each other,
+        because the shapes depend on none of them. One import of an agent, a
+        tool, or the broker from here would make that a cycle."""
+        root = Path(__file__).parents[1] / "agents" / "contracts"
+        reaching = []
+
+        for path in root.glob("*.py"):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.startswith(("import ", "from ")):
+                    continue
+
+                if line.startswith("from agents.contracts"):
+                    continue
+
+                if "agents." in line or "tools." in line or line.startswith(
+                        ("import db", "from db ", "import config", "from config ")):
+                    reaching.append(f"{path.name}: {line.strip()}")
+
+        self.assertEqual([], reaching)
+
+    def test_every_contract_module_holds_one_type(self):
+        """The package is one type per file, so a reader finds `AgentSpec` in
+        `agent_spec.py` without opening anything else."""
+        root = Path(__file__).parents[1] / "agents" / "contracts"
+
+        for path in root.glob("*.py"):
+            if path.name == "__init__.py":
+                continue
+
+            declared = [
+                line for line in path.read_text(encoding="utf-8").splitlines()
+                if line.startswith("class ") or (
+                    line and not line[0].isspace() and " = " in line
+                    and not line.startswith(("from ", "import ")))
+            ]
+
+            with self.subTest(module=path.name):
+                self.assertEqual(1, len(declared), declared)
+
+    def test_routing_and_the_loop_do_not_import_each_other(self):
+        """Neither half of the split may reach for the other.
+
+        `agents/router/` decides who runs next; `agents/runtime/broker.py` runs
+        them. They meet only in `bootstrap.py`, which hands the router to the
+        broker as a parameter — that is what lets a routing rule change without
+        touching the loop, and the reverse. An import either way would collapse
+        the split back into one module with two reasons to change.
+
+        Only the loop machinery is off limits, not all of `runtime/`: the rest
+        of that package is shared infrastructure, and `model_selector` using
+        `model_gateway` is exactly what it is there for."""
+        root = Path(__file__).parents[1] / "agents"
+        loop_machinery = ("agents.runtime.broker", "agents.runtime.registry",
+                          "agents.runtime.state_store")
+        offending = []
+
+        for line in (root / "runtime" / "broker.py").read_text(
+                encoding="utf-8").splitlines():
+            if line.startswith(("import ", "from ")) and "agents.router" in line:
+                offending.append(f"runtime/broker.py: {line.strip()}")
+
+        for path in (root / "router").glob("*.py"):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.startswith(("import ", "from ")):
+                    continue
+
+                if any(module in line for module in loop_machinery):
+                    offending.append(f"router/{path.name}: {line.strip()}")
+
+        self.assertEqual([], offending)
 
     def test_no_agent_names_another_agent(self):
         """The whole point of the farm: routing is the broker's, so an agent
@@ -130,7 +213,7 @@ class AgentStructureTests(unittest.TestCase):
 
         Two modules are exempt, and both are infrastructure rather than an
         agent's domain data: `runtime/execution_ledger.py` (at-most-once
-        bookkeeping) and `broker/state_store.py` (the turn tree). Neither is
+        bookkeeping) and `runtime/state_store.py` (the turn tree). Neither is
         imported by an agent — the composition root hands them to the broker."""
         root = Path(__file__).parents[1] / "agents"
         self.assertEqual(

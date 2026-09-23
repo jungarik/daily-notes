@@ -7,15 +7,23 @@ exercised without a database, a model, or LangGraph.
 
 import unittest
 
-from agents.broker import AgentRegistry, Broker, Ref, Router
-from agents.broker.broker import (
+from agents.router import Router
+from agents.runtime.registry import AgentRegistry
+from agents.runtime.broker import (
+    Broker,
     decode,
     encode,
     find_problems,
     generate_action_id,
     merge_history,
 )
-from agents.broker.contracts import AgentResult, AgentSpec, HistoryEntry, UserContext
+from agents.contracts import (
+    AgentResult,
+    AgentSpec,
+    HistoryEntry,
+    Ref,
+    UserContext,
+)
 
 
 class FakeStore:

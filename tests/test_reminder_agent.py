@@ -80,8 +80,7 @@ def _record_plan_state(seen):
 
 PLAN_GRAPH.invoke = _plan_from_planned
 
-from agents.broker.contracts import AgentRequest, Ref  # noqa: E402
-from agents.contracts import ToolResult  # noqa: E402
+from agents.contracts import AgentRequest, Ref, ToolResult  # noqa: E402
 from agents.reminder import agent  # noqa: E402
 
 CONTEXT = {
@@ -283,7 +282,8 @@ class SpecTests(unittest.TestCase):
     def test_the_spec_declares_its_entry_tool_and_read_scope(self):
         self.assertEqual("reminder", agent.SPEC.name)
         self.assertEqual(("set_reminder",), agent.SPEC.entry_tools)
-        self.assertEqual(("finder",), agent.SPEC.may_read)
+        self.assertEqual((), agent.SPEC.may_read,
+                         "it never calls read_state, so it grants itself nothing")
         self.assertTrue(agent.SPEC.description.strip())
         self.assertIsNotNone(agent.SPEC.resume)
 

@@ -8,16 +8,23 @@ The full design — contracts, routing, the turn tree, idempotency — is
 
 ```text
 agents/
-├── contracts/                 shared typed results and the PlanRequest
-├── runtime/                   loop, checkpoint, model gateway, execute_tool,
-│                               execution_ledger (at-most-once writes)
-├── broker/
-│   ├── contracts.py           AgentSpec/Request/Result, Ref, HistoryEntry, TurnOutcome
+├── contracts/                 every shape the farm exchanges, one per file:
+│                               AgentSpec/Request/Result, UserContext, Ref,
+│                               HistoryEntry, Status, TurnOutcome, plus
+│                               ToolResult and PlanRequest. Imports nothing —
+│                               that is what keeps the graph acyclic
+├── runtime/                   the machinery that runs a turn — none of it is
+│   │                           any one agent's work
 │   ├── broker.py              the turn loop
-│   ├── router.py              who runs next (three cases, cheapest first)
-│   ├── model_selector.py      case 3: a model picks from the roster
 │   ├── registry.py            the roster; rejects duplicate names/entry tools
-│   └── state_store.py         the turn tree (agent_states)
+│   ├── state_store.py         the turn tree (agent_states)
+│   ├── execution_ledger.py    at-most-once confirmed writes
+│   ├── loop.py                entering a compiled LangGraph graph
+│   └── checkpoint, model_gateway, execute_tool
+├── router/                    who runs next — the farm's routing policy
+│   ├── router.py              three cases, cheapest first
+│   ├── model_selector.py      case 3: a model picks from the roster
+│   └── routing_prompts.py
 ├── finder/                    reads and answers — the vault's reader
 ├── enrich/                    note writes: create, move, tag, link, classify
 ├── reminder/                  scheduling
@@ -31,7 +38,8 @@ tools/
 ├── finder/                    owner-scoped reads
 ├── enrich/                    note writes
 ├── reminder/                  the reminder write
-└── broker/                    read_state — a later hop reads an earlier one
+└── responder/                 read_state — how the reply reads what the
+                                turn's earlier hops produced
 ```
 
 ## How a turn runs
@@ -52,14 +60,21 @@ budget ran out. `AGENT_MAX_HOPS` counts the reply.
 ## The rules that keep it extendable
 
 - **An agent names no peer.** It reports what it did as typed `Ref`s; routing is
-  the broker's. `tests/test_agent_structure.py` enforces this by import scan.
+  the broker's. `tests/test_agent_structure.py` enforces this by import scan,
+  and the same file checks that `contracts/` imports nothing — the two scans
+  together are what keep the dependency graph acyclic.
 - **The history is derived, never written.** The broker builds each entry from a
   result, so an agent cannot describe itself favourably.
 - **Only the responder speaks.** Work agents put their output in
-  `AgentResult.state`; the responder reads it through `read_state` and phrases
-  the reply. That is why voice and localisation exist in one place.
+  `AgentResult.state`; the responder reads it through `read_state` — the one
+  tool in `tools/responder/`, and the only caller of it — and phrases the
+  reply. That is why voice and localisation exist in one place.
 - **Writes happen at most once.** A confirmed action is keyed by its own
   fingerprint, not by the hop, so a retried confirm replays the stored outcome.
+- **Routing and the loop are separate packages.** `router/` decides who runs;
+  `runtime/broker.py` runs them. They meet only in `bootstrap.py`, which hands
+  one to the other — so a new routing rule never touches the loop, and neither
+  imports the other (enforced in `tests/test_agent_structure.py`).
 - **Extend by data.** A new agent is a spec plus a registry line in
   `bootstrap.py`; a new tool is a file in `tools/<agent>/`. Neither touches the
   loop.

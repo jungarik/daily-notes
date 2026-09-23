@@ -20,8 +20,15 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from agents.broker.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
-from agents.contracts import PlanRequest, ToolResult
+from agents.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentSpec,
+    PlanRequest,
+    Ref,
+    ToolResult,
+    UserContext,
+)
 from agents.reminder.graph import PLAN_GRAPH
 from agents.reminder.state import Ctx, context_to_dict
 from agents.runtime.execute_tool import execute_allowed_tool, execute_tool
@@ -226,5 +233,4 @@ SPEC = AgentSpec(
     start=start,
     resume=resume,
     entry_tools=("set_reminder",),
-    may_read=("finder",),
 )

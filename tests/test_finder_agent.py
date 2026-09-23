@@ -98,8 +98,7 @@ RUN = _install_stubs()
 GATEWAY = _install_gateway()
 
 import config  # noqa: E402
-from agents.broker.contracts import AgentRequest, Ref  # noqa: E402
-from agents.contracts import ToolResult  # noqa: E402
+from agents.contracts import AgentRequest, Ref, ToolResult  # noqa: E402
 from agents.finder import agent  # noqa: E402
 from agents.runtime import loop  # noqa: E402
 
@@ -443,9 +442,12 @@ class SpecTests(unittest.TestCase):
     def test_it_never_pauses_so_it_needs_no_resume(self):
         self.assertIsNone(agent.SPEC.resume)
 
-    def test_it_reads_the_agents_that_act_but_not_every_agent(self):
-        self.assertEqual(("enrich", "reminder"), agent.SPEC.may_read)
-        self.assertNotIn("*", agent.SPEC.may_read)
+    def test_it_grants_itself_no_read_scope(self):
+        """`may_read` gates the `read_state` tool, which finder does not call.
+        An allowlist for a tool an agent never reaches is config nothing
+        exercises — and it goes stale silently, as it did when it still named
+        the deleted `conversation` agent."""
+        self.assertEqual((), agent.SPEC.may_read)
 
     def test_the_description_tells_the_router_it_only_reads(self):
         self.assertIn("read", agent.SPEC.description.lower())

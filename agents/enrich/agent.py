@@ -25,8 +25,15 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from agents.broker.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
-from agents.contracts import PlanRequest, ToolResult
+from agents.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentSpec,
+    PlanRequest,
+    Ref,
+    ToolResult,
+    UserContext,
+)
 from agents.enrich.graph import ACTION_PLAN_GRAPH
 from agents.enrich.prompts import planning_messages
 from agents.runtime.execute_tool import execute_tool
@@ -251,5 +258,4 @@ SPEC = AgentSpec(
     start=start,
     resume=resume,
     entry_tools=("perform_action",),
-    may_read=("finder",),
 )

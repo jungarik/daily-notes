@@ -44,24 +44,24 @@ def _install_stubs():
 
 
 def _install_state_rows():
-    """Stand in for `tools.broker.db`, which reaches psycopg at import time.
+    """Stand in for `tools.responder.db`, which reaches psycopg at import time.
 
     Idempotent and shared for the same reason the gateway stub is: more than one
     test module installs it, and the loser of that race must not be left holding
     a dict nothing reads. The real tool still runs — only the SQL is stood in
     for, so the allowlist and the error shapes are exercised for real.
     """
-    existing = sys.modules.get("tools.broker.db")
+    existing = sys.modules.get("tools.responder.db")
 
     if existing is not None and hasattr(existing, "ROWS"):
         return existing.ROWS
 
     rows = {}
 
-    module = types.ModuleType("tools.broker.db")
+    module = types.ModuleType("tools.responder.db")
     module.get_state = lambda state_id, user_id: rows.get((str(state_id), user_id))
     module.ROWS = rows
-    sys.modules["tools.broker.db"] = module
+    sys.modules["tools.responder.db"] = module
 
     return rows
 
@@ -69,7 +69,7 @@ def _install_state_rows():
 GATEWAY = _install_stubs()
 STATES = _install_state_rows()
 
-from agents.broker.contracts import AgentRequest, HistoryEntry, Ref  # noqa: E402
+from agents.contracts import AgentRequest, HistoryEntry, Ref  # noqa: E402
 from agents.responder import agent  # noqa: E402
 
 CONTEXT = {"user_id": 7, "now": "2026-09-23T09:00:00", "tz": "Europe/Kyiv", "locale": "uk"}

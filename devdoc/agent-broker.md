@@ -24,7 +24,10 @@ POST /api/chat/v2│           broker            │
 
 ## The two contracts
 
-Every agent implements these and nothing else:
+Every agent implements these and nothing else. They live in
+`agents/contracts/`, one type per module, importing nothing — which is what
+lets the loop, the router, the store and four agents agree on shapes without
+importing each other:
 
 ```python
 @dataclass(frozen=True)
@@ -194,20 +197,26 @@ Not a broker API that agents import — a **tool**, scoped by the registry:
 ```python
 AGENTS = {
     "responder": AgentSpec(..., entry_tools=[],                  may_read=["*"]),
-    "finder":    AgentSpec(..., entry_tools=[],                  may_read=["enrich", "reminder"]),
-    "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=["finder"]),
-    "enrich":    AgentSpec(..., entry_tools=["perform_action"],  may_read=["finder"]),
+    "finder":    AgentSpec(..., entry_tools=[],                  may_read=[]),
+    "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=[]),
+    "enrich":    AgentSpec(..., entry_tools=["perform_action"],  may_read=[]),
 }
 ```
 
-`read_state(state_id)` lives in `tools/broker/` — `TOOLS`, `CONTEXT_TOOLS`, `db`,
+`read_state(state_id)` lives in `tools/responder/` — `TOOLS`, `CONTEXT_TOOLS`, `db`,
 the same shape as every other tool namespace — and an agent runs it through
 `execute_allowed_tool` with its own `may_read` in the context. It is a
 **context** tool, never advertised in `TOOL_SPECS`: a node calls it
 deterministically, the model never asks for it.
 
+**Only the responder reads today**, which is why the namespace is named for
+it and why every other `may_read` is empty. An allowlist for a tool an agent
+never calls is config nothing exercises — it goes stale silently, as those
+three did while still naming the deleted `conversation` agent. A second
+reader grants itself a scope at the same time it starts reading.
+
 Two independent checks, and only one of them is a security boundary.
-`tools/broker/db.get_state` scopes the row to the caller's `user_id` **in SQL**,
+`tools/responder/db.get_state` scopes the row to the caller's `user_id` **in SQL**,
 so no allowlist can cross an owner. `may_read` is the softer one: every agent is
 our own code, so it catches a wiring mistake rather than a lying caller. An agent
 asking for a state it may not read gets an error, not the row — and the error
@@ -251,18 +260,18 @@ router; it is on in dev and in the eval harness. The path that production almost
 never takes is the path every local turn takes, which is the cheapest place to
 find out it broke.
 
-**Where it lives.** `agents/broker/router.py` holds `Router.select_agent` and
+**Where it lives.** `agents/router/router.py` holds `Router.select_agent` and
 nothing else; the broker owns the loop and is handed a router. A new routing rule
 changes one file, and a change to how a hop is saved or suspended never touches
 routing. `Router(registry, select_model=None, always_ask_model=False)` —
 `select_model` is the case-3 seam, filled by
-`agents/broker/model_selector.py`: one JSON call naming an agent from the
+`agents/router/model_selector.py`: one JSON call naming an agent from the
 candidate list, or `null`. It is conservative by construction — an unparseable
 answer, a missing key, or a name that was not offered all collapse to `None`,
 and the router then falls through to the responder. Routing badly is worse than
 routing nowhere, and the user gets a reply either way.
 
-It is not re-exported from `agents/broker/__init__.py`: it reaches the OpenAI
+It is not re-exported from `agents/router/__init__.py`: it reaches the OpenAI
 client at import time, and importing the farm's contracts should not drag a
 network client along. The composition root imports it directly.
 

@@ -6,14 +6,15 @@ below it is an agent that knows nothing of its peers.
 """
 
 import config
-from agents.broker import AgentRegistry, Broker, Router
-from agents.broker import state_store
-from agents.broker.model_selector import select_agent_name
 from agents.enrich import agent as enrich_agent
 from agents.finder import agent as finder_agent
 from agents.reminder import agent as reminder_agent
 from agents.responder import agent as responder_agent
-from agents.runtime import execution_ledger
+from agents.router import Router
+from agents.router.model_selector import select_agent_name
+from agents.runtime import execution_ledger, state_store
+from agents.runtime.broker import Broker
+from agents.runtime.registry import AgentRegistry
 
 # The farm. Agents register themselves as specs; the registry rejects a
 # duplicate name or a tool name two agents both claim, here at import time.

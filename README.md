@@ -45,7 +45,8 @@ shared, at the root.
 | `api/<section>/`  | one isolated vertical per web-app section: `feed`, `explorer`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
 | `api/chat_v2/`    | agentic chat tab (`/api/chat/v2`) — owns the thread projection; hands each turn to the agent farm |
 | `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
-| `agents/broker/`  | the turn loop, the router, and the turn tree (`agent_states`) |
+| `agents/runtime/` | the turn loop, the roster, the turn tree (`agent_states`), the write ledger, and the graph plumbing |
+| `agents/router/`  | who runs the next hop (three cases, cheapest first) |
 | `agents/finder/`  | reads and answers from the user's notes (RAG) |
 | `agents/enrich/`, `agents/reminder/` | confirmed writes: note actions, scheduling |
 | `agents/responder/` | the only agent that writes the user-facing reply |

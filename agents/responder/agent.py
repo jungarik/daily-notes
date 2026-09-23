@@ -21,12 +21,17 @@ Nothing in this module imports another agent.
 import logging
 
 import config
-from agents.broker.contracts import AgentRequest, AgentResult, AgentSpec, HistoryEntry
-from agents.contracts import ToolResult
+from agents.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentSpec,
+    HistoryEntry,
+    ToolResult,
+)
 from agents.responder.prompts import SYSTEM, reply_request
 from agents.runtime import model_gateway
 from agents.runtime.execute_tool import execute_allowed_tool
-from tools import broker as tools
+from tools import responder as tools
 
 logger = logging.getLogger(__name__)
 

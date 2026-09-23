@@ -14,9 +14,9 @@ Two things it deliberately does not do, both of which the farm now owns:
   - **it never pauses.** With no approval interrupt, a hop runs start to finish,
     so there is no `resume` and no checkpoint of its own.
 
-The answer goes into `AgentResult.state`, not into a reply: the responder is the
-one agent that speaks to the user, and it reaches this state through
-`read_state`.
+The answer goes into `AgentResult.state`, not into a reply: the responder is
+the one agent that speaks to the user, and it is what turns this state into
+prose.
 
 Nothing in this module imports another agent.
 """
@@ -27,7 +27,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import config
-from agents.broker.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
+from agents.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
 from agents.finder.graph import FINDER_GRAPH
 from agents.finder.prompts import with_system
 from agents.finder.state import Ctx, initial_state
@@ -42,11 +42,6 @@ DESCRIPTION = (
     "notes, reading one, following its links, listing reminders or an agenda. "
     "Use for anything the user wants to know or find. Reads only; it never "
     "creates, edits or schedules anything.")
-
-# It answers questions the user may then act on, so it reads the state of the
-# agents that did the acting.
-MAY_READ = ("enrich", "reminder")
-
 
 def _restore_clock(context: UserContext) -> tuple:
     """The caller's clock and locale, restored from the envelope's plain JSON."""
@@ -112,5 +107,4 @@ SPEC = AgentSpec(
     description=DESCRIPTION,
     start=start,
     entry_tools=(),
-    may_read=MAY_READ,
 )

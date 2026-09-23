@@ -5,7 +5,7 @@ tool name claimed by two agents raises at startup, not on the turn that happens
 to hit it.
 """
 
-from agents.broker.contracts import AgentSpec
+from agents.contracts import AgentSpec
 
 RESPONDER = "responder"
 

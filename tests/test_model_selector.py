@@ -46,8 +46,8 @@ def _install_stubs():
 
 GATEWAY = _install_stubs()
 
-from agents.broker import model_selector  # noqa: E402
-from agents.broker.contracts import HistoryEntry, Ref  # noqa: E402
+from agents.router import model_selector  # noqa: E402
+from agents.contracts import HistoryEntry, Ref  # noqa: E402
 
 CANDIDATES = [
     {"name": "enrich", "description": "creates and edits notes"},
@@ -171,9 +171,9 @@ class RouterIntegrationTests(unittest.TestCase):
         GATEWAY["requests"].clear()
 
     def test_it_matches_the_signature_the_router_calls(self):
-        from agents.broker.contracts import AgentResult, AgentSpec
-        from agents.broker.registry import AgentRegistry
-        from agents.broker.router import Router
+        from agents.contracts import AgentResult, AgentSpec
+        from agents.router.router import Router
+        from agents.runtime.registry import AgentRegistry
 
         GATEWAY["response"] = _completion('{"agent": "enrich"}')
         registry = AgentRegistry()
