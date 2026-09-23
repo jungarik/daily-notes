@@ -126,7 +126,7 @@ class ModelReplyTests(unittest.TestCase):
         self.assertIn("uk", sent, "the reply language travels with the prompt")
 
     def test_a_suspended_turn_tells_the_model_who_is_waiting(self):
-        """Read from the history, not handed over by the broker — the responder
+        """Read from the history, not handed over by the loop — the responder
         gets no channel the other agents do not have."""
         GATEWAY["response"] = _completion("ok")
         paused = HistoryEntry("reminder", "needs_input", state_id="s2")

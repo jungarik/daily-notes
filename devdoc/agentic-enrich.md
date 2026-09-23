@@ -2,7 +2,7 @@
 
 Status: **implemented.** Enrich owns confirmed writes over notes: creating and
 moving them, enriching metadata, and curating links. Scheduling is a separate
-agent — see `devdoc/agentic-reminder.md`. The broker routes a turn here; this
+agent — see `devdoc/agentic-reminder.md`. The loop routes a turn here; this
 file is what the agent does once it has been routed to.
 
 ## Workflow
@@ -52,7 +52,7 @@ are checked against the current user. Planning never executes a write.
 The planner is given the instruction plus whatever context the turn carried —
 recent conversation, ordered referenced note ids, citations, resolved entities,
 locale, timezone and request time — so it can resolve phrases such as “that
-note” without guessing from an isolated sentence. The broker passes these as
+note” without guessing from an isolated sentence. The loop passes these as
 `AgentRequest.references`; `agent.py` maps them into the planning request.
 
 ## Layers and public API
@@ -65,7 +65,7 @@ note” without guessing from an isolated sentence. The broker passes these as
   (`tools/enrich/db.py`); `plan_action` hydrates referenced notes with the
   `get_note_context` tool rather than querying. Thread state belongs to the
   calling section, as `api/chat_v2` does.
-- `agent.py`: the whole agent. `start` maps the broker's envelope into a
+- `agent.py`: the whole agent. `start` maps the loop's envelope into a
   `PlanRequest`, drives `ACTION_PLAN_GRAPH`, and pauses the turn with
   `needs_input`; `resume` performs the approved write through the tool and
   reports what it made as typed `Ref`s. `SPEC` is the package's only export.
@@ -81,6 +81,6 @@ Config: `ENRICH_AGENT_MODEL` and `ENRICH_AGENT_MAX_STEPS`.
 `capture_api.py` (`propose_capture` / `revise_capture` / `confirm_capture` /
 `cancel_capture`) was built for a UI that never called it, and was deleted along
 with its `CaptureProposal`/`RelatedNote` contracts and
-`db.save_captured_thought`. The broker is the only way into this agent.
+`db.save_captured_thought`. The loop is the only way into this agent.
 If a capture surface is wanted later, build it against the endpoint that needs
 it rather than restoring a speculative API.

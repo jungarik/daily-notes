@@ -1,9 +1,9 @@
 """Enrichment/action agent — the write agent for the user's notes.
 
 Creates notes, moves them, tags them, fills in their metadata and curates links
-— each with a confirmation step the broker owns. See `devdoc/agentic-enrich.md`.
+— each with a confirmation step the loop owns. See `devdoc/agentic-enrich.md`.
 
-`SPEC` is the whole public surface: the broker starts and resumes this agent
+`SPEC` is the whole public surface: the loop starts and resumes this agent
 through it, and nothing else calls in.
 """
 

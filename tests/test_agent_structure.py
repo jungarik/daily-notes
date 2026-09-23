@@ -27,7 +27,7 @@ class AgentStructureTests(unittest.TestCase):
             spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS
         })
 
-    def test_the_farm_layout(self):
+    def test_the_agent_layout(self):
         root = Path(__file__).parents[1] / "agents"
         expected = {
             "enrich/state.py",
@@ -48,7 +48,7 @@ class AgentStructureTests(unittest.TestCase):
             "finder/nodes/reason.py", "finder/nodes/act.py",
             "responder/agent.py", "responder/prompts.py",
             "router/__init__.py", "router/agent.py", "router/prompts.py",
-            "runtime/broker.py", "runtime/registry.py",
+            "runtime/loop.py", "runtime/registry.py",
             "runtime/state_store.py", "runtime/execution_ledger.py",
             "runtime/checkpoint.py",
             "runtime/model_gateway.py", "runtime/execute_tool.py",
@@ -95,7 +95,7 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
 
     def test_the_replaced_handoff_path_is_gone(self):
-        """The broker replaced it. Left behind, the old dispatch would be a
+        """The loop replaced it. Left behind, the old dispatch would be a
         second way to reach a specialist — and the one that let an agent name a
         peer. The `handoff_api` modules went the same way: with no handoff left
         to serve, planning belongs in the agent that pauses on it."""
@@ -104,8 +104,7 @@ class AgentStructureTests(unittest.TestCase):
         for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
                      "agents/runtime/specialist_registry.py", "api/chat",
                      "tools/conversation", "agents/enrich/handoff_api.py",
-                     "agents/reminder/handoff_api.py",
-                     "agents/runtime/loop.py"):
+                     "agents/reminder/handoff_api.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
 
@@ -116,7 +115,7 @@ class AgentStructureTests(unittest.TestCase):
         This is the property the whole farm rests on: four agents, the loop, the
         router and the store agree on shapes without importing each other,
         because the shapes depend on none of them. One import of an agent, a
-        tool, or the broker from here would make that a cycle."""
+        tool, or the loop from here would make that a cycle."""
         root = Path(__file__).parents[1] / "agents" / "contracts"
         reaching = []
 
@@ -156,9 +155,9 @@ class AgentStructureTests(unittest.TestCase):
     def test_routing_and_the_loop_do_not_import_each_other(self):
         """Neither half of the split may reach for the other.
 
-        `agents/router/` decides who runs next; `agents/runtime/broker.py` runs
+        `agents/router/` decides who runs next; `agents/runtime/loop.py` runs
         them. They meet only in `bootstrap.py`, which hands the router to the
-        broker as a parameter — that is what lets a routing rule change without
+        loop as a parameter — that is what lets a routing rule change without
         touching the loop, and the reverse. An import either way would collapse
         the split back into one module with two reasons to change.
 
@@ -166,14 +165,14 @@ class AgentStructureTests(unittest.TestCase):
         of that package is shared infrastructure, and case 3 reaching
         `model_gateway` is exactly what it is there for."""
         root = Path(__file__).parents[1] / "agents"
-        loop_machinery = ("agents.runtime.broker", "agents.runtime.registry",
+        loop_machinery = ("agents.runtime.loop", "agents.runtime.registry",
                           "agents.runtime.state_store")
         offending = []
 
-        for line in (root / "runtime" / "broker.py").read_text(
+        for line in (root / "runtime" / "loop.py").read_text(
                 encoding="utf-8").splitlines():
             if line.startswith(("import ", "from ")) and "agents.router" in line:
-                offending.append(f"runtime/broker.py: {line.strip()}")
+                offending.append(f"runtime/loop.py: {line.strip()}")
 
         for path in (root / "router").glob("*.py"):
             for line in path.read_text(encoding="utf-8").splitlines():
@@ -186,7 +185,7 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], offending)
 
     def test_no_agent_names_another_agent(self):
-        """The whole point of the farm: routing is the broker's, so an agent
+        """The whole point of the farm: routing is the loop's, so an agent
         module that imports a sibling has re-introduced the coupling. Only
         `bootstrap.py` may name them, because naming them is its job."""
         root = Path(__file__).parents[1] / "agents"
@@ -214,7 +213,7 @@ class AgentStructureTests(unittest.TestCase):
         Two modules are exempt, and both are infrastructure rather than an
         agent's domain data: `runtime/execution_ledger.py` (at-most-once
         bookkeeping) and `runtime/state_store.py` (the turn tree). Neither is
-        imported by an agent — the composition root hands them to the broker."""
+        imported by an agent — the composition root hands them to the loop."""
         root = Path(__file__).parents[1] / "agents"
         self.assertEqual(
             [],

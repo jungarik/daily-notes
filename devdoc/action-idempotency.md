@@ -2,11 +2,11 @@
 
 Every write an agent proposes receives a stable `action_id` before it is shown
 for confirmation. The id is derived from the *write itself* — turn, agent, tool
-name and sorted args (`broker.generate_action_id`) — never from the hop, so a
+name and sorted args (`loop.generate_action_id`) — never from the hop, so a
 re-driven hop cannot run the same write twice. PostgreSQL stores that id in
 `action_executions`, where the primary key allows only one request to claim it.
 
-After approval, the broker follows this order:
+After approval, the loop follows this order:
 
 1. atomically claim the action as `executing`;
 2. run the agent's `resume` once;

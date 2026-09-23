@@ -2,7 +2,7 @@
 
 Read tools only. The controller this namespace was built for could also call
 `perform_action` / `set_reminder` to hand a write to a named specialist; the
-broker's router owns that decision now, so those specs are gone and an agent
+loop's router owns that decision now, so those specs are gone and an agent
 here names no peer.
 """
 

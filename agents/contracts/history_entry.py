@@ -10,7 +10,7 @@ from agents.contracts.status import Status
 class HistoryEntry:
     """One completed hop, as the next hop sees it.
 
-    There is no free-text field. The broker derives this from an `AgentResult`,
+    There is no free-text field. The loop derives this from an `AgentResult`,
     so an agent cannot describe itself badly — it does not describe itself.
 
     It also carries no `state`: the full working state lives in `agent_states`

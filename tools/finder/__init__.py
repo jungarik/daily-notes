@@ -1,7 +1,7 @@
 """The finder agent's tools: owner-scoped reads over the user's own notes.
 
 Every tool here answers a question; none of them writes. A turn that needs a
-write is routed to the agent that owns it by the broker, not by a tool call from
+write is routed to the agent that owns it by the loop, not by a tool call from
 here.
 """
 

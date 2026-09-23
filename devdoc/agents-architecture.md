@@ -1,10 +1,10 @@
 # Agent architecture
 
-Four peer agents and a broker. No agent knows another exists: the broker asks a
+Four peer agents and a loop. No agent knows another exists: the loop asks a
 router who should run next, hands that agent a typed request, saves what comes
 back, and repeats until someone needs the user or the reply has been written.
 The full design — contracts, routing, the turn tree, idempotency — is
-`devdoc/agent-broker.md`; this file is the map.
+`devdoc/agent-loop.md`; this file is the map.
 
 ```text
 agents/
@@ -15,7 +15,7 @@ agents/
 │                               that is what keeps the graph acyclic
 ├── runtime/                   the machinery that runs a turn — none of it is
 │   │                           any one agent's work
-│   ├── broker.py              the turn loop
+│   ├── loop.py              the turn loop
 │   ├── registry.py            the roster; rejects duplicate names/entry tools
 │   ├── state_store.py         the turn tree (agent_states)
 │   ├── execution_ledger.py    at-most-once confirmed writes
@@ -44,7 +44,7 @@ tools/
 
 ## How a turn runs
 
-`api/chat_v2` calls `farm.start(message, context, references)`. Each hop:
+`api/chat_v2` calls `loop.start(message, context, references)`. Each hop:
 
 1. **Route.** The responder is taken unconditionally when the turn is finishing;
    otherwise an entry tool resolves the agent for free; otherwise a model picks
@@ -60,10 +60,10 @@ budget ran out. `AGENT_MAX_HOPS` counts the reply.
 ## The rules that keep it extendable
 
 - **An agent names no peer.** It reports what it did as typed `Ref`s; routing is
-  the broker's. `tests/test_agent_structure.py` enforces this by import scan,
+  the loop's. `tests/test_agent_structure.py` enforces this by import scan,
   and the same file checks that `contracts/` imports nothing — the two scans
   together are what keep the dependency graph acyclic.
-- **The history is derived, never written.** The broker builds each entry from a
+- **The history is derived, never written.** The loop builds each entry from a
   result, so an agent cannot describe itself favourably.
 - **Only the responder speaks.** Work agents put their output in
   `AgentResult.state`; the responder reads it through `read_state` — the one
@@ -72,7 +72,7 @@ budget ran out. `AGENT_MAX_HOPS` counts the reply.
 - **Writes happen at most once.** A confirmed action is keyed by its own
   fingerprint, not by the hop, so a retried confirm replays the stored outcome.
 - **Routing and the loop are separate packages.** `router/` decides who runs;
-  `runtime/broker.py` runs them. They meet only in `bootstrap.py`, which hands
+  `runtime/loop.py` runs them. They meet only in `bootstrap.py`, which hands
   one to the other — so a new routing rule never touches the loop, and neither
   imports the other (enforced in `tests/test_agent_structure.py`).
 - **Extend by data.** A new agent is a spec plus a registry line in

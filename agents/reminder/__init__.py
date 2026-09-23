@@ -3,7 +3,7 @@
 Owns the datetime-resolution graph, its prompt, its state and its write tool.
 Nothing here imports another agent. See `devdoc/agentic-reminder.md`.
 
-`SPEC` is the whole public surface: the broker starts and resumes this agent
+`SPEC` is the whole public surface: the loop starts and resumes this agent
 through it, and nothing else calls in.
 """
 

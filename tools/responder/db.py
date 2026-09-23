@@ -1,4 +1,4 @@
-"""SQL for the broker's cross-agent tools."""
+"""SQL for the loop's cross-agent tools."""
 
 from db import cursor
 

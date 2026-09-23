@@ -2,16 +2,16 @@
 
 Named `agent.py` for the folder's shape, not because it is a peer in the farm —
 it is the one `agent.py` with no `SPEC`, because it is what *chooses* the agents
-the registry holds. The broker takes it as a constructor argument; it is never
+the registry holds. The loop takes it as a constructor argument; it is never
 registered and never takes a hop of its own.
 
-The broker (`agents/runtime/broker.py`) drives a turn; this decides each hop.
+The loop (`agents/runtime/loop.py`) drives a turn; this decides each hop.
 Splitting them means each file has one reason to change: a new routing rule
 lands here without touching the loop, and a change to how a hop is saved or
 suspended never touches routing. This package is the only one that holds the
-registry — the broker looks nothing up itself.
+registry — the loop looks nothing up itself.
 
-Three cases, cheapest first (`devdoc/agent-broker.md`):
+Three cases, cheapest first (`devdoc/agent-loop.md`):
 
   1. the turn is finishing — the responder takes the hop;
   2. an entry tool name resolves it — the previous model call already chose;
@@ -20,7 +20,7 @@ Three cases, cheapest first (`devdoc/agent-broker.md`):
 
 The responder is an ordinary hop, not a step outside the loop: it is picked here
 like anyone else. The router will hand it back as often as it is asked — the
-broker stops asking once a hop has produced a reply, which is what ends a turn.
+loop stops asking once a hop has produced a reply, which is what ends a turn.
 
 Case 3 lives at the bottom of this file as `select_agent_name`, but reaches
 `Router` as the injected `select_model` callable rather than by being called
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 class Router:
     """Picks the next agent for one hop, and is the only holder of the registry.
 
-    The broker asks it who runs next and looks nothing up itself, so the roster
+    The turn loop asks it who runs next and looks nothing up itself, so the roster
     has exactly one reader inside the farm.
 
     `always_ask_model` forces case 3 for every hop, skipping the entry-tool

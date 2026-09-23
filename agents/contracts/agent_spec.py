@@ -13,7 +13,7 @@ class AgentSpec:
     """How one agent joins the farm.
 
     `entry_tools` are the tool names that route here with no model call — the
-    agent declares what addresses it, and the broker owns the lookup. `may_read`
+    agent declares what addresses it, and the loop owns the lookup. `may_read`
     is the allowlist for this agent's `read_state` tool; `("*",)` means every
     agent in the turn.
 

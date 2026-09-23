@@ -1,8 +1,8 @@
 """Persistence for the turn tree.
 
-This is the broker's own bookkeeping, not an agent's domain data — the same
+This is the loop's own bookkeeping, not an agent's domain data — the same
 category as `runtime/execution_ledger.py`, and the same exception to "agents
-reach persistence only through tools". No agent imports this module; the broker
+reach persistence only through tools". No agent imports this module; the loop
 is handed it at composition time and is the only caller.
 
 A turn is a tree: every hop writes one row, `causation_id` points at the row that

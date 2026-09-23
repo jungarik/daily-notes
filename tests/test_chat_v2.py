@@ -92,7 +92,7 @@ class ResponseTests(unittest.TestCase):
 class PendingTests(unittest.TestCase):
     """v1 and v2 share the `chat_threads` row but not the shape of `pending`."""
 
-    def test_a_broker_handle_is_resumable(self):
+    def test_a_turn_handle_is_resumable(self):
         pending = {"correlation_id": "c1", "agent": "enrich", "token": "{}"}
 
         self.assertEqual(pending, helper.find_resumable(pending))
@@ -109,7 +109,7 @@ class PendingTests(unittest.TestCase):
 
 
 class TranscriptTests(unittest.TestCase):
-    """The broker returns no messages, so the section keeps the thread itself."""
+    """The loop returns no messages, so the section keeps the thread itself."""
 
     def test_a_turn_appends_the_question_and_the_answer(self):
         messages = helper.append_turn([], "where is it?", "Right here.")

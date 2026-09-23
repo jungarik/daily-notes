@@ -3,7 +3,7 @@
 Running a compiled graph is `agents.runtime.loop`; this module only builds.
 
 The graph takes no checkpointer. A finder hop never pauses, so it runs start to
-finish inside one broker hop, and the hop's durable record is its `agent_states`
+finish inside one loop hop, and the hop's durable record is its `agent_states`
 row — checkpointing the same turn a second time would buy nothing.
 """
 

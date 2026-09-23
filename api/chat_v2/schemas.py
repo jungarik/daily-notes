@@ -1,12 +1,12 @@
 """Request/response models for the v2 chat section.
 
 The wire shape is deliberately v1's, so the Mini App switches by changing a URL
-and nothing else. What differs is who fills it in: the broker's `TurnOutcome`
+and nothing else. What differs is who fills it in: the loop's `TurnOutcome`
 rather than a single agent's graph result.
 
 `citations` is absent on purpose. `TurnOutcome` carries no agent state, so the
 answer's cited notes are not reachable here yet; v1 still serves chips while
-both versions are live. See `devdoc/agent-broker.md`.
+both versions are live. See `devdoc/agent-loop.md`.
 """
 
 from pydantic import BaseModel, Field

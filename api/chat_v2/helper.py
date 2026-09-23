@@ -1,10 +1,10 @@
 """Chat v2 shaping: the caller's clock/locale, and turn outcomes as responses.
 
-The broker runs the turn; this helper resolves per-user context, keeps the
+The loop runs the turn; this helper resolves per-user context, keeps the
 thread transcript, and turns a `TurnOutcome` into the section's response model.
 
 Two differences from v1 are worth naming, because both move work *into* this
-file. The broker returns no message list — the finder builds its own scratch
+file. The loop returns no message list — the finder builds its own scratch
 messages and keeps them — so the transcript is appended here, which leaves the
 thread a clean record of what the user and the assistant said. And the turn's
 outcome is a status plus a reply rather than a graph state, so the mapping onto
@@ -52,7 +52,7 @@ def find_resumable(pending: dict | None) -> dict | None:
     """The stored `pending` if this version can resume it, else None.
 
     v1 and v2 share the `chat_threads` row but not the shape they put in it:
-    v1 stores a handed-off action, v2 stores the broker's turn handle. A
+    v1 stores a handed-off action, v2 stores the loop's turn handle. A
     `correlation_id` is what identifies the latter, so a thread the other
     version left mid-confirm is reported as nothing to confirm rather than
     crashing on a key that was never there.
@@ -108,7 +108,7 @@ def turn_response(thread_id: int, status: str, reply: str | None,
     """Shape a finished turn into the section's response model.
 
     It takes the three fields it reads rather than the whole `TurnOutcome`, so
-    it stays a pure mapping with nothing to know about the broker's contract.
+    it stays a pure mapping with nothing to know about the loop's contract.
     """
     if status == "needs_input":
         return ChatResponse(

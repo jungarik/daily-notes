@@ -2,7 +2,7 @@
 
 Status: **implemented.** Each agent that needs more than one model step compiles
 its own `StateGraph`. The graphs are *inside* agents — how one agent does its
-job. Who runs at all is the broker's (`devdoc/agent-broker.md`), and no graph
+job. Who runs at all is the loop's (`devdoc/agent-loop.md`), and no graph
 here routes to another agent.
 
 ## Persistence boundary
@@ -10,7 +10,7 @@ here routes to another agent.
 Two different things are persisted, and keeping them apart is the point.
 
 `agent_states` (migration 0022) is the **turn tree**: one row per hop, written
-by the broker, joined by `correlation_id`. It is what survives a suspend, what
+by the loop, joined by `correlation_id`. It is what survives a suspend, what
 `read_state` reads, and what the confirm path rebuilds the history from.
 
 `PostgresSaver` is **execution state inside a graph that pauses**. Only the
@@ -76,21 +76,21 @@ flowchart TD
 graph reads note context, paths and tags and returns only a validated write
 proposal; the agent then pauses the *turn* with `needs_input` and performs the
 write itself on approval. The graph's own approval boundary is not used on
-that path — the broker owns the pause.
+that path — the loop owns the pause.
 
 ## Reminder graph
 
 `schedule_resolve -> schedule_build`. Resolve fixes the natural-language time;
 build resolves referenced notes deterministically and returns a frozen
 `create_reminder` proposal. Same shape as enrich's: plan here, pause in the
-broker, write on approval.
+loop, write on approval.
 
 Telegram keeps its own reminder detection, creation, delivery, claiming, list,
 cancel and snooze logic in `api/telegram_bot` and does not use this graph.
 
 ## Invariants
 
-- No graph routes to another agent; the broker does that.
+- No graph routes to another agent; the loop does that.
 - Every write requires explicit confirmation, and runs at most once
   (`execution_ledger`, keyed by the action's own fingerprint).
 - Only the responder writes prose to the user.

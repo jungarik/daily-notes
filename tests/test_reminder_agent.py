@@ -1,4 +1,4 @@
-"""The reminder agent's side of the broker contract.
+"""The reminder agent's side of the loop contract.
 
 The planning graph and the tool registry are stubbed, so this exercises the
 adapter — clock restoration, the pause, the refs it reports — without LangGraph,

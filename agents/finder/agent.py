@@ -1,6 +1,6 @@
 """The finder's seat in the farm.
 
-Adapts the read-and-answer vertical to the broker's `start` contract. It is the
+Adapts the read-and-answer vertical to the loop's `start` contract. It is the
 agent that knows the vault: it searches, reads notes and neighbours, and
 composes an answer.
 
@@ -8,7 +8,7 @@ Two things it deliberately does not do, both of which the farm now owns:
 
   - **it never writes, and never names who does.** The conversation controller
     it was copied from could call `perform_action` / `set_reminder` to hand a
-    write off; finder has no such tools. The broker's router picks the agent
+    write off; finder has no such tools. The loop's router picks the agent
     that owns a write, so finder stays a peer that knows nothing about its
     peers.
   - **it never pauses.** With no approval interrupt, a hop runs start to finish,
@@ -56,7 +56,7 @@ def _restore_clock(context: UserContext) -> tuple:
 def _build_messages(request: AgentRequest, now, tz) -> list[dict]:
     """The conversation so far, plus this turn's message.
 
-    Prior turns arrive as a reference rather than as broker state: they belong
+    Prior turns arrive as a reference rather than as loop state: they belong
     to the calling section's thread, which the farm knows nothing about.
     """
     history = request.references.get("messages") or []

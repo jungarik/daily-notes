@@ -1,6 +1,6 @@
 """The reminder agent: scheduling, end to end.
 
-One module, because there is one job with two halves the broker calls in turn:
+One module, because there is one job with two halves the loop calls in turn:
 `start` plans the write the user's message implies and pauses for confirmation,
 `resume` performs it once approved. Everything below them serves those two —
 hydrating the notes an instruction points at, shaping the planning request,
@@ -10,7 +10,7 @@ What stays outside: the planning graph (`graph.py`), its prompt, its state, and
 the tools (`tools/reminder/`). This agent owns no SQL.
 
 The resume token is this agent's own business: here it is the planned action,
-because that is all it needs to finish. The broker never opens it.
+because that is all it needs to finish. The loop never opens it.
 
 Nothing in this module imports another agent.
 """
@@ -57,7 +57,7 @@ def _restore_clock(context: UserContext) -> tuple:
 def _read_note_ids(references: dict) -> list[int]:
     """The note ids the turn referenced, as ints.
 
-    They arrive from a client through the broker, so an unparseable one is
+    They arrive from a client through the loop, so an unparseable one is
     dropped rather than raising — losing one reference is better than losing the
     reminder.
     """
@@ -73,7 +73,7 @@ def _read_note_ids(references: dict) -> list[int]:
 
 
 def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequest:
-    """The planning contract, from the envelope the broker handed over.
+    """The planning contract, from the envelope the loop handed over.
 
     The material the caller had already resolved arrives in `references`; the
     clock and locale arrive in `context`.
@@ -198,7 +198,7 @@ def start(request: AgentRequest) -> AgentResult:
 def resume(token: str, decision: dict, context: UserContext) -> AgentResult:
     """Perform the approved write and report what it made.
 
-    The broker calls this only on approval and only once per action, so there is
+    The loop calls this only on approval and only once per action, so there is
     no decline branch and no idempotency check here.
     """
     action = json.loads(token)

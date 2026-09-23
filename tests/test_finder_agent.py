@@ -1,4 +1,4 @@
-"""The finder agent's side of the broker contract.
+"""The finder agent's side of the loop contract.
 
 The graph, the tool registry and the model gateway are stubbed, so this
 exercises the adapter — the clock, the messages it assembles, the state it hands
@@ -145,7 +145,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(2, len(result.state["citations"]), "the chips travel too")
 
     def test_a_citation_without_an_id_is_dropped_not_fatal(self):
-        """`find_problems` in the broker downgrades a malformed ref to a failed
+        """`find_problems` in the loop downgrades a malformed ref to a failed
         hop, so a half-formed citation must never become one."""
         RUN["state"] = {"reply": "x", "citations": [{"title": "no id"}], "trace": {}}
 
@@ -191,7 +191,7 @@ class MessageTests(unittest.TestCase):
             {"role": "user", "content": "where are my notes on tuning?"},
             messages[-1])
 
-    def test_prior_turns_arrive_as_a_reference_not_as_broker_state(self):
+    def test_prior_turns_arrive_as_a_reference_not_as_loop_state(self):
         """The thread belongs to the calling section; the farm knows nothing
         about it, so it travels in `references`."""
         messages = self._messages(_request(

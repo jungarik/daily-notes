@@ -165,23 +165,23 @@ AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
-# Model that writes the broker turn's single user-facing reply.
+# Model that writes the loop turn's single user-facing reply.
 
 RESPONDER_MODEL = os.environ.get("RESPONDER_MODEL", "gpt-4o-mini")
 
-# Model the broker asks which agent runs next, when no entry tool resolves it.
+# Model the loop asks which agent runs next, when no entry tool resolves it.
 
 ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "gpt-4o-mini")
 
-# Max agent hops the broker will drive in one turn, the reply included: the
+# Max agent hops the loop will drive in one turn, the reply included: the
 
 # responder takes the last slot, so this is (work hops + 1). See
 
-# devdoc/agent-broker.md.
+# devdoc/agent-loop.md.
 
 AGENT_MAX_HOPS = int(os.environ.get("AGENT_MAX_HOPS", "5"))
 
-# Force every broker hop through the case-3 model router, skipping the entry-tool
+# Force every loop hop through the case-3 model router, skipping the entry-tool
 
 # shortcut. On in dev and in the eval harness so the path production rarely takes
 

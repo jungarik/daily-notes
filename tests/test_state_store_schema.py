@@ -1,6 +1,6 @@
 """The turn tree's SQL against the table it actually queries.
 
-`tests/test_broker.py` drives the loop with a fake store, so nothing there ever
+`tests/test_loop.py` drives the loop with a fake store, so nothing there ever
 compares `state_store.py` to `agent_states`. That gap shipped a `SELECT` naming
 an `error` column the migration never created — which only fired on the confirm
 path, after a write had already succeeded.

@@ -1,9 +1,9 @@
-"""Every shape the agents and the broker exchange, one type per module.
+"""Every shape the agents and the loop exchange, one type per module.
 
 Nothing here does I/O, holds module state, or imports an agent, a tool, or the
-broker. That is what makes it the bottom of the dependency graph: the loop, the
+loop. That is what makes it the bottom of the dependency graph: the loop, the
 router, the store and four agents can agree on shapes without importing each
-other, which is what lets the broker route a turn with no agent naming another.
+other, which is what lets the loop route a turn with no agent naming another.
 
 Three groups:
 
@@ -12,12 +12,12 @@ Three groups:
   - **what a turn is made of** — `UserContext`, `Ref`, `HistoryEntry`, `Status`;
   - **what a turn hands back** — `TurnOutcome`.
 
-Plus two that belong to an agent's own working, not to the broker's: `ToolResult`
+Plus two that belong to an agent's own working, not to the loop's: `ToolResult`
 (what every tool returns) and `PlanRequest` (what enrich and reminder plan from).
 
 Import from this package rather than the leaf module — the split is an
 implementation detail, so `from agents.contracts import AgentSpec` keeps working
-if a type moves. See `devdoc/agent-broker.md`.
+if a type moves. See `devdoc/agent-loop.md`.
 """
 
 from agents.contracts.agent_request import AgentRequest

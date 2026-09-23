@@ -22,7 +22,7 @@ def reply_request(message: str,
     """What the model is shown: the ask, the record, and what each hop produced.
 
     `hops` is rendered from the turn history, so statuses and typed refs come
-    from the broker rather than from any agent's account of itself. `states` is
+    from the loop rather than from any agent's account of itself. `states` is
     what those agents actually saved, read back through `read_state` — that is
     where an answer composed by another agent lives, and without it a Q&A turn
     could only be reported as "found 3 notes".

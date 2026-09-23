@@ -15,7 +15,7 @@ class UserContext(TypedDict, total=False):
     agent reading a key it was not given falls back rather than failing.
 
     Every key is optional to the type checker (`total=False`), so `user_id` is
-    enforced at runtime instead: the broker subscripts it, and a context without
+    enforced at runtime instead: the loop subscripts it, and a context without
     one raises rather than writing a row for nobody.
     """
 

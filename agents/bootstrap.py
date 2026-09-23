@@ -1,7 +1,7 @@
 """Composition root: the only module that wires concrete agents together.
 
 One path, and one place an agent is named. Everything above this file — the
-endpoint, the broker, the router — works in terms of the registry; everything
+endpoint, the loop, the router — works in terms of the registry; everything
 below it is an agent that knows nothing of its peers.
 """
 
@@ -13,7 +13,7 @@ from agents.responder import agent as responder_agent
 from agents.router import Router
 from agents.router.agent import select_agent_name
 from agents.runtime import execution_ledger, state_store
-from agents.runtime.broker import Broker
+from agents.runtime.loop import Loop
 from agents.runtime.registry import AgentRegistry
 
 # The farm. Agents register themselves as specs; the registry rejects a
@@ -32,7 +32,7 @@ router = Router(
     select_model=select_agent_name,
     always_ask_model=config.AGENT_ROUTER_ALWAYS)
 
-farm = Broker(
+loop = Loop(
     state_store,
     execution_ledger,
     router,

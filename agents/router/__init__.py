@@ -1,6 +1,6 @@
 """Routing: who runs the next hop.
 
-Three cases, cheapest first (see `devdoc/agent-broker.md`): the responder when
+Three cases, cheapest first (see `devdoc/agent-loop.md`): the responder when
 the turn is finishing, an entry tool when the previous model call already chose
 one, and only otherwise a model picking from the roster.
 
@@ -11,7 +11,7 @@ the OpenAI client out of this import, which merging made moot: importing
 `Router` reaches the gateway either way.
 
 The shapes routing moves around live in `agents/contracts/`, and the loop that
-calls this lives in `agents/runtime/broker.py` — neither is re-exported here,
+calls this lives in `agents/runtime/loop.py` — neither is re-exported here,
 so every type and every collaborator has exactly one import path.
 """
 

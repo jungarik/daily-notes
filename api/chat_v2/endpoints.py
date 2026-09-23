@@ -1,13 +1,13 @@
 """Chat v2 router — POST /api/chat/v2 and /api/chat/v2/confirm.
 
 The same chat tab as `api/chat`, driven by the agent farm instead of the single
-conversation agent: the broker picks who runs each hop, an agent that wants a
+conversation agent: the loop picks who runs each hop, an agent that wants a
 write pauses the turn, and the responder writes the reply. Both versions are
 mounted while v2 is proven; v1 is untouched.
 
 This section owns the thread projection. It loads the thread, hands the data to
-the broker, appends what was said to the transcript, stores the turn handle a
-later confirm needs, and shapes the response. The broker touches no chat table,
+the loop, appends what was said to the transcript, stores the turn handle a
+later confirm needs, and shapes the response. The loop touches no chat table,
 and no agent touches any database the tools do not own.
 """
 
@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends
 
-from agents.bootstrap import farm
+from agents.bootstrap import loop
 from api.chat_v2 import db, helper
 from api.chat_v2.schemas import ChatConfirmRequest, ChatRequest, ChatResponse
 from api.deps import current_user
@@ -39,7 +39,7 @@ def chat(req: ChatRequest, user_id: int = Depends(current_user)) -> ChatResponse
     else:
         thread_id, messages = thread["id"], list(thread["messages"])
 
-    outcome = farm.start(
+    outcome = loop.start(
         req.message,
         helper.build_context(user_id, datetime.now(tz), tz, locale),
         references={"messages": messages})
@@ -72,7 +72,7 @@ def chat_confirm(req: ChatConfirmRequest,
         return helper.nothing_to_confirm(req.thread_id)
 
     messages = list(thread["messages"])
-    outcome = farm.resume(
+    outcome = loop.resume(
         pending,
         {"approve": req.approve, "selection": req.selection},
         helper.find_last_user_message(messages),

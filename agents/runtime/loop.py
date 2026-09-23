@@ -1,13 +1,14 @@
-"""The broker: it drives one turn across the agent farm.
+"""The loop: it drives one turn across the agent farm.
 
 It asks the router who runs next, hands that agent an `AgentRequest`, saves the
 state that comes back, folds the result into the turn history, and repeats until
 an agent needs the user or the responder has written the reply. Agents never name
-each other; the broker never looks inside an agent's state or its resume token.
+each other; the loop never looks inside an agent's state or its resume token.
 
 Which agent runs each hop is `agents/router/`'s decision, not this file's.
-This module owns only the loop around it — pick, run, save, fold in, suspend or
-finish — plus the pure helpers that loop needs: the ledger codec, the action id,
+This module owns only the turn around it — pick, run, save, fold in, suspend
+or finish — plus the pure helpers that turn needs: the ledger codec, the
+action id,
 and the two rules that keep the turn history trustworthy (an entry is derived
 from a result rather than written by an agent, and one agent contributes exactly
 one entry however many times it ran).
@@ -136,7 +137,7 @@ def merge_history(history: tuple[HistoryEntry, ...],
     return (*kept, fresh)
 
 
-class Broker:
+class Loop:
     """Drives one turn across the agent farm.
 
     It runs the loop — pick, run, save, fold in, suspend or finish — and owns no
@@ -282,7 +283,7 @@ class Broker:
                 hops_left=hops_left)
 
             # Only the agent's own call is guarded: a crash inside it is a failed
-            # state in the tree, while a broker bug building the request above is
+            # state in the tree, while a loop bug building the request above is
             # not an agent failure and must not be disguised as one.
             try:
                 result = agent.start(request)

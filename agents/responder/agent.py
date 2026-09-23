@@ -153,7 +153,7 @@ def _build_request(request: AgentRequest, awaiting: str | None) -> dict:
 def _find_awaiting(history: tuple[HistoryEntry, ...]) -> str | None:
     """Which agent is waiting on the user, if the turn is suspending.
 
-    Read from the history rather than handed over by the broker: the responder
+    Read from the history rather than handed over by the loop: the responder
     is an ordinary hop and gets no channel the other agents do not have.
     """
     for entry in history:

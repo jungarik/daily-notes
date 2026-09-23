@@ -5,7 +5,7 @@ injected into — that it never raises, and never returns a name the router did
 not offer — without an API key or a network call.
 
 The other two cases need no model and are driven through the loop in
-`tests/test_broker.py`.
+`tests/test_loop.py`.
 """
 
 import json

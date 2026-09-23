@@ -11,7 +11,7 @@ and the installer has to satisfy two rules at once:
 
 The second rule is why this is a module rather than a copy per file. Importing
 `agents.router` now reaches the gateway (case 3 lives in `router/agent.py`), so
-`tests/test_broker.py` pulls it in early just by importing `Router` — and it is
+`tests/test_loop.py` pulls it in early just by importing `Router` — and it is
 alphabetically third. Every file that touches a model calls `install()` at the
 top, before its own imports, so whichever runs first wins with the stub.
 """

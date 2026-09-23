@@ -1,4 +1,4 @@
-"""The enrich agent's side of the broker contract.
+"""The enrich agent's side of the loop contract.
 
 The planning graph and the tool registry are stubbed, so this exercises the
 adapter — the five write shapes, the select action's user choice, the refs it

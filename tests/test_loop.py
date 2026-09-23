@@ -1,6 +1,6 @@
-"""The broker's routing, history and idempotency contracts.
+"""The loop's routing, history and idempotency contracts.
 
-Drives real `Broker` code against an in-memory store and hand-written agents, so
+Drives real `Loop` code against an in-memory store and hand-written agents, so
 the turn tree, the entry-tool shortcut and the at-most-once guarantee are
 exercised without a database, a model, or LangGraph.
 """
@@ -16,8 +16,8 @@ gateway_stub.install()
 
 from agents.router import Router  # noqa: E402
 from agents.runtime.registry import AgentRegistry
-from agents.runtime.broker import (
-    Broker,
+from agents.runtime.loop import (
+    Loop,
     decode,
     encode,
     find_problems,
@@ -93,14 +93,14 @@ def _agent(name, result, **kwargs):
         **kwargs)
 
 
-def _broker(agents, router=None, router_always=False, **kwargs):
-    """A broker over a fresh registry. `router` is the case-3 model seam."""
+def _loop(agents, router=None, router_always=False, **kwargs):
+    """A loop over a fresh registry. `router` is the case-3 model seam."""
     registry = AgentRegistry()
 
     for agent in agents:
         registry.register(agent)
 
-    return Broker(
+    return Loop(
         FakeStore(),
         FakeLedger(),
         Router(registry, select_model=router, always_ask_model=router_always),
@@ -160,7 +160,7 @@ class HistoryTests(unittest.TestCase):
 
 
 class RouterTests(unittest.TestCase):
-    """The routing policy on its own, with no broker and no turn."""
+    """The routing policy on its own, with no loop and no turn."""
 
     def setUp(self):
         self.registry = AgentRegistry()
@@ -244,12 +244,12 @@ class ResponderHopTests(unittest.TestCase):
     what leaves the router with nothing to return, which ends the turn."""
 
     def test_a_finished_turn_ends_with_the_reply(self):
-        broker, _ = _broker([
+        loop, _ = _loop([
             _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
             _responder("Set your reminder."),
         ])
 
-        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("done", outcome.status)
         self.assertEqual("Set your reminder.", outcome.reply)
@@ -264,9 +264,9 @@ class ResponderHopTests(unittest.TestCase):
         registry.register(AgentSpec(
             name="reminder", description="", start=explode, entry_tools=("set_reminder",)))
         registry.register(_responder("That went wrong."))
-        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
 
-        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("failed", outcome.status, "the reply's own success is not the turn's")
         self.assertEqual("That went wrong.", outcome.reply)
@@ -280,9 +280,9 @@ class ResponderHopTests(unittest.TestCase):
                 "needs_input", ask={"kind": "confirm"}, token="tok"),
             entry_tools=("set_reminder",)))
         registry.register(_responder("Shall I set that for tomorrow?"))
-        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
 
-        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("needs_input", outcome.status)
         self.assertEqual("Shall I set that for tomorrow?", outcome.reply)
@@ -300,13 +300,13 @@ class ResponderHopTests(unittest.TestCase):
             entry_tools=("set_reminder",)))
         registry.register(_agent("enrich", AgentResult("done")))
         registry.register(_responder())
-        broker = Broker(
+        loop = Loop(
             FakeStore(),
             FakeLedger(),
             Router(registry, select_model=lambda candidates, *args: candidates[0]["name"]),
             max_hops=5)
 
-        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual(["reminder", "responder"], [i.agent for i in outcome.history])
 
@@ -315,9 +315,9 @@ class ResponderHopTests(unittest.TestCase):
         registry = AgentRegistry()
         registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
         registry.register(_responder())
-        broker = Broker(store, FakeLedger(), Router(registry), max_hops=5)
+        loop = Loop(store, FakeLedger(), Router(registry), max_hops=5)
 
-        broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual(["reminder", "responder"], [row["agent"] for row in store.rows])
 
@@ -326,27 +326,27 @@ class ResponderHopTests(unittest.TestCase):
         registry = AgentRegistry()
         registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
         registry.register(_responder())
-        broker = Broker(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), Router(registry))
 
-        broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("s1", store.rows[1]["causation_id"], "caused by the hop it reports")
 
     def test_it_is_never_offered_to_the_model_as_a_candidate(self):
         seen = []
-        broker, _ = _broker(
+        loop, _ = _loop(
             [_agent("enrich", AgentResult("done")), _responder()],
             router=lambda candidates, message, history: (
                 seen.append([c["name"] for c in candidates]) or candidates[0]["name"]))
 
-        broker.start("go", CONTEXT)
+        loop.start("go", CONTEXT)
 
         self.assertEqual([["enrich"]], seen, "picked by the rule, not by the model")
 
     def test_it_replies_even_when_no_work_agent_ran(self):
-        broker, _ = _broker([_responder("I could not do anything with that.")])
+        loop, _ = _loop([_responder("I could not do anything with that.")])
 
-        outcome = broker.start("hello", CONTEXT, entry_tool="nonesuch")
+        outcome = loop.start("hello", CONTEXT, entry_tool="nonesuch")
 
         self.assertEqual("I could not do anything with that.", outcome.reply)
         self.assertEqual(["responder"], [i.agent for i in outcome.history])
@@ -360,9 +360,9 @@ class ResponderHopTests(unittest.TestCase):
         registry.register(_agent("enrich", AgentResult(
             "done", produced=(Ref("note", "3"),)), entry_tools=("perform_action",)))
         registry.register(AgentSpec(name="responder", description="", start=explode))
-        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
 
-        outcome = broker.start("save this", CONTEXT, entry_tool="perform_action")
+        outcome = loop.start("save this", CONTEXT, entry_tool="perform_action")
 
         self.assertIsNone(outcome.reply)
         self.assertEqual(
@@ -381,10 +381,10 @@ class ResponderHopTests(unittest.TestCase):
                 "done", produced=(Ref("reminder", "42"),)),
             entry_tools=("set_reminder",)))
         registry.register(_responder("Set for tomorrow."))
-        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
-        paused = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        paused = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        outcome = broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        outcome = loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual("done", outcome.status)
         self.assertEqual("Set for tomorrow.", outcome.reply)
@@ -393,11 +393,11 @@ class ResponderHopTests(unittest.TestCase):
 class RoutingTests(unittest.TestCase):
     def test_an_entry_tool_routes_without_the_router(self):
         called = []
-        broker, _ = _broker(
+        loop, _ = _loop(
             [_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",))],
             router=lambda roster, message, history: called.append(1))
 
-        outcome = broker.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("done", outcome.status)
         self.assertEqual(["reminder"], [item.agent for item in outcome.history])
@@ -411,20 +411,20 @@ class RoutingTests(unittest.TestCase):
 
             return "reminder"
 
-        broker, _ = _broker(
+        loop, _ = _loop(
             [_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",))],
             router=router,
             router_always=True)
 
-        broker.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
+        loop.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual([{"name": "reminder", "description": "reminder agent"}],
                          seen["roster"])
 
     def test_an_unknown_entry_tool_ends_the_turn(self):
-        broker, _ = _broker([_agent("reminder", AgentResult("done"))])
+        loop, _ = _loop([_agent("reminder", AgentResult("done"))])
 
-        outcome = broker.start("hello", CONTEXT, entry_tool="nonesuch")
+        outcome = loop.start("hello", CONTEXT, entry_tool="nonesuch")
 
         self.assertEqual((), outcome.history)
 
@@ -436,11 +436,11 @@ class RoutingTests(unittest.TestCase):
 
             return candidates[0]["name"]
 
-        broker, _ = _broker(
+        loop, _ = _loop(
             [_agent("a", AgentResult("done")), _agent("b", AgentResult("done"))],
             router=router)
 
-        broker.start("go", CONTEXT)
+        loop.start("go", CONTEXT)
 
         self.assertEqual([["a", "b"], ["b"]], seen, "a spent agent is not a candidate")
 
@@ -453,12 +453,12 @@ class RoutingTests(unittest.TestCase):
             description="",
             start=lambda request: AgentResult("done", reply="done"),
             may_read=("*",)))
-        broker, _ = _broker(
+        loop, _ = _loop(
             agents,
             router=lambda candidates, message, history: candidates[0]["name"],
             max_hops=2)
 
-        outcome = broker.start("go", CONTEXT)
+        outcome = loop.start("go", CONTEXT)
 
         self.assertEqual(["a", "responder"], [item.agent for item in outcome.history])
         self.assertEqual("done", outcome.reply)
@@ -466,12 +466,12 @@ class RoutingTests(unittest.TestCase):
     def test_a_farm_with_no_responder_leaves_the_reserved_slot_unused(self):
         """Nothing is forced into the last hop when there is no responder; the
         turn simply ends one hop early, with no reply."""
-        broker, _ = _broker(
+        loop, _ = _loop(
             [_agent(name, AgentResult("done")) for name in "abcde"],
             router=lambda candidates, message, history: candidates[0]["name"],
             max_hops=2)
 
-        outcome = broker.start("go", CONTEXT)
+        outcome = loop.start("go", CONTEXT)
 
         self.assertEqual(["a"], [item.agent for item in outcome.history])
         self.assertIsNone(outcome.reply)
@@ -484,11 +484,11 @@ class TurnTreeTests(unittest.TestCase):
         registry.register(_agent("a", AgentResult("done")))
         registry.register(_agent("b", AgentResult("done")))
         order = iter(["a", "b", None])
-        broker = Broker(store, FakeLedger(),
+        loop = Loop(store, FakeLedger(),
                         Router(registry, select_model=lambda *args: next(order)),
                         max_hops=4)
 
-        broker.start("go", CONTEXT)
+        loop.start("go", CONTEXT)
 
         self.assertEqual([None, "s1"], [row["causation_id"] for row in store.rows])
         self.assertEqual(1, len({row["correlation_id"] for row in store.rows}))
@@ -504,18 +504,18 @@ class TurnTreeTests(unittest.TestCase):
             description="",
             start=lambda request: seen.append(request.context["user_id"]) or AgentResult("done"),
             entry_tools=("set_reminder",)))
-        broker = Broker(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), Router(registry))
 
-        broker.start("go", {**CONTEXT, "user_id": 42}, entry_tool="set_reminder")
+        loop.start("go", {**CONTEXT, "user_id": 42}, entry_tool="set_reminder")
 
         self.assertEqual([42], seen)
         self.assertEqual(42, store.rows[0]["user_id"])
 
     def test_a_context_without_an_owner_fails_loudly(self):
-        broker, _ = _broker([_agent("a", AgentResult("done"), entry_tools=("t",))])
+        loop, _ = _loop([_agent("a", AgentResult("done"), entry_tools=("t",))])
 
         with self.assertRaises(KeyError):
-            broker.start("go", {"locale": "en"}, entry_tool="t")
+            loop.start("go", {"locale": "en"}, entry_tool="t")
 
     def test_references_reach_the_agent_separately_from_context(self):
         seen = {}
@@ -526,9 +526,9 @@ class TurnTreeTests(unittest.TestCase):
             start=lambda request: seen.update(
                 refs=request.references, ctx=request.context) or AgentResult("done"),
             entry_tools=("t",)))
-        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
 
-        broker.start("go", CONTEXT, references={"citations": [{"note_id": 3}]}, entry_tool="t")
+        loop.start("go", CONTEXT, references={"citations": [{"note_id": 3}]}, entry_tool="t")
 
         self.assertEqual([{"note_id": 3}], seen["refs"]["citations"])
         self.assertNotIn("citations", seen["ctx"], "the shared context stays clock-only")
@@ -541,21 +541,21 @@ class TurnTreeTests(unittest.TestCase):
         registry.register(AgentSpec(
             name="reminder", description="", start=explode, entry_tools=("set_reminder",)))
         store = FakeStore()
-        broker = Broker(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), Router(registry))
 
-        outcome = broker.start("go", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("go", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("failed", outcome.status)
         self.assertEqual("boom", outcome.history[-1].error)
         self.assertEqual("failed", store.rows[-1]["status"])
 
     def test_invalid_refs_are_downgraded_to_a_failure(self):
-        broker, _ = _broker([_agent(
+        loop, _ = _loop([_agent(
             "reminder",
             AgentResult("done", produced=({"kind": "note", "id": "1"},)),
             entry_tools=("set_reminder",))])
 
-        outcome = broker.start("go", CONTEXT, entry_tool="set_reminder")
+        outcome = loop.start("go", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("failed", outcome.status)
         self.assertIn("produced[0]", outcome.history[-1].error)
@@ -575,7 +575,7 @@ class ConfirmationTests(unittest.TestCase):
             entry_tools=("set_reminder",)))
         self.store = FakeStore()
         self.ledger = FakeLedger()
-        self.broker = Broker(self.store, self.ledger, Router(self.registry))
+        self.loop = Loop(self.store, self.ledger, Router(self.registry))
 
     @unittest.expectedFailure
     def test_invalid_refs_on_the_resume_path_are_also_downgraded(self):
@@ -598,10 +598,10 @@ class ConfirmationTests(unittest.TestCase):
                 "done", produced=({"kind": "note", "id": "1"},)),
             entry_tools=("set_reminder",)))
         store = FakeStore()
-        broker = Broker(store, FakeLedger(), Router(registry))
-        paused = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        loop = Loop(store, FakeLedger(), Router(registry))
+        paused = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        outcome = broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        outcome = loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual("failed", outcome.status)
         self.assertIn("produced[0]", outcome.history[-1].error)
@@ -610,8 +610,8 @@ class ConfirmationTests(unittest.TestCase):
     def test_the_resume_row_records_the_same_fields_as_a_drive_row(self):
         """Both copies must write the same columns; a field added to one and
         forgotten in the other shows up here."""
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
-        self.broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
+        self.loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual(
             set(self.store.rows[0]),
@@ -621,7 +621,7 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual("reminder", self.store.rows[1]["agent"])
 
     def test_a_pause_returns_pending_the_section_can_store(self):
-        outcome = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        outcome = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("needs_input", outcome.status)
         self.assertEqual("reminder", outcome.pending["agent"])
@@ -629,27 +629,27 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual(outcome.correlation_id, outcome.pending["correlation_id"])
 
     def test_approval_runs_the_write_and_reports_what_it_made(self):
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        outcome = self.broker.resume(paused.pending, {"approve": True}, "remind me", CONTEXT)
+        outcome = self.loop.resume(paused.pending, {"approve": True}, "remind me", CONTEXT)
 
         self.assertEqual("done", outcome.status)
         self.assertEqual((Ref("reminder", "42"),), outcome.history[-1].produced)
         self.assertEqual(1, len(outcome.history), "a paused agent keeps one history entry")
 
     def test_a_replayed_confirm_does_not_write_twice(self):
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        first = self.broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
-        second = self.broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        first = self.loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        second = self.loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual(1, self.ledger.calls)
         self.assertEqual(first.history[-1].produced, second.history[-1].produced)
 
     def test_a_decline_runs_nothing(self):
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        outcome = self.broker.resume(paused.pending, {"approve": False}, "x", CONTEXT)
+        outcome = self.loop.resume(paused.pending, {"approve": False}, "x", CONTEXT)
 
         self.assertEqual(0, self.ledger.calls)
         self.assertEqual("done", outcome.status)
@@ -658,22 +658,22 @@ class ConfirmationTests(unittest.TestCase):
     def test_the_history_entry_points_at_the_state_it_summarises(self):
         """Without `state_id` an agent is told a hop happened but has no handle
         to pass to `read_state`."""
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         entry = paused.history[-1]
 
         self.assertEqual(self.store.rows[-1]["state_id"], entry.state_id)
 
     def test_the_entry_follows_the_latest_row_after_a_confirm(self):
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        outcome = self.broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        outcome = self.loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual("s2", outcome.history[-1].state_id, "not the paused row")
 
     def test_both_hops_stay_in_the_tree(self):
-        paused = self.broker.start("remind me", CONTEXT, entry_tool="set_reminder")
-        self.broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+        paused = self.loop.start("remind me", CONTEXT, entry_tool="set_reminder")
+        self.loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
 
         self.assertEqual(["needs_input", "done"], [row["status"] for row in self.store.rows])
         self.assertEqual("s1", self.store.rows[1]["causation_id"])

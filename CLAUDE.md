@@ -90,7 +90,7 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
 - **Name nodes for their role, not their implementation.** The loop primitives
   are `reason` (model step), `act` (run a tool), `plan` (one-shot planning),
   `approve` (human confirmation + execution). Routing *between* agents is not a
-  node — it is the broker's, and no graph has an edge to another agent.
+  node — it is the loop's, and no graph has an edge to another agent.
   Multi-step phases live in subpackages named for their goal — `classify/`,
   `schedule/`, `write/`. Graph node ids, module names, and trace labels match.
 - **Nodes are pure state transitions.** `run` takes state and returns a partial
@@ -112,7 +112,7 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
 - **Extend by data, not by branching.** Prefer a registry/map over a new `if`:
   a new agent is an `AgentSpec` plus one line in `agents/bootstrap.py`; a new
   tool is a file in `tools/<agent>/` registered in that package. Never edit the
-  broker loop or an agent's graph to add a capability.
+  turn loop or an agent's graph to add a capability.
 - **Deterministic work belongs in its own node, not inside a write node.**
   Retrieval, classification, and time resolution are separate, testable steps
   (`classify_gather`, `schedule_resolve`, `link_context`); the write nodes stay
@@ -327,11 +327,11 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
   (`POST /api/chat/v2`, `/api/chat/v2/confirm`). It owns the caller's clock/locale
   *and* the `chat_threads` projection (its own `db`): it hands the thread to
-  `agents.bootstrap.farm`, and because the broker returns no message list, this
+  `agents.bootstrap.farm`, and because the loop returns no message list, this
   section appends the user's message and the responder's reply itself, passes
   prior turns down as `references={"messages": …}`, and stores
   `TurnOutcome.pending` as the handle a later confirm resumes. No `citations` on
-  the response yet (see `devdoc/agent-broker.md`). The name keeps the `_v2`
+  the response yet (see `devdoc/agent-loop.md`). The name keeps the `_v2`
   suffix until the URL is collapsed back to `/api/chat`.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
   `/api/telegram_bot` (capture text/voice/media, enrich, atomize, polish, delete,
@@ -449,15 +449,15 @@ the focus/ego state.
 
 ## Agentic chat — the agent farm
 
-The chat tab is served by a **farm of peer agents behind a broker**
-(client-agnostic, in `agents/`) — see `devdoc/agent-broker.md` for the design and
+The chat tab is served by a **farm of peer agents behind a loop**
+(client-agnostic, in `agents/`) — see `devdoc/agent-loop.md` for the design and
 `devdoc/agents-architecture.md` for the map. No agent knows another exists.
 
-**The turn.** `api/chat_v2` calls `farm.start(message, context, references)`.
-The broker asks the router who runs next, hands that agent an `AgentRequest`,
+**The turn.** `api/chat_v2` calls `loop.start(message, context, references)`.
+The turn loop asks the router who runs next, hands that agent an `AgentRequest`,
 saves the `AgentResult` as a row in `agent_states` (the turn tree, migration
 0022), folds it into the turn history, and repeats until an agent needs the user
-or the reply has been written. The loop is `agents/runtime/broker.py`; who runs
+or the reply has been written. The loop is `agents/runtime/loop.py`; who runs
 next is `agents/router/`. They meet only in `bootstrap.py` and never import
 each other. `AGENT_MAX_HOPS` bounds the turn and counts the
 reply.
@@ -487,7 +487,7 @@ once — keyed by its own fingerprint in `action_executions`, not by the hop —
 a retried confirm replays the stored outcome. A decline runs nothing.
 
 **Thread state** lives in `chat_threads` (`api/chat_v2/db.py`, migration 0019)
-and belongs to the section, not to any agent: the broker returns no message
+and belongs to the section, not to any agent: the loop returns no message
 list, so `api/chat_v2` appends the user's message and the responder's reply and
 passes prior turns down as `references={"messages": …}`. `POST /api/chat/v2`
 returns `{status:"answer", reply}` or `{status:"confirm", action}`.
@@ -498,7 +498,7 @@ delivery, and does not use the farm.
 **Contracts.** Every shape the farm exchanges lives in `agents/contracts/`, one
 type per module (`agent_spec.py`, `agent_request.py`, `ref.py`, …), imported
 from the package rather than the leaf: `from agents.contracts import AgentSpec`.
-The package imports nothing — not an agent, not a tool, not the broker, not
+The package imports nothing — not an agent, not a tool, not the loop, not
 `db` or `config` — and that is load-bearing: it is why four agents plus the
 loop, the router and the store can agree on shapes without importing each
 other. `tests/test_agent_structure.py` enforces both the no-imports rule and
@@ -520,7 +520,7 @@ it in its package — never by editing the loop.
 `apply_tool_result`), and the finder reports each cited note as a `Ref`. The v2
 response does **not** yet carry citations — `TurnOutcome` has no agent state, so
 the chips are unavailable to the endpoint; inline `[[note:ID]]` markers still
-render, since the client fetches those by id. See `devdoc/agent-broker.md`.
+render, since the client fetches those by id. See `devdoc/agent-loop.md`.
 
 ## Design docs
 
@@ -529,7 +529,7 @@ been agreed but not yet built. Before implementing a feature, check `devdoc/` fo
 an existing spec and follow it; when a spec is fully implemented, update it, and
 when the code it describes is deleted, delete it.
 
-- `devdoc/agent-broker.md` — **the architecture doc for the farm**: contracts,
+- `devdoc/agent-loop.md` — **the architecture doc for the farm**: contracts,
   the three routing cases, the turn tree, `read_state`, idempotency, and the
   phases it was built in. Start here.
 - `devdoc/agents-architecture.md` — the map: which folder is what, and the rules

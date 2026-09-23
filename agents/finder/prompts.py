@@ -2,7 +2,7 @@
 
 The conversation controller's prompt ended by telling the model to hand writes
 off with `perform_action` / `set_reminder`. Finder has no such tools: in the
-farm the broker's router picks the agent that owns a write, so finder is told
+farm the router picks the agent that owns a write, so finder is told
 what it can do and nothing about who does the rest.
 """
 

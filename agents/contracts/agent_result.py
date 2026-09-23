@@ -16,7 +16,7 @@ class AgentResult:
     `needs_input`.
 
     `reply` is the turn's user-facing text. In practice only the responder sets
-    it, but it is a declared field rather than a `state` key so the broker can
+    it, but it is a declared field rather than a `state` key so the loop can
     carry it out without looking inside an agent's state or knowing which agent
     the responder is.
     """

@@ -1,4 +1,4 @@
-"""The agent roster, and the two lookups the broker routes by.
+"""The agent roster, and the two lookups the loop routes by.
 
 Registration is where a conflicting farm is rejected: a duplicate agent name or a
 tool name claimed by two agents raises at startup, not on the turn that happens

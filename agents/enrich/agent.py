@@ -1,10 +1,10 @@
 """The enrich agent: note writes, end to end.
 
-One module, because there is one job with two halves the broker calls in turn:
+One module, because there is one job with two halves the loop calls in turn:
 `start` plans the single write the user's message implies and pauses for
 confirmation, `resume` performs it once approved.
 
-Two things differ from `reminder/agent.py`, and both are the broker contract
+Two things differ from `reminder/agent.py`, and both are the loop contract
 earning its keep rather than bending:
 
   - enrich owns five write tools whose results have five different shapes, so
@@ -76,7 +76,7 @@ def _build_tool_context(user_id: int, now, tz, locale: str) -> dict:
 def _read_note_ids(references: dict) -> list[int]:
     """The note ids the turn referenced, as ints.
 
-    They arrive from a client through the broker, so an unparseable one is
+    They arrive from a client through the loop, so an unparseable one is
     dropped rather than raising — losing one reference is better than losing the
     write.
     """
@@ -92,7 +92,7 @@ def _read_note_ids(references: dict) -> list[int]:
 
 
 def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequest:
-    """The planning contract, from the envelope the broker handed over.
+    """The planning contract, from the envelope the loop handed over.
 
     The material the caller had already resolved arrives in `references`; the
     clock and locale arrive in `context`.
@@ -222,7 +222,7 @@ def start(request: AgentRequest) -> AgentResult:
 def resume(token: str, decision: dict, context: UserContext) -> AgentResult:
     """Perform the approved write and report what it made.
 
-    The broker calls this only on approval and only once per action, so there is
+    The loop calls this only on approval and only once per action, so there is
     no decline branch and no idempotency check here.
     """
     action = _with_selection(json.loads(token), decision)

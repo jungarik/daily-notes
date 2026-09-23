@@ -1,20 +1,20 @@
-# Agent broker
+# The agent loop
 
 **Status:** built and live. The chat tab runs on the farm
-(`api/chat_v2` → `agents/bootstrap.farm`), with `finder`, `enrich`, `reminder`
+(`api/chat_v2` → `agents/bootstrap.loop`), with `finder`, `enrich`, `reminder`
 and `responder` registered. The handoff path this replaced — `conversation`,
 `handoff_dispatch`, `specialist_registry`, `api/chat` — has been deleted.
 
 ## Goal
 
-A farm of peer agents. The broker is the only thing that routes: it picks the
+A farm of peer agents. The turn loop is the only thing that routes: it picks the
 next agent, hands it a message, saves what it produced, and repeats until the
 responder writes the user's reply. Agents never name each other. Adding one is a
 spec entry plus its own folder.
 
 ```
                  ┌─────────────────────────────┐
-POST /api/chat/v2│           broker            │
+POST /api/chat/v2│          turn loop          │
        ───────▶  │  route → run → save → route │
                  └─────────────────────────────┘
                     │        │        │       │
@@ -56,13 +56,13 @@ class AgentResult:
     reply: str | None         # in practice only the responder sets it
 ```
 
-`reply` is a declared field rather than a `state` key so the broker can carry it
+`reply` is a declared field rather than a `state` key so the loop can carry it
 out to `TurnOutcome.reply` without looking inside an agent's state or knowing
 which agent the responder is. A hop that sets it ends the turn.
 
 An agent that never pauses simply never returns `needs_input`. A LangGraph agent
 puts its `thread_id` in `token`; a plain-Python agent puts whatever it likes.
-The broker and the endpoint never look inside it.
+The loop and the endpoint never look inside it.
 
 ## The request
 
@@ -91,7 +91,7 @@ class AgentRequest:
 
 Three things this shape is deliberate about:
 
-- **The owner lives in `context` and nowhere else.** `broker.start` does not take
+- **The owner lives in `context` and nowhere else.** `loop.start` does not take
   a `user_id` beside it. Two copies of the same fact drift, and the failure mode
   is ugly: the store writes a row for one user while an agent writes a note for
   another.
@@ -100,7 +100,7 @@ Three things this shape is deliberate about:
   an agent can read a key the contract has not heard of. A closed dataclass would
   mean editing a shared contract to add a per-agent field — that would limit the
   farm, which is the thing this design exists to avoid. `user_id` is therefore
-  enforced at runtime rather than by the type: the broker subscripts it, so a
+  enforced at runtime rather than by the type: the loop subscripts it, so a
   context without one raises instead of writing a row for nobody
   (`test_a_context_without_an_owner_fails_loudly`).
 - **`references` is separate from `context`.** The clock belongs to every turn;
@@ -119,7 +119,7 @@ can be written vaguely:
 ```python
 @dataclass(frozen=True)
 class Ref:
-    kind: str                 # "note", "reminder", "link" — opaque to the broker
+    kind: str                 # "note", "reminder", "link" — opaque to the loop
     id: str
 
 @dataclass(frozen=True)
@@ -138,21 +138,21 @@ to ask what it did.
 
 Rules that keep it reliable:
 
-- **The broker writes it, never the agent.** The entry is derived from the
-  `AgentResult` the broker already holds. An agent cannot describe itself well or
+- **The loop writes it, never the agent.** The entry is derived from the
+  `AgentResult` the loop already holds. An agent cannot describe itself well or
   badly, because it does not describe itself at all.
-- **`kind` is opaque.** The broker checks that it is a non-empty string with an
+- **`kind` is opaque.** The loop checks that it is a non-empty string with an
   id beside it and never looks at the value. Agents coin their own kinds; there
   is no shared vocabulary module, consistent with the project having no shared
   domain layer.
 - **A malformed result fails the hop.** If `produced` does not validate, the
-  broker writes a `failed` state and routes to the responder — the same path as
+  loop writes a `failed` state and routes to the responder — the same path as
   any other agent failure. It is not silently replaced with an empty entry,
   because a history that lies is worse than a turn that stops.
 - **An *empty* `produced` is valid.** An agent that searched and found nothing
-  genuinely produced nothing, and the broker cannot tell that apart from an agent
+  genuinely produced nothing, and the loop cannot tell that apart from an agent
   that forgot to report. So the guard is a per-agent test — "enrich, given this
-  input, reports the note it wrote" — not a broker rule.
+  input, reports the note it wrote" — not a loop rule.
 - **One agent, one entry.** A `needs_input` entry is *replaced* by the outcome
   when the agent resumes. `agent_states` keeps both rows — that is the audit
   record — but the history shows the outcome, so the router's "do not re-route to
@@ -160,7 +160,7 @@ Rules that keep it reliable:
 
 The case-3 router therefore sees the roster, the user's original message, and
 this list. The message carries the intent; the history says only what is already
-done. The broker does **not** expand ids into titles — that would cost a read per
+done. The loop does **not** expand ids into titles — that would cost a read per
 hop to improve a prompt that is already sufficient.
 
 The responder is unaffected by any of this: it has `may_read=["*"]` and reads
@@ -192,7 +192,7 @@ No retention job yet — we keep everything and revisit when the table bites.
 
 ### Reading another agent's state
 
-Not a broker API that agents import — a **tool**, scoped by the registry:
+Not a loop API that agents import — a **tool**, scoped by the registry:
 
 ```python
 AGENTS = {
@@ -230,23 +230,23 @@ hop is skipped with a warning.
 
 ## Routing
 
-The broker owns routing, but **it does not spend a model call on a decision that
+The loop owns routing, but **it does not spend a model call on a decision that
 has already been made.** Three cases, in order:
 
 1. **The responder hop is unconditional.** It always runs last, so there is
    nothing to decide. No router call, by construction.
 2. **A tool name resolves it.** When the previous model call already chose —
-   `set_reminder`, `perform_action` — the tool name *is* the route. The broker
+   `set_reminder`, `perform_action` — the tool name *is* the route. The loop
    looks it up in `entry_tools` across the registry. No router call. This is the
    common path and covers every single-agent turn.
 3. **Otherwise, ask.** When an agent finishes and more than one agent could
-   plausibly follow, the broker makes one model call: the roster (`name` +
+   plausibly follow, the loop makes one model call: the roster (`name` +
    `description`) plus the history of the turn so far — so it will not re-route to
    an agent that already ran — returning the next agent's name.
 
 So a typical turn spends **zero** router calls and a genuinely multi-agent turn
 spends one. `entry_tools` lives on the spec, meaning the agent declares what
-routes to it and the broker owns the lookup — this is `MODE_AGENTS` inverted, not
+routes to it and the loop owns the lookup — this is `MODE_AGENTS` inverted, not
 `MODE_AGENTS` restored. No agent imports another, and adding an agent is still
 one registry entry.
 
@@ -261,7 +261,7 @@ never takes is the path every local turn takes, which is the cheapest place to
 find out it broke.
 
 **Where it lives.** `agents/router/agent.py` holds `Router.select_agent` and
-nothing else; the broker owns the loop and is handed a router. A new routing rule
+nothing else; the loop owns the loop and is handed a router. A new routing rule
 changes one file, and a change to how a hop is saved or suspended never touches
 routing. `Router(registry, select_model=None, always_ask_model=False)` —
 `select_model` is the case-3 seam, filled by
@@ -274,10 +274,10 @@ routing nowhere, and the user gets a reply either way.
 It is not re-exported from `agents/router/__init__.py` — the package's surface
 is `Router` — but the old import-weight reason for keeping it in a separate
 module is gone: importing `Router` now reaches the OpenAI client either way.
-That is why `tests/test_broker.py`, the suite's first importer of `Router`,
+That is why `tests/test_loop.py`, the suite's first importer of `Router`,
 installs the shared gateway stub before it (`tests/gateway_stub.py`).
 
-The router is also the farm's only holder of the registry: `Broker` takes
+The router is also the farm's only holder of the registry: `Loop` takes
 `(store, ledger, router)` and looks nothing up itself, resolving a suspended
 turn's agent through `router.get_agent(name)`, which raises on an unknown name.
 The composition root keeps its own reference for things that are not routing.
@@ -291,7 +291,7 @@ turn** — including failed ones, so the user gets a sensible message rather tha
 raw error. It may read any state (`may_read=["*"]`).
 
 **It is an ordinary hop, not a step outside the loop.** The router picks it when
-the turn is finishing; the broker says so with one flag, `force_responder`, set
+the turn is finishing; the loop says so with one flag, `force_responder`, set
 when the budget's last slot is reached or a hop returned `needs_input` or
 `failed`. The router never inspects a status itself. A hop that returns a `reply`
 ends the loop — which is also why a confirm gets a second reply even though the
@@ -305,25 +305,25 @@ Work agents therefore never write user-facing prose. That is the one rule that
 keeps voice and localisation in a single place.
 
 **It runs on a suspend too.** A `needs_input` turn does not end, but it does
-return to the user, so the responder runs before the broker hands back — turning
+return to the user, so the responder runs before the loop hands back — turning
 the agent's raw `ask` into the confirmation text. Otherwise "all prose in one
 place" would be false for exactly the screen where wording matters most.
 
 **Prose is the only thing it owns.** Citations and the confirm `action` payload
-are passed through by the broker from `produced`, not assembled by the responder.
+are passed through by the loop from `produced`, not assembled by the responder.
 So a responder failure costs wording and nothing else — the note is still cited,
 the action is still confirmable.
 
 **It has a fallback that cannot fail.** When the responder's model call errors,
-the broker templates the history instead: *"Saved 1 note, set 1 reminder."* Terse,
+the loop templates the history instead: *"Saved 1 note, set 1 reminder."* Terse,
 never wrong, and `produced` is already the right shape to render. The reply
 degrades in quality, never in truth — the user is never left unsure whether their
 note was saved.
 
 ## Suspend and resume
 
-Synchronous: `POST /api/chat` blocks while the broker drives hops. When an agent
-returns `needs_input`, the broker stops and returns it; the endpoint stores the
+Synchronous: `POST /api/chat` blocks while the turn loop drives hops. When an agent
+returns `needs_input`, the loop stops and returns it; the endpoint stores the
 turn id in the column it already owns:
 
 ```python
@@ -335,7 +335,7 @@ pending = {
 }
 ```
 
-`POST /api/chat/confirm` calls `broker.resume(correlation_id, decision)`, which
+`POST /api/chat/confirm` calls `loop.resume(correlation_id, decision)`, which
 reloads the tree from `agent_states`, calls that agent's `resume(token, ...)`,
 and carries on to the responder.
 
@@ -345,7 +345,7 @@ purposes.
 
 ## Idempotency
 
-The broker owns at-most-once execution of confirmed writes, absorbing
+The loop owns at-most-once execution of confirmed writes, absorbing
 `execution_ledger`.
 
 **Constraint that must hold:** the key stays derived from the *action*, not from
@@ -356,7 +356,7 @@ only the caller moves.
 
 ## Failure
 
-An agent failure is a `failed` state in the tree. The broker does not retry; it
+An agent failure is a `failed` state in the tree. The loop does not retry; it
 routes to the responder, which explains. The turn's HTTP response is still 200
 with a reply — an error is a thing the user is told, not a stack trace.
 
@@ -364,11 +364,11 @@ with a reply — an error is a thing the user is told, not a stack trace.
 
 | | | reversible? |
 |---|---|---|
-| **1** ✅ | `AgentSpec`, `AgentResult`, `AgentMessage`, broker skeleton, `agent_states` + migration 0022. Nothing wired. | yes |
+| **1** ✅ | `AgentSpec`, `AgentResult`, `AgentMessage`, loop skeleton, `agent_states` + migration 0022. Nothing wired. | yes |
 | **2** ✅ | Port `reminder` (smallest). Old handoff path still serves chat. | yes |
 | **3** ✅ | Port `enrich`. | yes |
-| **4** ✅ | Add `responder`. Broker drives reminder + enrich end to end behind a flag. | yes |
-| **5** ✅ | `conversation` becomes a peer (as `finder`); endpoint calls the broker; the old handoff path deleted. | no |
+| **4** ✅ | Add `responder`. Loop drives reminder + enrich end to end behind a flag. | yes |
+| **5** ✅ | `conversation` becomes a peer (as `finder`); endpoint calls the loop; the old handoff path deleted. | no |
 
 Phase 5 was taken in pieces so each was reviewable on its own: the model router,
 `read_state`, `finder`, the endpoint, then the cleanup. The cleanup removed
@@ -390,9 +390,9 @@ alongside v1 so the two could be swapped by a URL; v1 is now gone, and the
 `_v2` in the folder and route names is the last trace of that — collapse it
 back to `/api/chat` whenever it stops being useful as a marker.
 
-Three things the broker does not do, which this section therefore does:
+Three things the loop does not do, which this section therefore does:
 
-- **it keeps the transcript.** The broker returns no message list — the finder
+- **it keeps the transcript.** The loop returns no message list — the finder
   builds its own scratch messages and keeps them — so the section appends the
   user's message and the responder's reply. The thread becomes a clean record of
   what was said, with no tool calls in it, and prior turns reach the finder as
@@ -412,8 +412,8 @@ Three things the broker does not do, which this section therefore does:
 the finder's cited notes are not reachable from the endpoint yet — v1 still
 serves chips, and inline `[[note:ID]]` markers work on both, since the client
 fetches those by id. Closing that gap means either reading the finder hop's row
-through `read_state` (no broker change) or putting each hop's state on the
-outcome (a broker change), and it is still open.
+through `read_state` (no loop change) or putting each hop's state on the
+outcome (a loop change), and it is still open.
 
 ### The finder
 
@@ -437,7 +437,7 @@ What is left is `reason` + `act` over `tools/finder/` — the old
 `tools/conversation/`, renamed when the controller went, minus the two handoff
 tool specs.
 
-Phase 4 is the checkpoint: if the broker cannot drive a two-hop turn (enrich
+Phase 4 is the checkpoint: if the loop cannot drive a two-hop turn (enrich
 writes a note, reminder schedules it, responder explains both) without an agent
 knowing about another, stop before Phase 5.
 
@@ -452,7 +452,7 @@ knowing about another, stop before Phase 5.
   That is the point, but it means a routing bug that only appears in the
   `entry_tools` fast path will not show up locally. Case 1–2 need their own
   (cheap, model-free) assertions.
-- **Two idempotency scopes now coexist**: the broker's `action_id` ledger for
+- **Two idempotency scopes now coexist**: the loop's `action_id` ledger for
   confirmed writes, and the checkpointer for graph resume. A turn that fails
   between them — write committed, checkpoint not advanced — is the case worth
   testing hardest before Phase 5.
