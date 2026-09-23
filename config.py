@@ -165,6 +165,18 @@ AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
+# Max agent hops the broker will drive in one turn (see devdoc/agent-broker.md).
+
+AGENT_MAX_HOPS = int(os.environ.get("AGENT_MAX_HOPS", "4"))
+
+# Force every broker hop through the case-3 model router, skipping the entry-tool
+
+# shortcut. On in dev and in the eval harness so the path production rarely takes
+
+# is the path a local turn always takes.
+
+AGENT_ROUTER_ALWAYS = os.environ.get("AGENT_ROUTER_ALWAYS", "0") == "1"
+
 # Shared OpenAI chat-completion gateway retry budget for agent nodes.
 
 OPENAI_GATEWAY_MAX_ATTEMPTS = int(os.environ.get("OPENAI_GATEWAY_MAX_ATTEMPTS", "2"))

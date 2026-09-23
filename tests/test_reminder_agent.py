@@ -1,123 +1,203 @@
-"""Reminder capability graph and domain integration boundaries."""
+"""The reminder agent's side of the broker contract.
 
-import json
+The planning graph and the tool registry are stubbed, so this exercises the
+adapter — clock restoration, the pause, the refs it reports — without LangGraph,
+a model, or a database.
+"""
+
+import sys
+import types
 import unittest
-from datetime import datetime, timezone
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
-
-from agents.reminder import handoff_api as reminder_service
-from agents.reminder.nodes import resolve as reminder_resolve
-from tools.reminder import create_reminder
-from agents.runtime.events import append, failed
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
-class ReminderAgentTests(unittest.TestCase):
-    def test_hint_gate_skips_model_for_ordinary_note(self):
-        now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
-        with patch.object(reminder_resolve.model_gateway, "chat_completion") as client:
-            result = reminder_resolve.run({
-                "contract": {"instruction": "A plain project thought"},
-                "now": now,
-                "events": [],
-            })
+def _install_stubs():
+    """Stand in for the modules `agents.reminder.agent` imports at module level."""
+    planned = {"action": None}
+    executed = {"result": None, "calls": []}
 
-        self.assertEqual({"is_reminder": False, "remind_at": None},
-                         result["extracted_time"])
-        client.assert_not_called()
+    handoff = types.ModuleType("agents.reminder.handoff_api")
+    handoff.plan_action = lambda user_id, request, now, tz, locale: planned["action"]
+    handoff.execute_action = lambda user_id, action, now, tz, locale: ""
 
-    def test_reminder_model_node_extracts_time(self):
-        now = datetime(2026, 8, 31, 10, 0, tzinfo=timezone.utc)
-        payload = {"is_reminder": True,
-                   "remind_at": "2026-09-01T09:00:00+00:00"}
-        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
-            create=Mock(return_value=SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(
-                    content=json.dumps(payload)))])))))
+    execute = types.ModuleType("agents.runtime.execute_tool")
 
-        with patch.object(reminder_resolve.model_gateway, "chat_completion",
-                          side_effect=client.chat.completions.create):
-            result = reminder_resolve.run({
-                "contract": {"instruction": "Call tomorrow"},
-                "now": now,
-                "events": [],
-            })
+    def execute_tool(registry, context, name, args, owner="tool"):
+        executed["calls"].append({"context": context, "name": name, "args": args})
 
-        self.assertEqual(payload, result["extracted_time"])
-        self.assertEqual(
-            [{"kind": "node", "node": "resolve", "status": "ok"}],
-            result["events"])
+        return executed["result"]
 
-    def test_referenced_note_reminder_attaches_without_creating_duplicate_note(self):
-        action = {"name": "create_reminder", "args": {
-            "text": "Follow up on roadmap", "note_id": 20,
-            "remind_at": "2026-09-01T09:00:00+00:00",
-        }}
-        with patch.object(create_reminder.db, "save_note") as save_note, \
-                patch.object(create_reminder.db, "attach_reminder",
-                             return_value=3) as attach:
-            result = reminder_service.execute_action(
-                7, action, datetime.now(timezone.utc), timezone.utc, "en")
+    execute.execute_tool = execute_tool
+    execute.execute_allowed_tool = lambda *args, **kwargs: None
 
-        self.assertIn('"note_id": 20', result)
-        attach.assert_called_once_with(
-            7, 20, datetime.fromisoformat("2026-09-01T09:00:00+00:00"))
-        save_note.assert_not_called()
+    # The tool package reaches psycopg at import time; the agent only needs the
+    # registry it exposes.
+    tools = types.ModuleType("tools.reminder")
+    tools.TOOLS = {"create_reminder": lambda context, args: None}
+    tools.CONTEXT_TOOLS = {"get_note_context"}
+    tools.TOOL_SPECS = []
+    tools.WRITE_TOOLS = {"create_reminder"}
 
-    def test_standalone_reminder_creates_note_before_attaching_reminder(self):
-        action = {"name": "create_reminder", "args": {
-            "text": "Call mom tomorrow",
-            "remind_at": "2026-09-01T09:00:00+00:00",
-        }}
-        with patch.object(create_reminder.db, "save_note", return_value=30) as save_note, \
-                patch.object(create_reminder.db, "save_chunks") as save_chunks, \
-                patch.object(create_reminder.embedings, "build_chunks", return_value=[]) as chunks, \
-                patch.object(create_reminder.db, "attach_reminder", return_value=4) as attach:
-            result = reminder_service.execute_action(
-                7, action, datetime.now(timezone.utc), timezone.utc, "en")
+    sys.modules["agents.reminder.handoff_api"] = handoff
+    sys.modules["agents.runtime.execute_tool"] = execute
+    sys.modules["tools.reminder"] = tools
 
-        self.assertIn('"note_id": 30', result)
-        save_note.assert_called_once_with(7, "Call mom tomorrow")
-        chunks.assert_called_once_with("Call mom tomorrow")
-        save_chunks.assert_called_once_with(30, [])
-        attach.assert_called_once_with(
-            7, 30, datetime.fromisoformat("2026-09-01T09:00:00+00:00"))
+    return planned, executed
+
+
+PLANNED, EXECUTED = _install_stubs()
+
+from agents.broker.contracts import AgentRequest, Ref  # noqa: E402
+from agents.contracts import ToolResult  # noqa: E402
+from agents.reminder import agent  # noqa: E402
+
+CONTEXT = {
+    "user_id": 7,
+    "now": "2026-09-18T09:00:00",
+    "tz": "Europe/Kyiv",
+    "locale": "uk",
+}
+
+ACTION = {
+    "name": "create_reminder",
+    "args": {"text": "call the dentist", "remind_at": "2026-09-19T10:00:00"},
+    "summary": "Remind you to call the dentist tomorrow at 10:00",
+}
+
+
+def _request(message="remind me to call the dentist tomorrow", **references):
+    return AgentRequest(
+        request_id="r1",
+        correlation_id="c1",
+        causation_id=None,
+        agent="reminder",
+        message=message,
+        context=CONTEXT,
+        references=dict(references),
+        hops_left=4)
+
+
+class StartTests(unittest.TestCase):
+    def tearDown(self):
+        PLANNED["action"] = None
+
+    def test_a_planned_reminder_pauses_for_confirmation(self):
+        PLANNED["action"] = ACTION
+
+        result = agent.start(_request())
+
+        self.assertEqual("needs_input", result.status)
+        self.assertEqual(ACTION, result.ask["action"])
+        self.assertEqual(ACTION["summary"], result.ask["summary"])
+        self.assertEqual((), result.produced, "planning makes nothing")
+
+    def test_the_token_carries_what_resume_needs(self):
+        PLANNED["action"] = ACTION
+
+        result = agent.start(_request())
+
+        self.assertIsNotNone(result.token)
+        self.assertEqual(ACTION, __import__("json").loads(result.token))
+
+    def test_references_feed_the_plan_and_the_clock_comes_from_context(self):
+        PLANNED["action"] = ACTION
+        seen = {}
+        sys.modules["agents.reminder.handoff_api"].plan_action = (
+            lambda user_id, request, now, tz, locale: seen.update(
+                user_id=user_id, request=request) or ACTION)
+
+        agent.start(_request(referenced_note_ids=[4, 9], conversation_summary="about teeth"))
+
+        self.assertEqual(7, seen["user_id"], "the owner comes from context")
+        self.assertEqual([4, 9], seen["request"]["referenced_note_ids"])
+        self.assertEqual("about teeth", seen["request"]["conversation_summary"])
+        self.assertEqual("Europe/Kyiv", seen["request"]["timezone"])
+
+    def test_no_resolvable_time_finishes_without_asking(self):
+        PLANNED["action"] = None
+
+        result = agent.start(_request("something vague"))
+
+        self.assertEqual("done", result.status)
+        self.assertIsNone(result.ask)
+        self.assertEqual((), result.produced)
+
+
+class ResumeTests(unittest.TestCase):
+    def setUp(self):
+        EXECUTED["calls"].clear()
+        self.token = __import__("json").dumps(ACTION)
+
+    def test_a_successful_write_reports_both_refs(self):
+        EXECUTED["result"] = ToolResult({
+            "note_id": 12, "reminder_id": 99, "remind_at": "2026-09-19T10:00:00"})
+
+        result = agent.resume(self.token, {"approve": True}, CONTEXT)
+
+        self.assertEqual("done", result.status)
+        self.assertEqual((Ref("reminder", "99"), Ref("note", "12")), result.produced)
+
+    def test_the_clock_is_restored_from_the_envelope(self):
+        EXECUTED["result"] = ToolResult({"reminder_id": 1})
+
+        agent.resume(self.token, {"approve": True}, CONTEXT)
+
+        context = EXECUTED["calls"][0]["context"]
+        self.assertEqual("Europe/Kyiv", context["tz"])
+        self.assertEqual("uk", context["locale"])
+        self.assertEqual("2026-09-18T09:00:00", context["now"])
+
+    def test_a_tool_error_is_a_failure_not_an_empty_success(self):
+        EXECUTED["result"] = ToolResult({"error": "Error: referenced note not found."})
+
+        result = agent.resume(self.token, {"approve": True}, CONTEXT)
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual((), result.produced)
+
+    def test_a_degraded_string_result_is_also_a_failure(self):
+        EXECUTED["result"] = "Error running create_reminder: boom"
+
+        result = agent.resume(self.token, {"approve": True}, CONTEXT)
+
+        self.assertEqual("failed", result.status)
+        self.assertIn("boom", result.error)
+
+
+class ClockTests(unittest.TestCase):
+    def test_a_missing_timezone_stays_none(self):
+        now, tz, locale = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": None})
+
+        self.assertEqual(datetime(2026, 9, 18, 9, 0), now)
+        self.assertIsNone(tz)
+        self.assertEqual("en", locale)
+
+    def test_a_named_zone_is_restored_as_a_zone(self):
+        _, tz, _ = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": "Europe/Kyiv"})
+
+        self.assertEqual(ZoneInfo("Europe/Kyiv"), tz)
+
+    def test_an_empty_timezone_string_stays_none(self):
+        _, tz, _ = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": ""})
+
+        self.assertIsNone(tz)
+
+    def test_a_datetime_passes_through_unparsed(self):
+        moment = datetime(2026, 9, 18, 9, 0)
+        now, _, _ = agent._restore_clock({"now": moment, "tz": None})
+
+        self.assertIs(moment, now)
+
+
+class SpecTests(unittest.TestCase):
+    def test_the_spec_declares_its_entry_tool_and_read_scope(self):
+        self.assertEqual("reminder", agent.SPEC.name)
+        self.assertEqual(("set_reminder",), agent.SPEC.entry_tools)
+        self.assertEqual(("conversation",), agent.SPEC.may_read)
+        self.assertTrue(agent.SPEC.description.strip())
+        self.assertIsNotNone(agent.SPEC.resume)
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class ReminderEventChannelTests(unittest.TestCase):
-    """The event list is a reducer channel: a node emits only its own entries."""
-
-    def test_a_node_emits_only_what_it_did(self):
-        now = datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc)
-        patch = reminder_resolve.run({
-            "contract": {"instruction": "A plain project thought"},
-            "now": now,
-            "events": [{"kind": "node", "node": "earlier", "status": "ok"}],
-        })
-
-        self.assertEqual(
-            [{"kind": "node", "node": "resolve", "status": "skipped"}],
-            patch["events"])
-
-    def test_the_reducer_appends_rather_than_replaces(self):
-        self.assertEqual(
-            [{"node": "a"}, {"node": "b"}],
-            append([{"node": "a"}], [{"node": "b"}]))
-
-    def test_a_failure_is_an_event_not_a_key(self):
-        now = datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc)
-        with patch.object(reminder_resolve.model_gateway, "chat_completion",
-                          side_effect=RuntimeError("provider down")):
-            result = reminder_resolve.run({
-                "contract": {"instruction": "Call tomorrow"},
-                "now": now,
-                "events": [],
-            })
-
-        self.assertNotIn("reminder_error", result)
-        self.assertEqual("error", result["events"][0]["status"])
-        self.assertIn("provider down", result["events"][0]["error"])
-        self.assertTrue(failed(result["events"], "resolve"))

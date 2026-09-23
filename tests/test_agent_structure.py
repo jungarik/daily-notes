@@ -40,8 +40,11 @@ class AgentStructureTests(unittest.TestCase):
             "enrich/nodes/classify/gather.py", "enrich/nodes/classify/propose.py",
             "enrich/nodes/classify/normalize.py",
             "reminder/handoff_api.py", "reminder/graph.py", "reminder/state.py",
-            "reminder/prompts.py",
+            "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
+            "broker/__init__.py", "broker/contracts.py", "broker/broker.py",
+            "broker/registry.py", "broker/state_store.py",
+            "broker/router.py",
             "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
             "enrich/nodes/write/validate.py", "bootstrap.py",
             "runtime/execute_tool.py",
@@ -81,9 +84,12 @@ class AgentStructureTests(unittest.TestCase):
     def test_agents_reach_persistence_only_through_tools(self):
         """No agent owns SQL, and none reaches into a tool's database module.
         Every read and write goes through `execute_tool`; thread state belongs
-        to the calling section (`api/chat`). `runtime/execution_ledger.py` is the
-        one exception — the ledger is the runtime's own bookkeeping, not an
-        agent's domain data."""
+        to the calling section (`api/chat`).
+
+        Two modules are exempt, and both are infrastructure rather than an
+        agent's domain data: `runtime/execution_ledger.py` (at-most-once
+        bookkeeping) and `broker/state_store.py` (the turn tree). Neither is
+        imported by an agent — the composition root hands them to the broker."""
         root = Path(__file__).parents[1] / "agents"
         self.assertEqual(
             [],
@@ -93,7 +99,7 @@ class AgentStructureTests(unittest.TestCase):
         reaching = []
 
         for path in root.rglob("*.py"):
-            if path.name == "execution_ledger.py":
+            if path.name in {"execution_ledger.py", "state_store.py"}:
                 continue
 
             for line in path.read_text(encoding="utf-8").splitlines():

@@ -267,6 +267,29 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   `snapshot`; `tool_call` not `call`; `model_request`/`model_response` not
   `request`/`response`. Avoid bare generic nouns (`data`, `result`, `info`,
   `item`, `obj`, `value`) wherever a domain-qualified name exists.
+- **A function or method starts with a verb.** A name that is only a noun reads
+  as a value, so the call site looks like an attribute access and hides that work
+  is happening. Put the verb first — it is the thing the reader is scanning for:
+
+  ```python
+  # wrong — these read as fields, not calls
+  action_id(correlation_id, agent, tool_name, tool_args)
+  registry.roster()
+  history.problems(produced)
+  history.entry(agent, result)
+
+  # right — the verb says what happens, the noun says to what
+  generate_action_id(correlation_id, agent, tool_name, tool_args)
+  registry.list_agents()
+  history.find_problems(produced)
+  history.build_entry(agent, result)
+  ```
+
+  Predicates count as verbs and keep their natural prefix: `has_interrupts`,
+  `is_expired`, `may_read`, `can_retry`. So do the domain verbs a reader already
+  knows — `invoke`, `register`, `save`, `run`, `encode`. The rule is about the
+  first token being an action, not about padding short names: prefer `merge` over
+  `merged`, and don't turn `save` into `perform_save`.
 - **Never mutate by reference.** Do not modify a passed dict/list/object in place
   and never use that mutation as an output channel. Build and return a new value
   (`{**data, "field": x}`, a new list); the caller uses the returned result. The
@@ -493,4 +516,7 @@ tools + specialist write handoffs shipped; streaming deferred);
 `devdoc/agentic-enrich.md` (the note action/enrichment agent);
 `devdoc/agentic-reminder.md` (the reminder capability);
 `devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
-and `devdoc/agent-evaluation-observability.md` (evaluation runs and metrics).
+`devdoc/agent-evaluation-observability.md` (evaluation runs and metrics); and
+`devdoc/agent-broker.md` (the agents broker — Phases 1–2 built in
+`agents/broker/`, nothing calls it yet; it replaces `handoff_dispatch` at
+Phase 5).
