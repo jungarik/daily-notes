@@ -165,9 +165,17 @@ AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
-# Max agent hops the broker will drive in one turn (see devdoc/agent-broker.md).
+# Model that writes the broker turn's single user-facing reply.
 
-AGENT_MAX_HOPS = int(os.environ.get("AGENT_MAX_HOPS", "4"))
+RESPONDER_MODEL = os.environ.get("RESPONDER_MODEL", "gpt-4o-mini")
+
+# Max agent hops the broker will drive in one turn, the reply included: the
+
+# responder takes the last slot, so this is (work hops + 1). See
+
+# devdoc/agent-broker.md.
+
+AGENT_MAX_HOPS = int(os.environ.get("AGENT_MAX_HOPS", "5"))
 
 # Force every broker hop through the case-3 model router, skipping the entry-tool
 

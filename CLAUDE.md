@@ -517,6 +517,6 @@ tools + specialist write handoffs shipped; streaming deferred);
 `devdoc/agentic-reminder.md` (the reminder capability);
 `devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
 `devdoc/agent-evaluation-observability.md` (evaluation runs and metrics); and
-`devdoc/agent-broker.md` (the agents broker — Phases 1–2 built in
-`agents/broker/`, nothing calls it yet; it replaces `handoff_dispatch` at
-Phase 5).
+`devdoc/agent-broker.md` (the agents broker — Phases 1–4 built in
+`agents/broker/` with `reminder`, `enrich` and `responder` agents, nothing calls
+it yet; it replaces `handoff_dispatch` at Phase 5).

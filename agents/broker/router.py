@@ -6,14 +6,18 @@ loop, and a change to how a hop is saved or suspended never touches routing.
 
 Three cases, cheapest first (`devdoc/agent-broker.md`):
 
-  1. the responder hop is unconditional — it is not chosen here at all;
+  1. the turn is finishing — the responder takes the hop;
   2. an entry tool name resolves it — the previous model call already chose;
   3. otherwise ask the model, which sees the candidates, the user's message and
      the history of what has already run.
 
-`select_model` is the case-3 seam and is optional: without one the router simply
-runs out of moves after case 2, which is the farm's behaviour until the responder
-lands in Phase 4.
+The responder is an ordinary hop, not a step outside the loop: it is picked here
+like anyone else. The router will hand it back as often as it is asked — the
+broker stops asking once a hop has produced a reply, which is what ends a turn.
+
+`select_model` is the case-3 seam and is optional. Without one the router falls
+straight through to the responder after case 2, which is the farm's behaviour
+until a model router is built.
 """
 
 import logging
@@ -51,32 +55,50 @@ class Router:
         """
         return self._registry.get(name)
 
-    def select_agent(self, message: str, turn_history: tuple[HistoryEntry, ...],
-                     entry_tool: str | None) -> AgentSpec | None:
+    def select_agent(self, message: str, turns: tuple[HistoryEntry, ...],
+                     entry_tool: str | None, force_responder: bool = False) -> AgentSpec | None:
         """The agent this hop belongs to, or None when the turn has run out of
-        moves."""
-        if entry_tool is not None and not self._always_ask_model:
-            return self._registry.find_by_entry_tool(entry_tool)
+        moves.
 
-        if self._select_model is None:
-            return None
+        `force_responder` says the turn is finishing — it is the caller's last
+        slot, or a hop asked the user or failed. The router does not work that
+        out itself: it never inspects a hop's status, only which agents have
+        already run.
 
-        candidates = self._candidates(turn_history)
+        When no work agent can be picked the responder takes the hop, so a turn
+        ends with a reply rather than with silence. An entry tool nothing claims
+        is not a dead end either: it falls through to the model, and then to the
+        responder.
+        """
+        if force_responder:
+            return self._registry.find_responder()
 
-        if not candidates:
-            return None
+        addressed = (
+            self._registry.find_by_entry_tool(entry_tool)
+            if entry_tool is not None and not self._always_ask_model
+            else None)
 
-        chosen = self._select_model(candidates, message, turn_history)
+        if addressed is not None:
+            return addressed
 
-        return None if chosen is None else self._registry.get(chosen)
+        candidates = self._candidates(turns)
+        chosen = (
+            self._select_model(candidates, message, turns)
+            if candidates and self._select_model is not None
+            else None)
 
-    def _candidates(self, turn_history: tuple[HistoryEntry, ...]) -> list[dict]:
+        if chosen is None:
+            return self._registry.find_responder()
+
+        return self._registry.get(chosen)
+
+    def _candidates(self, turns: tuple[HistoryEntry, ...]) -> list[dict]:
         """The agents that have not run yet.
 
         "One agent, one entry" is enforced by this list rather than by asking the
         prompt nicely — and because an empty list short-circuits, the common
         single-agent turn ends without a model call at all.
         """
-        ran = {item.agent for item in turn_history}
+        ran_agent = {turn.agent for turn in turns}
 
-        return [item for item in self._registry.list_agents() if item["name"] not in ran]
+        return [agent for agent in self._registry.list_agents() if agent["name"] not in ran_agent]

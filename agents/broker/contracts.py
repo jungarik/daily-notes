@@ -111,6 +111,11 @@ class AgentResult:
     subset the next hop is allowed to see without a `read_state` call — keep it
     to refs, never prose. An agent that never pauses simply never returns
     `needs_input`.
+
+    `reply` is the turn's user-facing text. In practice only the responder sets
+    it, but it is a declared field rather than a `state` key so the broker can
+    carry it out without looking inside an agent's state or knowing which agent
+    the responder is.
     """
 
     status: Status
@@ -119,6 +124,7 @@ class AgentResult:
     ask: dict | None = None
     token: str | None = None
     error: str | None = None
+    reply: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,3 +161,4 @@ class TurnOutcome:
     correlation_id: str
     history: tuple[HistoryEntry, ...]
     pending: dict | None = None
+    reply: str | None = None

@@ -173,7 +173,7 @@ class Broker:
             message=message,
             context=context,
             references=references or {},
-            turn_history=(),
+            history=(),
             causation_id=None,
             entry_tool=entry_tool)
 
@@ -224,7 +224,7 @@ class Broker:
             message=message,
             context=context,
             references=references or {},
-            turn_history=merge_history(turn_history, entry),
+            history=merge_history(turn_history, entry),
             causation_id=entry.state_id,
             entry_tool=None)
 
@@ -250,14 +250,22 @@ class Broker:
                message: str,
                context: UserContext,
                references: dict,
-               turn_history: tuple[HistoryEntry, ...],
+               history: tuple[HistoryEntry, ...],
                causation_id: str | None,
                entry_tool: str | None) -> TurnOutcome:
         user_id = context["user_id"]
-        hops_left = self._max_hops - len(turn_history)
+        hops_left = self._max_hops - len(history)
+        finishing = False
+        failed = False
+        pending = None
+        reply = None
 
         while hops_left > 0:
-            agent = self._router.select_agent(message, turn_history, entry_tool)
+            agent = self._router.select_agent(
+                message,
+                history,
+                entry_tool,
+                force_responder=finishing or hops_left <= 1)
 
             if agent is None:
                 break
@@ -271,7 +279,7 @@ class Broker:
                 message=message,
                 context=context,
                 references=references,
-                history=turn_history,
+                history=history,
                 hops_left=hops_left)
 
             # Only the agent's own call is guarded: a crash inside it is a failed
@@ -303,31 +311,48 @@ class Broker:
                 status=result.status,
                 produced=tuple(result.produced),
                 state=result.state)
-
-            entry = HistoryEntry(
+            
+            history = merge_history(history, HistoryEntry(
                 agent=agent.name,
                 status=result.status,
                 produced=tuple(result.produced),
                 error=result.error,
-                state_id=state_id)
-
-            turn_history = merge_history(turn_history, entry)
+                state_id=state_id))
+            
             causation_id = state_id
             hops_left -= 1
 
+            # How the turn ends is tracked here rather than read back off the
+            # history, because the last entry is the reply, not the work.
             if result.status == "needs_input":
-                return TurnOutcome("needs_input", correlation_id, turn_history, pending={
+                pending = {
                     "correlation_id": correlation_id,
                     "agent": agent.name,
                     "token": result.token,
                     "ask": result.ask,
-                    "state_id": causation_id,
-                })
+                    "state_id": state_id,
+                }
 
-            if result.status == "failed":
+            failed = failed or result.status == "failed"
+
+            # One flag for every way a turn can be over: it asked the user, it
+            # broke, or this was the last slot. The router needs no more than
+            # that, and never inspects a status itself.
+            finishing = finishing or result.status in ("needs_input", "failed")
+
+            if result.reply is not None:
+                # The user has been answered, so there is nothing left to do.
+                # This — rather than a check that the responder already ran — is
+                # what ends the loop: a confirm continues a turn whose history
+                # *already* holds the reply given when it suspended, and still
+                # owes a second one for the write it just made.
+                reply = result.reply
                 break
 
-        failed = bool(turn_history) and turn_history[-1].status == "failed"
-
-        return TurnOutcome("failed" if failed else "done", correlation_id, turn_history)
+        return TurnOutcome(
+            status="needs_input" if pending else "failed" if failed else "done",
+            correlation_id=correlation_id,
+            history=history,
+            pending=pending,
+            reply=reply)
 

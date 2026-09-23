@@ -215,6 +215,166 @@ class RouterTests(unittest.TestCase):
             router.get_agent("retired")
 
 
+def _responder(reply="a reply"):
+    """A stand-in responder: picked when the turn finishes, never a candidate."""
+    return AgentSpec(
+        name="responder",
+        description="writes the reply",
+        start=lambda request: AgentResult("done", reply=reply, state={"reply": reply}),
+        may_read=("*",))
+
+
+class ResponderHopTests(unittest.TestCase):
+    """The responder is an ordinary hop the router picks last. Its running is
+    what leaves the router with nothing to return, which ends the turn."""
+
+    def test_a_finished_turn_ends_with_the_reply(self):
+        broker, _ = _broker([
+            _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
+            _responder("Set your reminder."),
+        ])
+
+        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual("done", outcome.status)
+        self.assertEqual("Set your reminder.", outcome.reply)
+        self.assertEqual(["reminder", "responder"], [i.agent for i in outcome.history])
+
+    def test_a_failed_turn_still_gets_a_reply(self):
+        """An error is something the user is told, not a stack trace."""
+        def explode(request):
+            raise RuntimeError("boom")
+
+        registry = AgentRegistry()
+        registry.register(AgentSpec(
+            name="reminder", description="", start=explode, entry_tools=("set_reminder",)))
+        registry.register(_responder("That went wrong."))
+        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+
+        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual("failed", outcome.status, "the reply's own success is not the turn's")
+        self.assertEqual("That went wrong.", outcome.reply)
+
+    def test_a_suspended_turn_gets_a_reply_and_keeps_its_pending(self):
+        registry = AgentRegistry()
+        registry.register(AgentSpec(
+            name="reminder",
+            description="",
+            start=lambda request: AgentResult(
+                "needs_input", ask={"kind": "confirm"}, token="tok"),
+            entry_tools=("set_reminder",)))
+        registry.register(_responder("Shall I set that for tomorrow?"))
+        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+
+        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual("needs_input", outcome.status)
+        self.assertEqual("Shall I set that for tomorrow?", outcome.reply)
+        self.assertEqual("reminder", outcome.pending["agent"])
+        self.assertEqual("tok", outcome.pending["token"])
+
+    def test_a_suspend_stops_the_work_even_with_agents_left(self):
+        """`needs_input` finishes the turn: no other work agent gets a hop, even
+        though the budget and the roster would allow one."""
+        registry = AgentRegistry()
+        registry.register(AgentSpec(
+            name="reminder",
+            description="",
+            start=lambda request: AgentResult("needs_input", ask={}, token="tok"),
+            entry_tools=("set_reminder",)))
+        registry.register(_agent("enrich", AgentResult("done")))
+        registry.register(_responder())
+        broker = Broker(
+            FakeStore(),
+            FakeLedger(),
+            Router(registry, select_model=lambda candidates, *args: candidates[0]["name"]),
+            max_hops=5)
+
+        outcome = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual(["reminder", "responder"], [i.agent for i in outcome.history])
+
+    def test_the_responder_runs_once_and_that_ends_the_loop(self):
+        store = FakeStore()
+        registry = AgentRegistry()
+        registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
+        registry.register(_responder())
+        broker = Broker(store, FakeLedger(), Router(registry), max_hops=5)
+
+        broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual(["reminder", "responder"], [row["agent"] for row in store.rows])
+
+    def test_the_responder_hop_is_saved_like_any_other(self):
+        store = FakeStore()
+        registry = AgentRegistry()
+        registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
+        registry.register(_responder())
+        broker = Broker(store, FakeLedger(), Router(registry))
+
+        broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        self.assertEqual("s1", store.rows[1]["causation_id"], "caused by the hop it reports")
+
+    def test_it_is_never_offered_to_the_model_as_a_candidate(self):
+        seen = []
+        broker, _ = _broker(
+            [_agent("enrich", AgentResult("done")), _responder()],
+            router=lambda candidates, message, history: (
+                seen.append([c["name"] for c in candidates]) or candidates[0]["name"]))
+
+        broker.start("go", CONTEXT)
+
+        self.assertEqual([["enrich"]], seen, "picked by the rule, not by the model")
+
+    def test_it_replies_even_when_no_work_agent_ran(self):
+        broker, _ = _broker([_responder("I could not do anything with that.")])
+
+        outcome = broker.start("hello", CONTEXT, entry_tool="nonesuch")
+
+        self.assertEqual("I could not do anything with that.", outcome.reply)
+        self.assertEqual(["responder"], [i.agent for i in outcome.history])
+
+    def test_a_responder_crash_costs_the_reply_and_nothing_else(self):
+        """The one agent that must not take a turn down with it."""
+        def explode(request):
+            raise RuntimeError("no model")
+
+        registry = AgentRegistry()
+        registry.register(_agent("enrich", AgentResult(
+            "done", produced=(Ref("note", "3"),)), entry_tools=("perform_action",)))
+        registry.register(AgentSpec(name="responder", description="", start=explode))
+        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+
+        outcome = broker.start("save this", CONTEXT, entry_tool="perform_action")
+
+        self.assertIsNone(outcome.reply)
+        self.assertEqual(
+            (Ref("note", "3"),),
+            next(i for i in outcome.history if i.agent == "enrich").produced,
+            "the note is still reported")
+
+    def test_a_confirm_also_ends_with_a_reply(self):
+        registry = AgentRegistry()
+        registry.register(AgentSpec(
+            name="reminder",
+            description="",
+            start=lambda request: AgentResult(
+                "needs_input", ask={"action": {"name": "x", "args": {}}}, token="tok"),
+            resume=lambda token, decision, context: AgentResult(
+                "done", produced=(Ref("reminder", "42"),)),
+            entry_tools=("set_reminder",)))
+        registry.register(_responder("Set for tomorrow."))
+        broker = Broker(FakeStore(), FakeLedger(), Router(registry))
+        paused = broker.start("remind me", CONTEXT, entry_tool="set_reminder")
+
+        outcome = broker.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+
+        self.assertEqual("done", outcome.status)
+        self.assertEqual("Set for tomorrow.", outcome.reply)
+
+
 class RoutingTests(unittest.TestCase):
     def test_an_entry_tool_routes_without_the_router(self):
         called = []
@@ -269,7 +429,28 @@ class RoutingTests(unittest.TestCase):
 
         self.assertEqual([["a", "b"], ["b"]], seen, "a spent agent is not a candidate")
 
-    def test_the_hop_bound_stops_a_farm_larger_than_the_budget(self):
+    def test_the_hop_bound_reserves_its_last_slot_for_the_reply(self):
+        """`AGENT_MAX_HOPS` counts the reply, so a budget of 2 buys one work hop
+        and one reply — never two work hops and silence."""
+        agents = [_agent(name, AgentResult("done")) for name in "abcde"]
+        agents.append(AgentSpec(
+            name="responder",
+            description="",
+            start=lambda request: AgentResult("done", reply="done"),
+            may_read=("*",)))
+        broker, _ = _broker(
+            agents,
+            router=lambda candidates, message, history: candidates[0]["name"],
+            max_hops=2)
+
+        outcome = broker.start("go", CONTEXT)
+
+        self.assertEqual(["a", "responder"], [item.agent for item in outcome.history])
+        self.assertEqual("done", outcome.reply)
+
+    def test_a_farm_with_no_responder_leaves_the_reserved_slot_unused(self):
+        """Nothing is forced into the last hop when there is no responder; the
+        turn simply ends one hop early, with no reply."""
         broker, _ = _broker(
             [_agent(name, AgentResult("done")) for name in "abcde"],
             router=lambda candidates, message, history: candidates[0]["name"],
@@ -277,7 +458,8 @@ class RoutingTests(unittest.TestCase):
 
         outcome = broker.start("go", CONTEXT)
 
-        self.assertEqual(2, len(outcome.history))
+        self.assertEqual(["a"], [item.agent for item in outcome.history])
+        self.assertIsNone(outcome.reply)
 
 
 class TurnTreeTests(unittest.TestCase):

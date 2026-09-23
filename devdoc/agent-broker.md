@@ -1,8 +1,8 @@
 # Agent broker
 
-**Status:** Phases 1–2 built (`agents/broker/`, `agents/reminder/agent.py`,
-migration 0022). Nothing calls the broker yet — chat still runs on the handoff
-path, which this supersedes at Phase 5.
+**Status:** Phases 1–4 built (`agents/broker/`, `reminder`, `enrich` and
+`responder` agents, migration 0022). Nothing calls the broker yet — chat still
+runs on the handoff path, which this supersedes at Phase 5.
 
 ## Goal
 
@@ -49,7 +49,12 @@ class AgentResult:
     ask: dict | None          # needs_input: what the user must confirm/choose
     token: str | None         # needs_input: opaque, agent-owned
     error: str | None         # failed
+    reply: str | None         # in practice only the responder sets it
 ```
+
+`reply` is a declared field rather than a `state` key so the broker can carry it
+out to `TurnOutcome.reply` without looking inside an agent's state or knowing
+which agent the responder is. A hop that sets it ends the turn.
 
 An agent that never pauses simply never returns `needs_input`. A LangGraph agent
 puts its `thread_id` in `token`; a plain-Python agent puts whatever it likes.
@@ -247,8 +252,18 @@ through the router.
 
 A peer agent whose job is the user-facing reply, and the **last hop of every
 turn** — including failed ones, so the user gets a sensible message rather than a
-raw error. It may call read tools of its own to phrase the answer well, and may
-read any state (`may_read=["*"]`).
+raw error. It may read any state (`may_read=["*"]`).
+
+**It is an ordinary hop, not a step outside the loop.** The router picks it when
+the turn is finishing; the broker says so with one flag, `force_responder`, set
+when the budget's last slot is reached or a hop returned `needs_input` or
+`failed`. The router never inspects a status itself. A hop that returns a `reply`
+ends the loop — which is also why a confirm gets a second reply even though the
+turn's history already holds the first.
+
+`AGENT_MAX_HOPS` therefore counts the reply: the default of 5 is four work hops
+plus one. A farm with no responder registered simply ends one hop early with no
+reply.
 
 Work agents therefore never write user-facing prose. That is the one rule that
 keeps voice and localisation in a single place.
@@ -315,8 +330,8 @@ with a reply — an error is a thing the user is told, not a stack trace.
 |---|---|---|
 | **1** ✅ | `AgentSpec`, `AgentResult`, `AgentMessage`, broker skeleton, `agent_states` + migration 0022. Nothing wired. | yes |
 | **2** ✅ | Port `reminder` (smallest). Old handoff path still serves chat. | yes |
-| **3** | Port `enrich`. | yes |
-| **4** | Add `responder`. Broker drives reminder + enrich end to end behind a flag. | yes |
+| **3** ✅ | Port `enrich`. | yes |
+| **4** ✅ | Add `responder`. Broker drives reminder + enrich end to end behind a flag. | yes |
 | **5** | `conversation` becomes a peer; endpoint calls the broker; delete `handoff_dispatch`, `HANDOFF_SPECIALISTS`, `MODE_AGENTS`. | no |
 
 Phase 4 is the checkpoint: if the broker cannot drive a two-hop turn (enrich

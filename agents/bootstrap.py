@@ -8,9 +8,11 @@ the replacement, wired agent by agent; nothing calls it until an endpoint does.
 import config
 from agents.broker import AgentRegistry, Broker, Router
 from agents.broker import state_store
+from agents.enrich import agent as enrich_agent
 from agents.enrich import handoff_api as enrich_handoff
 from agents.reminder import agent as reminder_agent
 from agents.reminder import handoff_api as reminder_handoff
+from agents.responder import agent as responder_agent
 from agents.runtime import execution_ledger
 from agents.runtime.handoff_dispatch import HandoffDispatch
 from agents.runtime.specialist_registry import SpecialistRegistry
@@ -37,9 +39,11 @@ for _tool_name, _mode in HANDOFF_SPECIALISTS.items():
 # duplicate name or a tool name two agents both claim, here at import time.
 agents = AgentRegistry()
 agents.register(reminder_agent.SPEC)
+agents.register(enrich_agent.SPEC)
+agents.register(responder_agent.SPEC)
 
-# `select_model` is the case-3 seam and is still empty: until the responder
-# lands (Phase 4) a turn routes by entry tool or ends.
+# `select_model` is the case-3 seam and is still empty, so a turn routes by
+# entry tool and then falls through to the responder, which takes the last hop.
 router = Router(agents, always_ask_model=config.AGENT_ROUTER_ALWAYS)
 
 farm = Broker(
