@@ -1,6 +1,11 @@
-"""Tool declarations and execution entry point used by Conversation."""
+"""The finder agent's tools: owner-scoped reads over the user's own notes.
 
-from tools.conversation import (
+Every tool here answers a question; none of them writes. A turn that needs a
+write is routed to the agent that owns it by the broker, not by a tool call from
+here.
+"""
+
+from tools.finder import (
     detect_reminder,
     get_note,
     list_agenda,
@@ -9,13 +14,7 @@ from tools.conversation import (
     neighbors,
     search_notes,
 )
-from tools.conversation.specs import (
-    HANDOFF_SPECIALISTS,
-    HANDOFF_TOOLS,
-    HANDOFF_TOOL_SPECS,
-    READ_TOOL_SPECS,
-    TOOL_SPECS,
-)
+from tools.finder.specs import READ_TOOL_SPECS
 
 TOOLS = {
     "search_notes": search_notes.invoke,
@@ -28,7 +27,4 @@ TOOLS = {
 }
 
 
-__all__ = [
-    "HANDOFF_SPECIALISTS", "HANDOFF_TOOLS", "HANDOFF_TOOL_SPECS",
-    "READ_TOOL_SPECS", "TOOL_SPECS", "TOOLS",
-]
+__all__ = ["READ_TOOL_SPECS", "TOOLS"]

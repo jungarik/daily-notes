@@ -66,7 +66,7 @@ def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
     with cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT ON (agent) agent, status, produced, error, state_id
+            SELECT DISTINCT ON (agent) agent, status, produced, state_id
             FROM agent_states
             WHERE correlation_id = %s
             ORDER BY agent, created_at DESC;

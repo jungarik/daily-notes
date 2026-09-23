@@ -57,7 +57,7 @@ def _install_stubs():
     # The tool package reaches psycopg at import time; the nodes only need the
     # registry and the read specs it exposes. `ActNodeTests` rebinds `TOOLS`
     # either way, so a real package here is fine.
-    _stub_if_absent("tools.conversation", TOOLS={}, READ_TOOL_SPECS=[])
+    _stub_if_absent("tools.finder", TOOLS={}, READ_TOOL_SPECS=[])
 
     return run
 
@@ -366,7 +366,7 @@ class ActNodeTests(unittest.TestCase):
     """One read tool, then back to reason. It never mutates anything."""
 
     def setUp(self):
-        from tools import conversation as tools
+        from tools import finder as tools
 
         self.calls = []
         self.registry = tools.TOOLS
@@ -374,7 +374,7 @@ class ActNodeTests(unittest.TestCase):
         self.result = ToolResult({"notes": []})
 
     def tearDown(self):
-        from tools import conversation as tools
+        from tools import finder as tools
 
         tools.TOOLS = self.registry
 

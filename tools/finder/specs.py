@@ -1,12 +1,10 @@
-"""Conversation tool schemas and routing groups."""
+"""Tool schemas for the finder agent.
 
-# A handoff tool name -> the specialist mode that plans/executes it. Adding a
-# new handoff is one entry here plus its tool spec — no new graph node/branch.
-HANDOFF_SPECIALISTS = {
-    "perform_action": "enrich",
-    "set_reminder": "reminder",
-}
-HANDOFF_TOOLS = set(HANDOFF_SPECIALISTS)
+Read tools only. The controller this namespace was built for could also call
+`perform_action` / `set_reminder` to hand a write to a named specialist; the
+broker's router owns that decision now, so those specs are gone and an agent
+here names no peer.
+"""
 
 
 def _fn(name, description, properties, required):
@@ -23,39 +21,6 @@ def _fn(name, description, properties, required):
         },
     }
 
-
-HANDOFF_TOOL_SPECS = [
-    _fn(
-        "perform_action",
-        "Create a note, move a note, add tags, link a note to related notes, or "
-        "classify/enrich a note. Pass the request verbatim, and include the id of "
-        "any note the user is acting on in referenced_note_ids; a specialist "
-        "proposes it for confirmation.",
-        {
-            "instruction": {"type": "string"},
-            "referenced_note_ids": {
-                "type": "array",
-                "items": {"type": "integer"},
-            },
-            "resolved_entities": {"type": "object"},
-        },
-        ["instruction"],
-    ),
-    _fn(
-        "set_reminder",
-        "Schedule a reminder. Pass the full request including all "
-        "date and time details; Enrich proposes it for confirmation.",
-        {
-            "instruction": {"type": "string"},
-            "referenced_note_ids": {
-                "type": "array",
-                "items": {"type": "integer"},
-            },
-            "resolved_entities": {"type": "object"},
-        },
-        ["instruction"],
-    ),
-]
 
 READ_TOOL_SPECS = [
     _fn(
@@ -109,11 +74,9 @@ READ_TOOL_SPECS = [
     _fn(
         "detect_reminder",
         "Deterministically check whether a message is a reminder request "
-        "(reminder intent plus a time expression). Cheap — no model call. Call it "
-        "on the user's text when unsure before using set_reminder.",
+        "(reminder intent plus a time expression). Cheap — no model call. Use it "
+        "to answer a question about whether something is a reminder.",
         {"text": {"type": "string"}},
         ["text"],
     ),
 ]
-
-TOOL_SPECS = [*READ_TOOL_SPECS, *HANDOFF_TOOL_SPECS]

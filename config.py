@@ -215,33 +215,6 @@ ENRICH_AGENT_MAX_STEPS = int(os.environ.get("ENRICH_AGENT_MAX_STEPS", "4"))
 ATOMIC_NOTE_MAX_CHARS = int(os.environ.get("ATOMIC_NOTE_MAX_CHARS", "700"))
 
 ATOMIC_NOTE_MAX_SENTENCES = int(os.environ.get("ATOMIC_NOTE_MAX_SENTENCES", "3"))
-
-
-# --- Agent evaluation / observability ---
-
-# Automatic qualitative grading can be disabled to run trace/latency collection
-
-# without paying for an additional judge call per evaluated turn.
-
-AGENT_EVAL_JUDGE_ENABLED = os.environ.get(
-
-    "AGENT_EVAL_JUDGE_ENABLED", "true").lower() == "true"
-
-AGENT_EVAL_JUDGE_MODEL = os.environ.get("AGENT_EVAL_JUDGE_MODEL", "gpt-4o-mini")
-
-AGENT_EVAL_API_TIMEOUT_SECONDS = float(
-
-    os.environ.get("AGENT_EVAL_API_TIMEOUT_SECONDS", "300"))
-
-# Telegram chat IDs are resolved against users.chat_id by the evaluation API.
-
-EVAL_ADMIN_USER_IDS = {
-    int(value.strip())
-    for value in os.environ.get("EVAL_ADMIN_TELEGRAM_IDS", "1").split(",")
-    if value.strip()
-
-}
-
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.

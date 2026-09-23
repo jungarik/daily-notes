@@ -1,4 +1,9 @@
-"""Explicit Conversation agenda tool regressions."""
+"""The finder's read tools, and the prompt that drives them.
+
+Ported from the conversation controller's suite: the tools and the prompt
+moved to `tools/finder/` and `agents/finder/` unchanged, so these regressions
+still apply — only the names they import did.
+"""
 
 import json
 import unittest
@@ -7,15 +12,11 @@ from unittest.mock import patch
 
 from common import helper
 from agents.contracts import ToolResult
-from agents.conversation import prompts
-from agents.conversation.state import (
-    ConversationContext,
-    apply_tool_result,
-    tool_context,
-)
-from tools import conversation as tools
-from tools.conversation import get_note, list_agenda, list_paths, search_notes
-from tools.conversation.specs import READ_TOOL_SPECS
+from agents.finder import prompts
+from agents.finder.state import FinderContext, apply_tool_result, tool_context
+from tools import finder as tools
+from tools.finder import get_note, list_agenda, list_paths, search_notes
+from tools.finder.specs import READ_TOOL_SPECS
 from agents.runtime.execute_tool import execute_tool
 
 
@@ -26,7 +27,7 @@ def tool_text(result) -> str:
     return str(result)
 
 
-class ConversationAgendaTests(unittest.TestCase):
+class FinderToolTests(unittest.TestCase):
     def test_agenda_is_an_explicit_read_tool(self):
         spec = next(item for item in READ_TOOL_SPECS
                     if item["function"]["name"] == "list_agenda")
@@ -34,7 +35,7 @@ class ConversationAgendaTests(unittest.TestCase):
                          spec["function"]["parameters"]["required"])
 
     def test_agenda_queries_range_and_cites_its_notes(self):
-        ctx = ConversationContext(
+        ctx = FinderContext(
             7, datetime(2026, 9, 1, 10, tzinfo=timezone.utc), timezone.utc, "en")
         rows = [{"reminder_id": 3, "note_id": 9,
                  "remind_at": datetime(2026, 9, 2, 9, tzinfo=timezone.utc),
@@ -47,7 +48,7 @@ class ConversationAgendaTests(unittest.TestCase):
                 tool_context(ctx),
                 "list_agenda",
                 args,
-                "conversation",
+                "finder",
             )
             apply_tool_result(ctx, result)
             result = tool_text(result)
@@ -63,13 +64,13 @@ class ConversationAgendaTests(unittest.TestCase):
     def test_semantic_search_no_longer_parses_agenda_dates(self):
         with patch.object(search_notes.embedings, "embed", return_value="vector"), \
                 patch.object(search_notes.db, "search_chunks", return_value=[]) as search:
-            ctx = ConversationContext(7, datetime.now(timezone.utc), timezone.utc, "en")
+            ctx = FinderContext(7, datetime.now(timezone.utc), timezone.utc, "en")
             result = execute_tool(
                 tools.TOOLS,
                 tool_context(ctx),
                 "search_notes",
                 {"query": "garden"},
-                "conversation",
+                "finder",
             )
             apply_tool_result(ctx, result)
             result = tool_text(result)
@@ -78,7 +79,7 @@ class ConversationAgendaTests(unittest.TestCase):
         search.assert_called_once_with(7, "vector")
 
     def test_search_returns_evidence_without_a_nested_chat_completion(self):
-        ctx = ConversationContext(7, datetime.now(timezone.utc), timezone.utc, "en")
+        ctx = FinderContext(7, datetime.now(timezone.utc), timezone.utc, "en")
         hits = [{"chunk_id": 2, "note_id": 9, "content": "Grow basil",
                  "rank": 1, "similarity": 0.91,
                  "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
@@ -95,7 +96,7 @@ class ConversationAgendaTests(unittest.TestCase):
                 tool_context(ctx),
                 "search_notes",
                 {"query": "garden"},
-                "conversation",
+                "finder",
             )
             apply_tool_result(ctx, result)
             result = json.loads(tool_text(result))
@@ -107,7 +108,7 @@ class ConversationAgendaTests(unittest.TestCase):
               "path": "Areas/Garden", "date": "2026-08-01T00:00:00+00:00"}],
             ctx.citations)
 
-    def test_conversation_tools_validate_context_and_args_values(self):
+    def test_read_tools_validate_context_and_args_values(self):
         context = {
             "user_id": 7,
         }
@@ -132,7 +133,7 @@ class ConversationAgendaTests(unittest.TestCase):
         embed.assert_not_called()
         paths.assert_not_called()
 
-    def test_conversation_prompt_exposes_current_local_time(self):
+    def test_the_prompt_exposes_current_local_time(self):
         now = datetime(2026, 9, 1, 12, 30, tzinfo=timezone.utc)
         messages = prompts.with_system(
             [{"role": "user", "content": "What is tomorrow's agenda?"}],

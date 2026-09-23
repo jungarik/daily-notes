@@ -17,9 +17,12 @@ def _install_stubs():
     planned = {"action": None}
     executed = {"result": None, "calls": []}
 
-    handoff = types.ModuleType("agents.reminder.handoff_api")
-    handoff.plan_action = lambda user_id, request, now, tz, locale: planned["action"]
-    handoff.execute_action = lambda user_id, action, now, tz, locale: ""
+    # The planning graph is LangGraph; the agent only needs the action it
+    # returns. Stubbing the graph rather than a planning module is what the
+    # merge changed: planning now lives in `agent.py` itself, so the seam the
+    # test stands on is the graph, not a second module.
+    graph = types.ModuleType("agents.reminder.graph")
+    graph.PLAN_GRAPH = types.SimpleNamespace(invoke=None)
 
     # The tool package reaches psycopg at import time; the agent only needs the
     # registry it exposes. Recording happens in the tool rather than in a stubbed
@@ -46,13 +49,36 @@ def _install_stubs():
     tools.TOOL_SPECS = []
     tools.WRITE_TOOLS = {"create_reminder"}
 
-    sys.modules["agents.reminder.handoff_api"] = handoff
+    sys.modules["agents.reminder.graph"] = graph
     sys.modules["tools.reminder"] = tools
 
     return planned, executed
 
 
 PLANNED, EXECUTED = _install_stubs()
+PLAN_GRAPH = sys.modules["agents.reminder.graph"].PLAN_GRAPH
+
+
+def _plan_from_planned(state):
+    """The stub graph's default: return whatever the test planned."""
+    return {"action": PLANNED["action"], "events": []}
+
+
+def _record_plan_state(seen):
+    """A stub graph that also captures the state it was invoked with.
+
+    Tests that install this restore the default in `tearDown` — leaving it
+    bound would hand every later test a hard-coded action, which is exactly
+    the ordering bug this indirection removes."""
+    def invoke(state):
+        seen.update(state)
+
+        return {"action": PLANNED["action"], "events": []}
+
+    return invoke
+
+
+PLAN_GRAPH.invoke = _plan_from_planned
 
 from agents.broker.contracts import AgentRequest, Ref  # noqa: E402
 from agents.contracts import ToolResult  # noqa: E402
@@ -109,16 +135,16 @@ class StartTests(unittest.TestCase):
     def test_references_feed_the_plan_and_the_clock_comes_from_context(self):
         PLANNED["action"] = ACTION
         seen = {}
-        sys.modules["agents.reminder.handoff_api"].plan_action = (
-            lambda user_id, request, now, tz, locale: seen.update(
-                user_id=user_id, request=request) or ACTION)
+        PLAN_GRAPH.invoke = _record_plan_state(seen)
+        self.addCleanup(setattr, PLAN_GRAPH, "invoke", _plan_from_planned)
 
         agent.start(_request(referenced_note_ids=[4, 9], conversation_summary="about teeth"))
 
-        self.assertEqual(7, seen["user_id"], "the owner comes from context")
-        self.assertEqual([4, 9], seen["request"]["referenced_note_ids"])
-        self.assertEqual("about teeth", seen["request"]["conversation_summary"])
-        self.assertEqual("Europe/Kyiv", seen["request"]["timezone"])
+        plan_request = seen["contract"]
+        self.assertEqual([4, 9], plan_request["referenced_note_ids"])
+        self.assertEqual("about teeth", plan_request["conversation_summary"])
+        self.assertEqual("Europe/Kyiv", plan_request["timezone"])
+        self.assertEqual("uk", plan_request["locale"], "the clock comes from context")
 
     def test_no_resolvable_time_finishes_without_asking(self):
         PLANNED["action"] = None
@@ -128,6 +154,63 @@ class StartTests(unittest.TestCase):
         self.assertEqual("done", result.status)
         self.assertIsNone(result.ask)
         self.assertEqual((), result.produced)
+
+
+class PlanRequestTests(unittest.TestCase):
+    """The envelope -> planning contract mapping, which the merge made this
+    agent's own. It used to be built twice — once from the request, then
+    re-validated by the planning module — so nothing covered the coercion."""
+
+    def setUp(self):
+        PLANNED["action"] = ACTION
+        EXECUTED["result"] = None
+        self.seen = {}
+        PLAN_GRAPH.invoke = _record_plan_state(self.seen)
+        self.addCleanup(setattr, PLAN_GRAPH, "invoke", _plan_from_planned)
+
+    def _plan_request(self, **references):
+        agent.start(_request(**references))
+
+        return self.seen["contract"]
+
+    def test_note_ids_arrive_as_ints_whatever_the_client_sent(self):
+        plan_request = self._plan_request(referenced_note_ids=["4", 9])
+
+        self.assertEqual([4, 9], plan_request["referenced_note_ids"])
+
+    def test_an_unparseable_note_id_is_dropped_not_fatal(self):
+        """One bad reference must not lose the reminder."""
+        plan_request = self._plan_request(referenced_note_ids=[4, "nope", None, 9])
+
+        self.assertEqual([4, 9], plan_request["referenced_note_ids"])
+
+    def test_missing_references_become_empty_rather_than_none(self):
+        """The planner reads these unconditionally; `None` would raise inside
+        the graph instead of here."""
+        plan_request = self._plan_request()
+
+        self.assertEqual([], plan_request["referenced_note_ids"])
+        self.assertEqual("", plan_request["conversation_summary"])
+        self.assertEqual([], plan_request["citations"])
+        self.assertEqual({"referenced_notes": []}, plan_request["resolved_entities"])
+
+    def test_referenced_notes_are_hydrated_for_the_planner(self):
+        """Without this the planner sees an id, not a note, and cannot resolve
+        "that note"."""
+        EXECUTED["result"] = ToolResult({"id": 4, "title": "Dentist"})
+
+        plan_request = self._plan_request(referenced_note_ids=[4])
+
+        self.assertEqual(
+            [{"id": 4, "title": "Dentist", "note_id": 4}],
+            plan_request["resolved_entities"]["referenced_notes"])
+
+    def test_a_note_that_cannot_be_read_is_skipped(self):
+        EXECUTED["result"] = ToolResult({"error": "Error: note not found."})
+
+        plan_request = self._plan_request(referenced_note_ids=[4])
+
+        self.assertEqual([], plan_request["resolved_entities"]["referenced_notes"])
 
 
 class ResumeTests(unittest.TestCase):
@@ -200,7 +283,7 @@ class SpecTests(unittest.TestCase):
     def test_the_spec_declares_its_entry_tool_and_read_scope(self):
         self.assertEqual("reminder", agent.SPEC.name)
         self.assertEqual(("set_reminder",), agent.SPEC.entry_tools)
-        self.assertEqual(("conversation",), agent.SPEC.may_read)
+        self.assertEqual(("finder",), agent.SPEC.may_read)
         self.assertTrue(agent.SPEC.description.strip())
         self.assertIsNotNone(agent.SPEC.resume)
 

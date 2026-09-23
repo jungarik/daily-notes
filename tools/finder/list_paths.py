@@ -4,7 +4,7 @@ import config
 import i18n
 from common import helper
 from agents.contracts import ToolResult
-from tools.conversation import db
+from tools.finder import db
 
 
 def _known_paths(user_id: int) -> list[str]:

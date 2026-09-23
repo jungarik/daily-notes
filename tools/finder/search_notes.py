@@ -2,7 +2,7 @@
 
 from common import embedings, helper
 from agents.contracts import ToolResult
-from tools.conversation import db
+from tools.finder import db
 
 
 def invoke(

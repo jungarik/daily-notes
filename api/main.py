@@ -24,8 +24,8 @@ from agents.runtime import checkpoint as agent_checkpoint
 from migrate import run_migrations
 from api import system
 # Section verticals — each a self-contained endpoints.py → helper.py → db.py.
-# The web-app sections are fully isolated; chat + telegram_bot orchestrate the
-# shared `common` domain. There are no more shared services/stores routers.
+# The web-app sections are fully isolated; chat_v2 hands a turn to the agent
+# farm and telegram_bot owns its own domain. There is no shared domain layer.
 from api.feed.endpoints import router as feed_router
 from api.notecard.endpoints import router as notecard_router
 from api.explorer.endpoints import router as explorer_router
@@ -34,10 +34,8 @@ from api.mapview.endpoints import router as mapview_router
 from api.contextmenu.endpoints import router as contextmenu_router
 from api.header.endpoints import router as header_router
 from api.search.endpoints import router as search_section_router
-from api.chat.endpoints import router as chat_router
 from api.chat_v2.endpoints import router as chat_v2_router
 from api.telegram_bot.endpoints import router as telegram_bot_router
-from api.evals.endpoints import router as evals_router
 
 # The Telegram Mini App (browser/webapp, React) is deployed as its own static
 # host (see Dockerfile.webapp) and calls this API cross-origin, so the API is a
@@ -95,10 +93,8 @@ def create_app() -> FastAPI:
     app.include_router(contextmenu_router)
     app.include_router(header_router)
     app.include_router(search_section_router)
-    app.include_router(chat_router)
     app.include_router(chat_v2_router)
     app.include_router(telegram_bot_router)
-    app.include_router(evals_router)
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):

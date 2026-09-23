@@ -1,18 +1,12 @@
-"""Reminder agent — scheduling as its own specialist.
+"""Reminder agent — scheduling as its own vertical.
 
 Owns the datetime-resolution graph, its prompt, its state and its write tool.
-Chat reaches it through the `set_reminder` handoff; the composition root maps
-that mode to this agent. Nothing here imports the enrich agent.
+Nothing here imports another agent. See `devdoc/agentic-reminder.md`.
 
-Public entry points:
-- `plan_action(user_id, handoff, now, tz, locale)` — resolve the time a request
-  implies and return the `create_reminder` write, or None.
-- `execute_action(user_id, action, now, tz, locale)` — run an approved write.
+`SPEC` is the whole public surface: the broker starts and resumes this agent
+through it, and nothing else calls in.
 """
 
-from agents.reminder.handoff_api import execute_action, plan_action
+from agents.reminder.agent import SPEC
 
-__all__ = [
-    "plan_action",
-    "execute_action",
-]
+__all__ = ["SPEC"]

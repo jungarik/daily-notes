@@ -1,11 +1,14 @@
-"""Guard the simplified two-agent architecture."""
+"""Guard the farm's shape: four peer agents, one composition root, no back doors.
+
+The structure is the product here — a new capability is meant to be a file plus
+a registry entry — so these assertions are about layout and isolation rather
+than behaviour.
+"""
 
 import unittest
 from pathlib import Path
 
-from agents import bootstrap, conversation
-from agents.enrich import handoff_api as enrich_handoff
-from agents.reminder import handoff_api as reminder_handoff
+from agents import bootstrap
 from tools import enrich as enrich_tools, reminder as reminder_tools
 
 
@@ -24,22 +27,20 @@ class AgentStructureTests(unittest.TestCase):
             spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS
         })
 
-    def test_two_agent_structure(self):
+    def test_the_farm_layout(self):
         root = Path(__file__).parents[1] / "agents"
         expected = {
-            "conversation/api.py", "conversation/state.py", "conversation/graph.py",
-            "conversation/routing.py", "conversation/prompts.py",
-            "conversation/nodes/reason.py", "conversation/nodes/act.py",
-            "conversation/nodes/handoff.py", "conversation/nodes/approve.py",
             "enrich/state.py",
             "enrich/graph.py", "enrich/routing.py",
-            "enrich/handoff_api.py", "enrich/agent.py",
+            "enrich/agent.py",
             "enrich/prompts.py",
             "enrich/nodes/reason.py", "enrich/nodes/plan.py",
             "enrich/nodes/act.py", "enrich/nodes/approve.py",
             "enrich/nodes/classify/gather.py", "enrich/nodes/classify/propose.py",
             "enrich/nodes/classify/normalize.py",
-            "reminder/handoff_api.py", "reminder/graph.py", "reminder/state.py",
+            "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
+            "enrich/nodes/write/validate.py",
+            "reminder/graph.py", "reminder/state.py",
             "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
             "finder/agent.py", "finder/graph.py", "finder/routing.py",
@@ -50,21 +51,20 @@ class AgentStructureTests(unittest.TestCase):
             "broker/registry.py", "broker/state_store.py",
             "broker/router.py", "broker/model_selector.py",
             "broker/routing_prompts.py",
-            "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
-            "enrich/nodes/write/validate.py", "bootstrap.py",
+            "bootstrap.py",
             "runtime/execute_tool.py",
             "../common/__init__.py", "../common/embedings.py", "../common/helper.py",
             "../tools/__init__.py",
-            "../tools/conversation/__init__.py",
-            "../tools/conversation/specs.py",
-            "../tools/conversation/db.py",
-            "../tools/conversation/search_notes.py",
-            "../tools/conversation/get_note.py",
-            "../tools/conversation/neighbors.py",
-            "../tools/conversation/list_reminders.py",
-            "../tools/conversation/list_agenda.py",
-            "../tools/conversation/list_paths.py",
-            "../tools/conversation/detect_reminder.py",
+            "../tools/finder/__init__.py",
+            "../tools/finder/specs.py",
+            "../tools/finder/db.py",
+            "../tools/finder/search_notes.py",
+            "../tools/finder/get_note.py",
+            "../tools/finder/neighbors.py",
+            "../tools/finder/list_reminders.py",
+            "../tools/finder/list_agenda.py",
+            "../tools/finder/list_paths.py",
+            "../tools/finder/detect_reminder.py",
             "../tools/enrich/__init__.py",
             "../tools/enrich/db.py",
             "../tools/enrich/specs.py",
@@ -85,18 +85,48 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/broker/read_state.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
-        self.assertEqual([], list((root / "conversation" / "tools").rglob("*.py")))
-        # Finder is the conversation controller minus what the farm now owns:
-        # no approval pause of its own, and no handoff to a named peer.
-        self.assertEqual([], list((root / "finder").rglob("approve.py")))
-        self.assertEqual([], list((root / "finder").rglob("handoff.py")))
         self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
+
+    def test_the_replaced_handoff_path_is_gone(self):
+        """The broker replaced it. Left behind, the old dispatch would be a
+        second way to reach a specialist — and the one that let an agent name a
+        peer. The `handoff_api` modules went the same way: with no handoff left
+        to serve, planning belongs in the agent that pauses on it."""
+        root = Path(__file__).parents[1]
+
+        for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
+                     "agents/runtime/specialist_registry.py", "api/chat",
+                     "tools/conversation", "agents/enrich/handoff_api.py",
+                     "agents/reminder/handoff_api.py"):
+            with self.subTest(gone=gone):
+                self.assertFalse((root / gone).exists())
+
+    def test_no_agent_names_another_agent(self):
+        """The whole point of the farm: routing is the broker's, so an agent
+        module that imports a sibling has re-introduced the coupling. Only
+        `bootstrap.py` may name them, because naming them is its job."""
+        root = Path(__file__).parents[1] / "agents"
+        peers = ("enrich", "reminder", "finder", "responder")
+        offending = []
+
+        for path in root.rglob("*.py"):
+            owner = path.relative_to(root).parts[0]
+
+            if owner not in peers:
+                continue
+
+            for line in path.read_text(encoding="utf-8").splitlines():
+                for peer in peers:
+                    if peer != owner and f"agents.{peer}" in line:
+                        offending.append(f"{path.relative_to(root)}: {line.strip()}")
+
+        self.assertEqual([], offending)
 
     def test_agents_reach_persistence_only_through_tools(self):
         """No agent owns SQL, and none reaches into a tool's database module.
         Every read and write goes through `execute_tool`; thread state belongs
-        to the calling section (`api/chat`).
+        to the calling section (`api/chat_v2`).
 
         Two modules are exempt, and both are infrastructure rather than an
         agent's domain data: `runtime/execution_ledger.py` (at-most-once
@@ -121,16 +151,17 @@ class AgentStructureTests(unittest.TestCase):
 
         self.assertEqual([], reaching)
 
-    def test_public_facades_and_registry(self):
-        self.assertTrue(callable(conversation.run_turn))
-        self.assertTrue(callable(conversation.run_confirmation))
-        self.assertTrue(callable(conversation.evaluate_turn))
-        self.assertTrue(callable(enrich_handoff.plan_action))
-        self.assertTrue(callable(enrich_handoff.execute_action))
-        self.assertIs(bootstrap.registry.get("enrich"), enrich_handoff)
-        self.assertTrue(callable(reminder_handoff.plan_action))
-        self.assertTrue(callable(reminder_handoff.execute_action))
-        self.assertIs(bootstrap.registry.get("reminder"), reminder_handoff)
+    def test_every_agent_is_registered_with_the_farm(self):
+        for name in ("enrich", "reminder", "finder", "responder"):
+            with self.subTest(agent=name):
+                self.assertEqual(name, bootstrap.router.get_agent(name).name)
+
+    def test_the_responder_is_never_a_routing_candidate(self):
+        """It takes the last hop by construction; offering it to the model as a
+        peer would let a turn answer without doing anything."""
+        self.assertNotIn("responder", {
+            agent["name"] for agent in bootstrap.agents.list_agents()
+        })
 
 
 if __name__ == "__main__":

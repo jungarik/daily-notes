@@ -1,18 +1,21 @@
-"""The enrich agent's seat in the farm.
+"""The enrich agent: note writes, end to end.
 
-Adapts the enrichment vertical to the two broker contracts and nothing more:
+One module, because there is one job with two halves the broker calls in turn:
 `start` plans the single write the user's message implies and pauses for
-confirmation, `resume` performs it once approved. Everything enrich-specific —
-the planning graph, the prompts, the tools — stays where it already lives.
+confirmation, `resume` performs it once approved.
 
-Two things differ from `reminder/agent.py`, and both are the contract earning
-its keep rather than bending:
+Two things differ from `reminder/agent.py`, and both are the broker contract
+earning its keep rather than bending:
 
   - enrich owns five write tools whose results have five different shapes, so
-    `_collect_refs` maps per tool instead of reading two fixed keys;
+    `_collect_refs` reads the note from the result when it is there and from the
+    action's args when it is not;
   - `link_notes` is a *select* action: the user does not merely approve it, they
     choose which notes to link. That choice arrives in `decision["selection"]`,
     which is exactly what `resume(token, decision, context)` exists for.
+
+What stays outside: the planning graph (`graph.py`), its prompt, its state, and
+the tools (`tools/enrich/`). This agent owns no SQL.
 
 Nothing in this module imports another agent.
 """
@@ -23,10 +26,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from agents.broker.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
-from agents.contracts import ToolResult
-from agents.enrich import handoff_api
+from agents.contracts import PlanRequest, ToolResult
+from agents.enrich.graph import ACTION_PLAN_GRAPH
+from agents.enrich.prompts import planning_messages
 from agents.runtime.execute_tool import execute_tool
 from tools import enrich as tools
+from tools.enrich import TOOL_SPECS
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,35 @@ def _restore_clock(context: UserContext) -> tuple:
     return now, tz, context.get("locale") or "en"
 
 
-def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> dict:
+def _build_tool_context(user_id: int, now, tz, locale: str) -> dict:
+    """The clock every tool call on this turn is scoped by, as plain JSON."""
+    return {
+        "user_id": user_id,
+        "now": now.isoformat() if hasattr(now, "isoformat") else now,
+        "tz": str(tz) if tz is not None else None,
+        "locale": locale,
+    }
+
+
+def _read_note_ids(references: dict) -> list[int]:
+    """The note ids the turn referenced, as ints.
+
+    They arrive from a client through the broker, so an unparseable one is
+    dropped rather than raising — losing one reference is better than losing the
+    write.
+    """
+    note_ids = []
+
+    for note_id in references.get("referenced_note_ids") or []:
+        try:
+            note_ids.append(int(note_id))
+        except (TypeError, ValueError):
+            continue
+
+    return note_ids
+
+
+def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequest:
     """The planning contract, from the envelope the broker handed over.
 
     The material the caller had already resolved arrives in `references`; the
@@ -60,15 +93,40 @@ def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> dict:
     references = request.references
 
     return {
-        "instruction": request.message,
-        "conversation_summary": references.get("conversation_summary") or "",
-        "referenced_note_ids": references.get("referenced_note_ids") or [],
-        "citations": references.get("citations") or [],
+        "instruction": request.message.strip(),
+        "conversation_summary": str(references.get("conversation_summary") or ""),
+        "referenced_note_ids": _read_note_ids(references),
+        "citations": list(references.get("citations") or []),
         "resolved_entities": dict(references.get("resolved_entities") or {}),
         "locale": locale,
         "timezone": str(tz) if tz is not None else None,
         "now": now.isoformat() if hasattr(now, "isoformat") else None,
     }
+
+
+def _plan_action(user_id: int, plan_request: PlanRequest, tool_context: dict) -> dict | None:
+    """Decide the single write an instruction implies, executing nothing.
+
+    Returns `{name, args, summary}` for a write tool, or None when nothing
+    concrete could be determined — an ordinary outcome, not a failure. A graph
+    that raises is also None: the turn then finishes without a write rather than
+    failing, and the responder says so.
+    """
+    try:
+        result = ACTION_PLAN_GRAPH.invoke({
+            "messages": planning_messages(plan_request),
+            "user_context": tool_context,
+            "tool_specs": TOOL_SPECS,
+            "steps": 0,
+            "tool_call": None,
+            "action": None,
+        })
+
+        return result.get("action")
+    except Exception:
+        logger.exception("enrich planning failed for user %s", user_id)
+
+        return None
 
 
 def _chosen_note_ids(selection) -> list[int]:
@@ -131,14 +189,12 @@ def _collect_refs(action: dict, data: dict) -> tuple[Ref, ...]:
 
 def start(request: AgentRequest) -> AgentResult:
     """Plan the write the message implies and pause for confirmation."""
+    user_id = request.context["user_id"]
     now, tz, locale = _restore_clock(request.context)
-
-    action = handoff_api.plan_action(
-        request.context["user_id"],
+    action = _plan_action(
+        user_id,
         _build_plan_request(request, now, tz, locale),
-        now,
-        tz,
-        locale)
+        _build_tool_context(user_id, now, tz, locale))
 
     if action is None:
         return AgentResult(
@@ -166,12 +222,7 @@ def resume(token: str, decision: dict, context: UserContext) -> AgentResult:
     now, tz, locale = _restore_clock(context)
     result = execute_tool(
         tools.TOOLS,
-        {
-            "user_id": context["user_id"],
-            "now": now.isoformat() if hasattr(now, "isoformat") else now,
-            "tz": str(tz) if tz is not None else None,
-            "locale": locale,
-        },
+        _build_tool_context(context["user_id"], now, tz, locale),
         action["name"],
         action.get("args") or {},
         NAME)
@@ -200,5 +251,5 @@ SPEC = AgentSpec(
     start=start,
     resume=resume,
     entry_tools=("perform_action",),
-    may_read=("conversation",),
+    may_read=("finder",),
 )

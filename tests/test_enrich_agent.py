@@ -16,9 +16,17 @@ def _install_stubs():
     planned = {"action": None}
     executed = {"result": None, "calls": []}
 
-    handoff = types.ModuleType("agents.enrich.handoff_api")
-    handoff.plan_action = lambda user_id, request, now, tz, locale: planned["action"]
-    handoff.execute_action = lambda user_id, action, now, tz, locale: ""
+    # The planning graph is LangGraph; the agent only needs the action it
+    # returns. Stubbing the graph rather than a planning module is what the
+    # merge changed: planning now lives in `agent.py` itself, so the seam the
+    # test stands on is the graph, not a second module.
+    graph = types.ModuleType("agents.enrich.graph")
+    graph.ACTION_PLAN_GRAPH = types.SimpleNamespace(
+        invoke=lambda state: {"action": planned["action"]})
+
+    prompts = types.ModuleType("agents.enrich.prompts")
+    prompts.planning_messages = lambda plan_request: [
+        {"role": "user", "content": plan_request["instruction"]}]
 
     # The tool package reaches psycopg at import time; the agent only needs the
     # registry it exposes. Recording happens in the tool rather than in a stubbed
@@ -46,7 +54,8 @@ def _install_stubs():
     tools.TOOL_SPECS = []
     tools.WRITE_TOOLS = set(tools.TOOLS)
 
-    sys.modules["agents.enrich.handoff_api"] = handoff
+    sys.modules["agents.enrich.graph"] = graph
+    sys.modules["agents.enrich.prompts"] = prompts
     sys.modules["tools.enrich"] = tools
 
     return planned, executed
@@ -226,7 +235,7 @@ class SpecTests(unittest.TestCase):
     def test_the_spec_declares_its_entry_tool_and_read_scope(self):
         self.assertEqual("enrich", agent.SPEC.name)
         self.assertEqual(("perform_action",), agent.SPEC.entry_tools)
-        self.assertEqual(("conversation",), agent.SPEC.may_read)
+        self.assertEqual(("finder",), agent.SPEC.may_read)
         self.assertTrue(agent.SPEC.description.strip())
         self.assertIsNotNone(agent.SPEC.resume)
 

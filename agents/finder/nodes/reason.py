@@ -11,7 +11,7 @@ import logging
 import config
 from agents.finder.state import FinderState
 from agents.runtime import model_gateway
-from tools.conversation import READ_TOOL_SPECS
+from tools.finder import READ_TOOL_SPECS
 
 logger = logging.getLogger(__name__)
 

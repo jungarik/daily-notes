@@ -1,8 +1,9 @@
 # Agent broker
 
-**Status:** Phases 1–4 built (`agents/broker/`, `reminder`, `enrich` and
-`responder` agents, migration 0022). Nothing calls the broker yet — chat still
-runs on the handoff path, which this supersedes at Phase 5.
+**Status:** built and live. The chat tab runs on the farm
+(`api/chat_v2` → `agents/bootstrap.farm`), with `finder`, `enrich`, `reminder`
+and `responder` registered. The handoff path this replaced — `conversation`,
+`handoff_dispatch`, `specialist_registry`, `api/chat` — has been deleted.
 
 ## Goal
 
@@ -13,11 +14,11 @@ spec entry plus its own folder.
 
 ```
                  ┌─────────────────────────────┐
-  POST /api/chat │           broker            │
+POST /api/chat/v2│           broker            │
        ───────▶  │  route → run → save → route │
                  └─────────────────────────────┘
                     │        │        │       │
-            conversation  enrich  reminder  responder
+               finder     enrich  reminder  responder
              (answers)   (writes) (schedules) (replies)
 ```
 
@@ -193,8 +194,9 @@ Not a broker API that agents import — a **tool**, scoped by the registry:
 ```python
 AGENTS = {
     "responder": AgentSpec(..., entry_tools=[],                  may_read=["*"]),
-    "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=["conversation"]),
-    "enrich":    AgentSpec(..., entry_tools=["perform_action"],  may_read=[]),
+    "finder":    AgentSpec(..., entry_tools=[],                  may_read=["enrich", "reminder"]),
+    "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=["finder"]),
+    "enrich":    AgentSpec(..., entry_tools=["perform_action"],  may_read=["finder"]),
 }
 ```
 
@@ -355,20 +357,27 @@ with a reply — an error is a thing the user is told, not a stack trace.
 | **2** ✅ | Port `reminder` (smallest). Old handoff path still serves chat. | yes |
 | **3** ✅ | Port `enrich`. | yes |
 | **4** ✅ | Add `responder`. Broker drives reminder + enrich end to end behind a flag. | yes |
-| **5** | `conversation` becomes a peer (as `finder` ✅); endpoint calls the broker; delete `handoff_dispatch`, `HANDOFF_SPECIALISTS`, `MODE_AGENTS`. | no |
+| **5** ✅ | `conversation` becomes a peer (as `finder`); endpoint calls the broker; the old handoff path deleted. | no |
 
-Phase 5 is taken in pieces so each is reviewable on its own: the model router,
-`read_state`, **`finder`**, then the **endpoint** — all built. `agents/conversation/`
-is left untouched and still serves `api/chat` (v1) and `api/evals`; deleting it
-with `handoff_dispatch`, `HANDOFF_SPECIALISTS` and `MODE_AGENTS` is the last
-step, once v2 has been run for a while.
+Phase 5 was taken in pieces so each was reviewable on its own: the model router,
+`read_state`, `finder`, the endpoint, then the cleanup. The cleanup removed
+`agents/conversation/`, `agents/runtime/handoff_dispatch.py`,
+`agents/runtime/specialist_registry.py`, `api/chat/`, `api/evals/` and
+`HANDOFF_SPECIALISTS`/`MODE_AGENTS`; `tools/conversation/` became
+`tools/finder/`, losing the two handoff tool specs.
+
+`api/evals` went with it: it replayed turns through `conversation.evaluate_turn`,
+which no longer exists. The `agent_evaluations` tables remain (migrations are
+append-only), so an eval surface rebuilt on the farm can reuse them. The
+`/eval` and `/eval_metrics` bot commands and `EVAL_ADMIN_TELEGRAM_IDS` are gone.
 
 ### The endpoint
 
 `api/chat_v2/` is a section vertical of its own (`endpoints.py` / `helper.py` /
-`db.py`) serving `/api/chat/v2` and `/api/chat/v2/confirm`. Both versions are
-mounted; the Mini App calls v2, so reverting is a URL change in
-`browser/webapp/src/lib/api.js`. The wire shape is v1's, minus `citations`.
+`db.py`) serving `/api/chat/v2` and `/api/chat/v2/confirm`. It was built
+alongside v1 so the two could be swapped by a URL; v1 is now gone, and the
+`_v2` in the folder and route names is the last trace of that — collapse it
+back to `/api/chat` whenever it stops being useful as a marker.
 
 Three things the broker does not do, which this section therefore does:
 
@@ -381,8 +390,8 @@ Three things the broker does not do, which this section therefore does:
 - **it stores the turn handle.** `TurnOutcome.pending` goes into the same
   `chat_threads.pending` column v1 uses. The two shapes differ, so
   `helper.find_resumable` treats a `pending` without a `correlation_id` as
-  nothing to confirm rather than crashing on a key the other version never
-  wrote. No migration.
+  nothing to confirm — written to tell v1's shape from v2's, and still the
+  guard against a thread left mid-confirm by the old code. No migration.
 - **it carries the question into the confirm.** `farm.resume` takes a message; a
   confirm has none, so the section reads the last user message back off the
   thread. The resumed hops and the responder's second reply need the request
@@ -413,9 +422,9 @@ down to what the farm does not already own:
   and does the speaking. Every cited note is reported as a `Ref("note", id)` —
   reading is not producing, so those say what the answer rested on.
 
-What is left is `reason` + `act` over `tools/conversation/`, which finder shares
-rather than duplicating: the tool namespace is renamed when `conversation`
-itself goes, at the end of Phase 5.
+What is left is `reason` + `act` over `tools/finder/` — the old
+`tools/conversation/`, renamed when the controller went, minus the two handoff
+tool specs.
 
 Phase 4 is the checkpoint: if the broker cannot drive a two-hop turn (enrich
 writes a note, reminder schedules it, responder explains both) without an agent
@@ -424,10 +433,10 @@ knowing about another, stop before Phase 5.
 ## Open risks
 
 - **The responder adds a hop to every turn, including trivial ones.** A plain
-  question now costs conversation + responder where it used to cost one agent.
-  The fallback template makes it safe, not fast. Measure at Phase 4; if it hurts,
-  the answer is probably letting `conversation` mark its own output as
-  final-quality prose, which weakens the one-place rule.
+  question now costs router + finder + responder where it used to cost one
+  agent. The fallback template makes it safe, not fast. If it hurts, the answer
+  is probably letting `finder` mark its own output as final-quality prose,
+  which weakens the one-place rule.
 - **`AGENT_ROUTER_ALWAYS` makes dev behave unlike production** by construction.
   That is the point, but it means a routing bug that only appears in the
   `entry_tools` fast path will not show up locally. Case 1–2 need their own

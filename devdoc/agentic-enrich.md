@@ -1,8 +1,9 @@
 # Agentic enrichment / note actions
 
-Status: **implemented.** Enrich owns confirmed Chat writes over notes: creating
-and moving them, enriching metadata, and curating links. Scheduling is a
-separate specialist — see `devdoc/agentic-reminder.md`.
+Status: **implemented.** Enrich owns confirmed writes over notes: creating and
+moving them, enriching metadata, and curating links. Scheduling is a separate
+agent — see `devdoc/agentic-reminder.md`. The broker routes a turn here; this
+file is what the agent does once it has been routed to.
 
 ## Workflow
 
@@ -41,18 +42,18 @@ needed, `list_paths`, `list_tags`, `get_vault_context`, and
 `metadata_trace`. The last two tools are internal workflow tools and are not
 offered to the LLM in `TOOL_SPECS`.
 
-The stateless `ACTION_PLAN_GRAPH` supports Chat's `perform_action` handoff. Its
-planning flow (`plan` + `act`) may inspect referenced notes, paths, and tags.
+`agent.py` plans with the stateless `ACTION_PLAN_GRAPH`. Its planning flow (`plan` + `act`) may inspect referenced notes, paths, and tags.
 Metadata requests use the same three classify nodes before `validate_write`, so
 the returned `{name,args,summary}` contains the proposed title, type, path, tags,
 and priority. `set_reminder` is not served here at all — it is the reminder
-specialist's handoff (`agents/reminder/`). Note-targeting writes
+agent's (`agents/reminder/`). Note-targeting writes
 are checked against the current user. Planning never executes a write.
 
-Chat sends a typed handoff containing the instruction, recent conversation,
-ordered referenced note ids, citations, recent tool results, resolved entities,
-locale, timezone, and request time. This lets the planner resolve phrases such
-as “that note” without guessing from an isolated sentence.
+The planner is given the instruction plus whatever context the turn carried —
+recent conversation, ordered referenced note ids, citations, resolved entities,
+locale, timezone and request time — so it can resolve phrases such as “that
+note” without guessing from an isolated sentence. The broker passes these as
+`AgentRequest.references`; `agent.py` maps them into the planning request.
 
 ## Layers and public API
 
@@ -63,8 +64,11 @@ as “that note” without guessing from an isolated sentence.
 - The agent owns no SQL. Every read and write goes through `tools/enrich/`
   (`tools/enrich/db.py`); `plan_action` hydrates referenced notes with the
   `get_note_context` tool rather than querying. Thread state belongs to the
-  calling section, as `api/chat` does for Chat.
-- `handoff_api.py`: `plan_action` / `execute_action` used by Chat.
+  calling section, as `api/chat_v2` does.
+- `agent.py`: the whole agent. `start` maps the broker's envelope into a
+  `PlanRequest`, drives `ACTION_PLAN_GRAPH`, and pauses the turn with
+  `needs_input`; `resume` performs the approved write through the tool and
+  reports what it made as typed `Ref`s. `SPEC` is the package's only export.
 
 The agent is client-agnostic and imports only shared infrastructure. Note
 creation is text-only. Telegram keeps fast capture and its deferred Enrich
@@ -77,6 +81,6 @@ Config: `ENRICH_AGENT_MODEL` and `ENRICH_AGENT_MAX_STEPS`.
 `capture_api.py` (`propose_capture` / `revise_capture` / `confirm_capture` /
 `cancel_capture`) was built for a UI that never called it, and was deleted along
 with its `CaptureProposal`/`RelatedNote` contracts and
-`db.save_captured_thought`. Chat's handoff path is the only way into this agent.
+`db.save_captured_thought`. The broker is the only way into this agent.
 If a capture surface is wanted later, build it against the endpoint that needs
 it rather than restoring a speculative API.

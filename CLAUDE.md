@@ -89,7 +89,8 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   (`_`-prefixed). No module hosts two nodes.
 - **Name nodes for their role, not their implementation.** The loop primitives
   are `reason` (model step), `act` (run a tool), `plan` (one-shot planning),
-  `approve` (human confirmation + execution), `handoff` (route to a specialist).
+  `approve` (human confirmation + execution). Routing *between* agents is not a
+  node — it is the broker's, and no graph has an edge to another agent.
   Multi-step phases live in subpackages named for their goal — `classify/`,
   `schedule/`, `write/`. Graph node ids, module names, and trace labels match.
 - **Nodes are pure state transitions.** `run` takes state and returns a partial
@@ -109,9 +110,9 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   `checkpoint.graph_config(namespace, thread_id, max_steps)`, so the shared loop
   reads no agent configuration.
 - **Extend by data, not by branching.** Prefer a registry/map over a new `if`:
-  a new specialist is a `HANDOFF_SPECIALIST` entry plus a tool spec; a new tool
-  is a file in `tools/<agent>/` registered in that package. Never edit the loop
-  to add a capability.
+  a new agent is an `AgentSpec` plus one line in `agents/bootstrap.py`; a new
+  tool is a file in `tools/<agent>/` registered in that package. Never edit the
+  broker loop or an agent's graph to add a capability.
 - **Deterministic work belongs in its own node, not inside a write node.**
   Retrieval, classification, and time resolution are separate, testable steps
   (`classify_gather`, `schedule_resolve`, `link_context`); the write nodes stay
@@ -323,21 +324,15 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/mapview/graph`, `POST /api/contextmenu/notes/{id}/path`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
-- **`api/chat_v2`** — the same chat tab driven by the **agent farm**
-  (`POST /api/chat/v2`, `/api/chat/v2/confirm`); this is what the Mini App calls.
-  It hands the thread to `agents.bootstrap.farm` and owns the projection more
-  fully than v1 does: the broker returns no message list, so this section
-  appends the user's message and the responder's reply itself, passes prior
-  turns down as `references={"messages": …}`, and stores `TurnOutcome.pending`
-  as the handle a later confirm resumes. It shares `chat_threads` with v1 and
-  tells the two `pending` shapes apart by `correlation_id`. No `citations` yet
-  (see `devdoc/agent-broker.md`).
-- **`api/chat`** — the v1 chat tab (`POST /api/chat`, `/api/chat/confirm`), still
-  mounted while v2 is proven, and still what `api/evals` replays.
-  It owns the caller's clock/locale *and* the `chat_threads` projection (its own
-  `db`): the endpoint loads the thread, hands the data to `agents.conversation`,
-  persists the result the agent returns, and shapes the response
-  (`helper.turn_response`). The agent performs no thread persistence.
+- **`api/chat_v2`** — the chat tab, driven by the **agent farm**
+  (`POST /api/chat/v2`, `/api/chat/v2/confirm`). It owns the caller's clock/locale
+  *and* the `chat_threads` projection (its own `db`): it hands the thread to
+  `agents.bootstrap.farm`, and because the broker returns no message list, this
+  section appends the user's message and the responder's reply itself, passes
+  prior turns down as `references={"messages": …}`, and stores
+  `TurnOutcome.pending` as the handle a later confirm resumes. No `citations` on
+  the response yet (see `devdoc/agent-broker.md`). The name keeps the `_v2`
+  suffix until the URL is collapsed back to `/api/chat`.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
   `/api/telegram_bot` (capture text/voice/media, enrich, atomize, polish, delete,
   link-candidates/toggle, reminders + dispatcher, user resolve/settings, RAG
@@ -346,8 +341,9 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
 
 There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
-`api/telegram_bot` in its `helper.py`/`db.py`; `agents/conversation` owns reads
-and orchestration, while `agents/enrich` owns confirmed writes. Only
+`api/telegram_bot` in its `helper.py`/`db.py`; each agent in the farm owns the
+domain it needs (`agents/finder` reads, `agents/enrich` writes notes,
+`agents/reminder` schedules). Only
 true infra is shared, at the repo root — `config`, `db`, `openai_client`, `i18n`,
 `migrate`, and `file_store` (the S3 client) — plus `api/deps.py` (auth, incl. the
 identity resolve) and `api/media_token.py`. `capture/Telegram_Bot` (the bot) and
@@ -414,8 +410,8 @@ user to an internal `user_id` and return only that user's data:
 folders can't be moved), `GET /api/mapview/graph` (connections map),
 `GET /api/header/stats` (Notes/Links/Reminders counts), `GET /api/search?q=`
 (server-side search), and `GET /api/notecard/attachments/{id}?t=<token>` (the
-signed image proxy). `POST /api/chat` + `/api/chat/confirm` back the **agentic
-chat tab** (see below).
+signed image proxy). `POST /api/chat/v2` + `/api/chat/v2/confirm` back the
+**agentic chat tab** (see below).
 
 UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
 and, on the Notes and Map tabs, a funnel **folder-filter** button. A floating
@@ -426,7 +422,7 @@ widens toward the borders; the active circle's glyph becomes a ✕ and doubles a
 the close/back control (the opposite circle hides). Views: **Notes** (a feed of
 note cards), **Explorer** (folder tree), **Map** (canvas force-directed graph),
 **Search** (client-side filter over loaded notes), **Chat** (conversation view
-over the `/api/chat` seam). One card template (`buildPost`) is shared by the
+over the `/api/chat/v2` seam). One card template (`buildPost`) is shared by the
 feed and the bottom-sheet preview (opened from the explorer/search/graph): image
 carousel on top, then title (date at the end of the title line), path, tags, full
 text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
@@ -451,90 +447,83 @@ preview sheet), and **Outline** (jump to the Explorer tab, expand the note's
 ancestor folders, scroll its row into view and flash it). Leaving the Map clears
 the focus/ego state.
 
-## Agentic chat
+## Agentic chat — the agent farm
 
-The chat tab is a **Q&A agent that hands off writes** (client-agnostic, in
-`agents/conversation/`) — see `devdoc/agentic-chat.md`. A bounded LangGraph
-single-tool-call ReAct workflow (`agents/conversation/graph.py`, `AGENT_MAX_STEPS`) drives
-read tools from `tools/conversation/`: schemas, tool handlers, and tool DB calls
-live outside the agent folder (`search_notes`, `get_note`, `neighbors`,
-`list_reminders`, `list_agenda`, `list_paths`, `detect_reminder` — a deterministic
-reminder classifier the model can call cheaply). The graph is four role-named
-nodes — `reason`, `act`, `handoff`, `approve` — each a module under
-`conversation/nodes/` with a single public `run`; `handoff` routes to the owning
-specialist via the `HANDOFF_SPECIALIST` map, and `reason` makes a tool-free call
-once the step budget is spent (no separate `final`/`pre_route` nodes). Conversation owns the explicit specialist handoffs:
-`perform_action(instruction)` for note actions and `set_reminder(instruction)` for
-scheduling. The chat agent
-**never mutates data itself**: the loop routes every write to the **enrich agent**
-(`agents/enrich/`), whose reminder capability also plans reminder actions. Enrich
-proposes the concrete write, and the loop pauses
-(`{status:"confirm", action}`), and `POST /api/chat/confirm {approve}` resumes,
-running it through the same specialist. `api/telegram_bot` retains its independent reminder detection,
-creation, and delivery implementation. Conversation state lives in `chat_threads`
-(`api/chat/db.py`, migration `0019`) as the application projection plus a
-`pending` handed-off action — **owned by the chat section, not the agent**. The
-agent surface is `run_turn(...)` / `run_confirmation(...)`: both take the loaded
-thread data as parameters and return the raw graph result, so every database
-call sits in the endpoint. `run_confirmation` returns `None` when nothing is
-awaiting a decision (the section must not persist that case — it would blank the
-thread). `POST /api/chat` returns `{status:"answer", reply,
-citations}` or `{status:"confirm", action}`.
+The chat tab is served by a **farm of peer agents behind a broker**
+(client-agnostic, in `agents/`) — see `devdoc/agent-broker.md` for the design and
+`devdoc/agents-architecture.md` for the map. No agent knows another exists.
+
+**The turn.** `api/chat_v2` calls `farm.start(message, context, references)`.
+The broker asks the router who runs next, hands that agent an `AgentRequest`,
+saves the `AgentResult` as a row in `agent_states` (the turn tree, migration
+0022), folds it into the turn history, and repeats until an agent needs the user
+or the reply has been written. `AGENT_MAX_HOPS` bounds the turn and counts the
+reply.
+
+**Routing** is `agents/broker/router.py`, cheapest case first: the responder is
+taken unconditionally when the turn is finishing; otherwise an entry tool names
+the agent for free; otherwise `ROUTER_MODEL` picks from the agents that have not
+yet run, and declines rather than guessing (a decline falls through to the
+responder). Adding an agent is a spec plus a line in `agents/bootstrap.py` — the
+only module that names an agent — and never an edit to the loop.
+
+**The agents.** `finder` reads and answers (`tools/finder/`: `search_notes`,
+`get_note`, `neighbors`, `list_reminders`, `list_agenda`, `list_paths`,
+`detect_reminder`); `enrich` owns note writes; `reminder` owns scheduling;
+`responder` is the only one that writes prose to the user. A work agent puts its
+output in `AgentResult.state` and reports what it touched as typed
+`Ref(kind, id)`; the responder reaches an earlier hop's state through the
+`read_state` tool, bounded by that agent's `may_read`.
+
+**Writes always pause.** An agent that wants to write returns `needs_input` with
+an `ask`; the section stores `TurnOutcome.pending` and
+`POST /api/chat/v2/confirm {approve}` resumes the turn. The write runs at most
+once — keyed by its own fingerprint in `action_executions`, not by the hop — so
+a retried confirm replays the stored outcome. A decline runs nothing.
+
+**Thread state** lives in `chat_threads` (`api/chat_v2/db.py`, migration 0019)
+and belongs to the section, not to any agent: the broker returns no message
+list, so `api/chat_v2` appends the user's message and the responder's reply and
+passes prior turns down as `references={"messages": …}`. `POST /api/chat/v2`
+returns `{status:"answer", reply}` or `{status:"confirm", action}`.
+
+`api/telegram_bot` retains its own independent reminder detection, creation and
+delivery, and does not use the farm.
 
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
-package, not inside `agents/*/tools`. Use `tools/conversation/` for chat read
-tools, `tools/enrich/` for note write/enrichment/reminder tools, and
-`tools/broker/` for the farm's own `read_state` (how a later hop reaches an
-earlier hop's saved state, bounded by the agent's `may_read`). Each tool
-file exposes `invoke(context: dict, args: dict)` and returns `ToolResult` with
-typed `data: dict`. Tool specs stay with their tool namespace as
-`tools/conversation/specs.py` and `tools/enrich/specs.py`. Agents import tool
-registries/specs from these packages and execute them through
-`agents/runtime/execute_tool.py`; callers render `ToolResult.data` to JSON text
-only at graph/API boundaries.
+package, not inside `agents/*/tools`: `tools/finder/` for reads, `tools/enrich/`
+and `tools/reminder/` for writes, and `tools/broker/` for the farm's own
+`read_state`. Each tool file exposes `invoke(context: dict, args: dict)` and
+returns `ToolResult` with typed `data: dict`; specs stay with their namespace as
+`tools/<agent>/specs.py`. Agents execute them through
+`agents/runtime/execute_tool.py`, and callers render `ToolResult.data` to JSON
+text only at graph/API boundaries. Extend by adding a tool file and registering
+it in its package — never by editing the loop.
 
-**Citations.** Answers are grounded in the notes they drew on: `search_notes`
-retrieves structured note evidence and returns a `ToolResult` with `data`,
-`citations`, and `retrieved_chunks`. Tools do not call `Ctx.cite` or mutate
-conversation trace directly. `agents/conversation/state.py` owns context mapping
-and merge helpers (`tool_context`, `apply_tool_result`), while the read node
-renders `ToolResult.data` to JSON text for the model. The API returns citations
-as `citations:[{note_id,title}]`; the chat UI renders them as chips that open
-the note card. Extend by adding a tool file under `tools/` and registering it in
-the corresponding tool package — never by editing the loop.
-
-## Agent evaluation and observability
-
-`api/evals/` provides internal-token-protected dry-run evaluation for Chat,
-Enrich, and Reminder; see `devdoc/agent-evaluation-observability.md`. Runs and
-results reference completed `chat_threads` turns (migration `0020`);
-the final schema has no `eval_cases` table. Chat replay never approves writes;
-Enrich/Reminder evaluate extracted handoff planning only. Structured traces
-capture routes, tools, and retrieved chunks. The LLM
-judge is controlled by `AGENT_EVAL_JUDGE_ENABLED`. Hidden Telegram commands
-`/eval` and `/eval_metrics` resolve the caller normally from `chat_id` to
-`users.id`; the API authorizes that internal id against chat ids configured in
-`EVAL_ADMIN_TELEGRAM_IDS`. The bot contains no allowlist logic.
+**Citations.** `search_notes` returns a `ToolResult` with `data`, `citations` and
+`retrieved_chunks`; tools never mutate a turn context themselves.
+`agents/finder/state.py` owns the mapping and merge helpers (`tool_context`,
+`apply_tool_result`), and the finder reports each cited note as a `Ref`. The v2
+response does **not** yet carry citations — `TurnOutcome` has no agent state, so
+the chips are unavailable to the endpoint; inline `[[note:ID]]` markers still
+render, since the client fetches those by id. See `devdoc/agent-broker.md`.
 
 ## Design docs
 
-`devdoc/` holds implementation specs for planned/agreed features (design agreed
-but not yet built) as Markdown. Before implementing a feature, check `devdoc/`
-for an existing spec and follow it; when a spec is fully implemented, update or
-remove it. Current specs: `devdoc/plugin-capture-tokens.md` (personal access
-tokens + public `/capture` for plugin clients — Chrome/Codex/Claude);
-`devdoc/agentic-chat.md` (the agentic chat architecture — partly built: read
-tools + specialist write handoffs shipped; streaming deferred);
-`devdoc/agentic-enrich.md` (the note action/enrichment agent);
-`devdoc/agentic-reminder.md` (the reminder capability);
-`devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
-`devdoc/agent-evaluation-observability.md` (evaluation runs and metrics); and
-`devdoc/agent-broker.md` (the agents broker — Phases 1–4 built in
-`agents/broker/` with `reminder`, `enrich`, `responder` and now `finder` agents,
-nothing calls it yet; Phase 5 is in progress and replaces `handoff_dispatch`).
-`agents/finder/` is `agents/conversation/` as a broker peer: read tools only, no
-handoff node, no approval pause and no checkpointer, answering into
-`AgentResult.state` for the responder to relay. `agents/conversation/` is
-untouched and still serves `api/chat` (v1) and `api/evals`. The farm's own
-endpoint is `api/chat_v2` — what the Mini App calls; deleting v1,
-`handoff_dispatch`, `HANDOFF_SPECIALISTS` and `MODE_AGENTS` is the last step.
+`devdoc/` holds implementation specs as Markdown — what is true now, or what has
+been agreed but not yet built. Before implementing a feature, check `devdoc/` for
+an existing spec and follow it; when a spec is fully implemented, update it, and
+when the code it describes is deleted, delete it.
+
+- `devdoc/agent-broker.md` — **the architecture doc for the farm**: contracts,
+  the three routing cases, the turn tree, `read_state`, idempotency, and the
+  phases it was built in. Start here.
+- `devdoc/agents-architecture.md` — the map: which folder is what, and the rules
+  that keep it extendable.
+- `devdoc/agent-workflows-langgraph.md` — the graphs *inside* agents (finder,
+  enrich, reminder) and the two persistence boundaries.
+- `devdoc/agentic-enrich.md` — the note action/enrichment agent.
+- `devdoc/agentic-reminder.md` — the reminder agent.
+- `devdoc/action-idempotency.md` — how a confirmed write runs at most once.
+- `devdoc/plugin-capture-tokens.md` — **not yet built**: personal access tokens
+  + a public `/capture` for plugin clients (Chrome/Codex/Claude).

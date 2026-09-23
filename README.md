@@ -43,12 +43,15 @@ shared, at the root.
 | `capture/Telegram_Bot/api_client.py` | async client the bot uses to call `/api/telegram_bot/*` |
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
 | `api/<section>/`  | one isolated vertical per web-app section: `feed`, `explorer`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
-| `api/chat/`       | agentic chat tab (`/api/chat`) — thin; delegates to `agents/conversation` |
-| `api/evals/`      | protected agent evaluation runner, result persistence, and metrics |
+| `api/chat_v2/`    | agentic chat tab (`/api/chat/v2`) — owns the thread projection; hands each turn to the agent farm |
 | `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
-| `agents/conversation/` | conversation agent, durable approval graph, and notes/RAG reads |
+| `agents/broker/`  | the turn loop, the router, and the turn tree (`agent_states`) |
+| `agents/finder/`  | reads and answers from the user's notes (RAG) |
+| `agents/enrich/`, `agents/reminder/` | confirmed writes: note actions, scheduling |
+| `agents/responder/` | the only agent that writes the user-facing reply |
+| `agents/bootstrap.py` | the one place an agent is named |
 | `agents/contracts/`, `agents/runtime/` | typed boundaries and shared technical runtime |
-| `agents/enrich/`  | all confirmed writes: note actions and chat reminder planning |
+| `tools/<agent>/`  | every tool implementation, outside the agent folders |
 | **shared infra (root + api):** | |
 | `config.py`       | all environment variables / constants, read once           |
 | `db.py`           | shared `cursor()` connection helper                         |
