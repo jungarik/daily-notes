@@ -21,26 +21,32 @@ def _install_stubs():
     handoff.plan_action = lambda user_id, request, now, tz, locale: planned["action"]
     handoff.execute_action = lambda user_id, action, now, tz, locale: ""
 
-    execute = types.ModuleType("agents.runtime.execute_tool")
-
-    def execute_tool(registry, context, name, args, owner="tool"):
-        executed["calls"].append({"context": context, "name": name, "args": args})
-
-        return executed["result"]
-
-    execute.execute_tool = execute_tool
-    execute.execute_allowed_tool = lambda *args, **kwargs: None
-
     # The tool package reaches psycopg at import time; the agent only needs the
-    # registry it exposes.
+    # registry it exposes. Recording happens in the tool rather than in a stubbed
+    # `execute_tool`, so the real runtime adapter still runs — and so this file
+    # does not replace a module every other agent in the suite also imports.
+    def _record_call(name):
+        def invoke(context, args):
+            executed["calls"].append({
+                "context": context,
+                "name": name,
+                "args": args,
+            })
+
+            return executed["result"]
+
+        return invoke
+
     tools = types.ModuleType("tools.reminder")
-    tools.TOOLS = {"create_reminder": lambda context, args: None}
+    tools.TOOLS = {
+        name: _record_call(name)
+        for name in ("create_reminder", "get_note_context")
+    }
     tools.CONTEXT_TOOLS = {"get_note_context"}
     tools.TOOL_SPECS = []
     tools.WRITE_TOOLS = {"create_reminder"}
 
     sys.modules["agents.reminder.handoff_api"] = handoff
-    sys.modules["agents.runtime.execute_tool"] = execute
     sys.modules["tools.reminder"] = tools
 
     return planned, executed

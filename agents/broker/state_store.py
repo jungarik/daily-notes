@@ -81,23 +81,3 @@ def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
         )
         for agent, status, produced, error, state_id in rows
     )
-
-
-def read(state_id: str, user_id: int) -> dict | None:
-    """One saved state, for an agent's `read_state` tool. Scoped to the owner;
-    the broker applies the per-agent `may_read` allowlist before calling this."""
-    with cursor() as cur:
-        cur.execute(
-            """
-            SELECT agent, status, state
-            FROM agent_states
-            WHERE state_id = %s AND user_id = %s;
-            """,
-            (state_id, user_id),
-        )
-        row = cur.fetchone()
-
-    if row is None:
-        return None
-
-    return {"agent": row[0], "status": row[1], "state": row[2]}

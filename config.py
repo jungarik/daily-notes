@@ -169,6 +169,10 @@ AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
 RESPONDER_MODEL = os.environ.get("RESPONDER_MODEL", "gpt-4o-mini")
 
+# Model the broker asks which agent runs next, when no entry tool resolves it.
+
+ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "gpt-4o-mini")
+
 # Max agent hops the broker will drive in one turn, the reply included: the
 
 # responder takes the last slot, so this is (work hops + 1). See

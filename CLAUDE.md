@@ -323,7 +323,17 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/mapview/graph`, `POST /api/contextmenu/notes/{id}/path`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
-- **`api/chat`** — the agentic chat tab (`POST /api/chat`, `/api/chat/confirm`).
+- **`api/chat_v2`** — the same chat tab driven by the **agent farm**
+  (`POST /api/chat/v2`, `/api/chat/v2/confirm`); this is what the Mini App calls.
+  It hands the thread to `agents.bootstrap.farm` and owns the projection more
+  fully than v1 does: the broker returns no message list, so this section
+  appends the user's message and the responder's reply itself, passes prior
+  turns down as `references={"messages": …}`, and stores `TurnOutcome.pending`
+  as the handle a later confirm resumes. It shares `chat_threads` with v1 and
+  tells the two `pending` shapes apart by `correlation_id`. No `citations` yet
+  (see `devdoc/agent-broker.md`).
+- **`api/chat`** — the v1 chat tab (`POST /api/chat`, `/api/chat/confirm`), still
+  mounted while v2 is proven, and still what `api/evals` replays.
   It owns the caller's clock/locale *and* the `chat_threads` projection (its own
   `db`): the endpoint loads the thread, hands the data to `agents.conversation`,
   persists the result the agent returns, and shapes the response
@@ -473,7 +483,9 @@ citations}` or `{status:"confirm", action}`.
 
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
 package, not inside `agents/*/tools`. Use `tools/conversation/` for chat read
-tools and `tools/enrich/` for note write/enrichment/reminder tools. Each tool
+tools, `tools/enrich/` for note write/enrichment/reminder tools, and
+`tools/broker/` for the farm's own `read_state` (how a later hop reaches an
+earlier hop's saved state, bounded by the agent's `may_read`). Each tool
 file exposes `invoke(context: dict, args: dict)` and returns `ToolResult` with
 typed `data: dict`. Tool specs stay with their tool namespace as
 `tools/conversation/specs.py` and `tools/enrich/specs.py`. Agents import tool
@@ -518,5 +530,11 @@ tools + specialist write handoffs shipped; streaming deferred);
 `devdoc/agent-workflows-langgraph.md` (the implemented State / Nodes / Edges);
 `devdoc/agent-evaluation-observability.md` (evaluation runs and metrics); and
 `devdoc/agent-broker.md` (the agents broker — Phases 1–4 built in
-`agents/broker/` with `reminder`, `enrich` and `responder` agents, nothing calls
-it yet; it replaces `handoff_dispatch` at Phase 5).
+`agents/broker/` with `reminder`, `enrich`, `responder` and now `finder` agents,
+nothing calls it yet; Phase 5 is in progress and replaces `handoff_dispatch`).
+`agents/finder/` is `agents/conversation/` as a broker peer: read tools only, no
+handoff node, no approval pause and no checkpointer, answering into
+`AgentResult.state` for the responder to relay. `agents/conversation/` is
+untouched and still serves `api/chat` (v1) and `api/evals`. The farm's own
+endpoint is `api/chat_v2` — what the Mini App calls; deleting v1,
+`handoff_dispatch`, `HANDOFF_SPECIALISTS` and `MODE_AGENTS` is the last step.

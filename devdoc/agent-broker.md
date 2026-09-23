@@ -198,9 +198,24 @@ AGENTS = {
 }
 ```
 
-The broker gives each agent a `read_state(state_id)` tool restricted to
-`may_read`, the same shape as `CONTEXT_TOOLS` restricts `execute_allowed_tool`
-today. An agent asking for a state it may not read gets an error, not the row.
+`read_state(state_id)` lives in `tools/broker/` — `TOOLS`, `CONTEXT_TOOLS`, `db`,
+the same shape as every other tool namespace — and an agent runs it through
+`execute_allowed_tool` with its own `may_read` in the context. It is a
+**context** tool, never advertised in `TOOL_SPECS`: a node calls it
+deterministically, the model never asks for it.
+
+Two independent checks, and only one of them is a security boundary.
+`tools/broker/db.get_state` scopes the row to the caller's `user_id` **in SQL**,
+so no allowlist can cross an owner. `may_read` is the softer one: every agent is
+our own code, so it catches a wiring mistake rather than a lying caller. An agent
+asking for a state it may not read gets an error, not the row — and the error
+names the agent that was refused, never what its state held.
+
+The responder reads deterministically, before its single model call, rather than
+offering `read_state` as something the model may request: the reply path runs on
+every turn and does not need a round-trip to decide it wants the record it is
+about to report on. A state it cannot read costs detail, never the reply — the
+hop is skipped with a warning.
 
 ## Routing
 
@@ -238,15 +253,23 @@ find out it broke.
 nothing else; the broker owns the loop and is handed a router. A new routing rule
 changes one file, and a change to how a hop is saved or suspended never touches
 routing. `Router(registry, select_model=None, always_ask_model=False)` —
-`select_model` is the case-3 seam and is still empty, so today a turn routes by
-entry tool or ends.
+`select_model` is the case-3 seam, filled by
+`agents/broker/model_selector.py`: one JSON call naming an agent from the
+candidate list, or `null`. It is conservative by construction — an unparseable
+answer, a missing key, or a name that was not offered all collapse to `None`,
+and the router then falls through to the responder. Routing badly is worse than
+routing nowhere, and the user gets a reply either way.
+
+It is not re-exported from `agents/broker/__init__.py`: it reaches the OpenAI
+client at import time, and importing the farm's contracts should not drag a
+network client along. The composition root imports it directly.
 
 The router is also the farm's only holder of the registry: `Broker` takes
 `(store, ledger, router)` and looks nothing up itself, resolving a suspended
 turn's agent through `router.get_agent(name)`, which raises on an unknown name.
-The composition root keeps its own reference for things that are not routing —
-the Phase 3 `read_state` tool and its `may_read` allowlist come from there, not
-through the router.
+The composition root keeps its own reference for things that are not routing.
+`read_state` needs neither: an agent passes its own `may_read` in the tool
+context, so nothing has to look a spec up to make the check.
 
 ## The responder
 
@@ -332,7 +355,67 @@ with a reply — an error is a thing the user is told, not a stack trace.
 | **2** ✅ | Port `reminder` (smallest). Old handoff path still serves chat. | yes |
 | **3** ✅ | Port `enrich`. | yes |
 | **4** ✅ | Add `responder`. Broker drives reminder + enrich end to end behind a flag. | yes |
-| **5** | `conversation` becomes a peer; endpoint calls the broker; delete `handoff_dispatch`, `HANDOFF_SPECIALISTS`, `MODE_AGENTS`. | no |
+| **5** | `conversation` becomes a peer (as `finder` ✅); endpoint calls the broker; delete `handoff_dispatch`, `HANDOFF_SPECIALISTS`, `MODE_AGENTS`. | no |
+
+Phase 5 is taken in pieces so each is reviewable on its own: the model router,
+`read_state`, **`finder`**, then the **endpoint** — all built. `agents/conversation/`
+is left untouched and still serves `api/chat` (v1) and `api/evals`; deleting it
+with `handoff_dispatch`, `HANDOFF_SPECIALISTS` and `MODE_AGENTS` is the last
+step, once v2 has been run for a while.
+
+### The endpoint
+
+`api/chat_v2/` is a section vertical of its own (`endpoints.py` / `helper.py` /
+`db.py`) serving `/api/chat/v2` and `/api/chat/v2/confirm`. Both versions are
+mounted; the Mini App calls v2, so reverting is a URL change in
+`browser/webapp/src/lib/api.js`. The wire shape is v1's, minus `citations`.
+
+Three things the broker does not do, which this section therefore does:
+
+- **it keeps the transcript.** The broker returns no message list — the finder
+  builds its own scratch messages and keeps them — so the section appends the
+  user's message and the responder's reply. The thread becomes a clean record of
+  what was said, with no tool calls in it, and prior turns reach the finder as
+  `references={"messages": …}` because the thread belongs to the section, not to
+  the farm.
+- **it stores the turn handle.** `TurnOutcome.pending` goes into the same
+  `chat_threads.pending` column v1 uses. The two shapes differ, so
+  `helper.find_resumable` treats a `pending` without a `correlation_id` as
+  nothing to confirm rather than crashing on a key the other version never
+  wrote. No migration.
+- **it carries the question into the confirm.** `farm.resume` takes a message; a
+  confirm has none, so the section reads the last user message back off the
+  thread. The resumed hops and the responder's second reply need the request
+  that started the turn to phrase anything about it.
+
+`citations` is not on the v2 response. `TurnOutcome` carries no agent state, so
+the finder's cited notes are not reachable from the endpoint yet — v1 still
+serves chips, and inline `[[note:ID]]` markers work on both, since the client
+fetches those by id. Closing that gap means either reading the finder hop's row
+through `read_state` (no broker change) or putting each hop's state on the
+outcome (a broker change), and it is still open.
+
+### The finder
+
+`agents/finder/` is the conversation controller as a peer — copied, then cut
+down to what the farm does not already own:
+
+- **no `handoff` node, no `approve` node.** The controller could call
+  `perform_action` / `set_reminder` to route a write at the model's discretion;
+  finder has neither tool and gets `READ_TOOL_SPECS` only. Which agent owns a
+  write is the router's case-3 decision, so the one agent that named its peers
+  no longer does.
+- **no checkpointer.** With no interrupt, a hop runs start to finish, so there
+  is no `resume`, no thread-scoped `graph_config`, and no retry of an unfinished
+  run. The hop's durable record is its `agent_states` row.
+- **no reply.** The answer goes into `AgentResult.state` as
+  `{answer, citations, trace}`; the responder reaches it through `read_state`
+  and does the speaking. Every cited note is reported as a `Ref("note", id)` —
+  reading is not producing, so those say what the answer rested on.
+
+What is left is `reason` + `act` over `tools/conversation/`, which finder shares
+rather than duplicating: the tool namespace is renamed when `conversation`
+itself goes, at the end of Phase 5.
 
 Phase 4 is the checkpoint: if the broker cannot drive a two-hop turn (enrich
 writes a note, reminder schedules it, responder explains both) without an agent

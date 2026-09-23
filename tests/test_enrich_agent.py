@@ -20,27 +20,33 @@ def _install_stubs():
     handoff.plan_action = lambda user_id, request, now, tz, locale: planned["action"]
     handoff.execute_action = lambda user_id, action, now, tz, locale: ""
 
-    execute = types.ModuleType("agents.runtime.execute_tool")
-
-    def execute_tool(registry, context, name, args, owner="tool"):
-        executed["calls"].append({"context": context, "name": name, "args": args})
-
-        return executed["result"]
-
-    execute.execute_tool = execute_tool
-    execute.execute_allowed_tool = lambda *args, **kwargs: None
-
     # The tool package reaches psycopg at import time; the agent only needs the
-    # registry it exposes.
+    # registry it exposes. Recording happens in the tool rather than in a stubbed
+    # `execute_tool`, so the real runtime adapter still runs — and so this file
+    # does not replace a module every other agent in the suite also imports.
+    def _record_call(name):
+        def invoke(context, args):
+            executed["calls"].append({
+                "context": context,
+                "name": name,
+                "args": args,
+            })
+
+            return executed["result"]
+
+        return invoke
+
     tools = types.ModuleType("tools.enrich")
-    tools.TOOLS = {name: (lambda context, args: None) for name in (
-        "create_note", "set_note_path", "enrich_note", "add_note_tags", "link_notes")}
+    tools.TOOLS = {
+        name: _record_call(name)
+        for name in ("create_note", "set_note_path", "enrich_note",
+                     "add_note_tags", "link_notes")
+    }
     tools.CONTEXT_TOOLS = set()
     tools.TOOL_SPECS = []
     tools.WRITE_TOOLS = set(tools.TOOLS)
 
     sys.modules["agents.enrich.handoff_api"] = handoff
-    sys.modules["agents.runtime.execute_tool"] = execute
     sys.modules["tools.enrich"] = tools
 
     return planned, executed

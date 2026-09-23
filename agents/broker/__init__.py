@@ -3,6 +3,10 @@
 See `devdoc/agent-broker.md`. The composition root (`agents/bootstrap.py`) is the
 only place that builds a `Broker` — everything here takes its collaborators as
 parameters.
+
+`model_selector` is deliberately *not* re-exported: it reaches the OpenAI client
+at import time, and importing the farm's contracts should not drag a network
+client in behind them. The composition root imports it directly.
 """
 
 from agents.broker.broker import Broker, generate_action_id

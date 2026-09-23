@@ -11,7 +11,18 @@ import unittest
 
 
 def _install_stubs():
-    """Stand in for the model gateway `agents.responder.agent` imports."""
+    """Stand in for the model gateway, which reaches `openai` at import time.
+
+    Idempotent and shared: more than one test module stubs this, and the last
+    one to install must not orphan the handle an earlier one already gave to an
+    agent module it imported. Reusing the same recorder keeps every file
+    pointing at one stub however the suite is ordered.
+    """
+    existing = sys.modules.get("agents.runtime.model_gateway")
+
+    if existing is not None and hasattr(existing, "GATEWAY"):
+        return existing.GATEWAY
+
     gateway = {"response": None, "error": None, "requests": []}
 
     module = types.ModuleType("agents.runtime.model_gateway")
@@ -26,12 +37,37 @@ def _install_stubs():
 
     module.chat_completion = chat_completion
     module.ModelGatewayError = RuntimeError
+    module.GATEWAY = gateway
     sys.modules["agents.runtime.model_gateway"] = module
 
     return gateway
 
 
+def _install_state_rows():
+    """Stand in for `tools.broker.db`, which reaches psycopg at import time.
+
+    Idempotent and shared for the same reason the gateway stub is: more than one
+    test module installs it, and the loser of that race must not be left holding
+    a dict nothing reads. The real tool still runs — only the SQL is stood in
+    for, so the allowlist and the error shapes are exercised for real.
+    """
+    existing = sys.modules.get("tools.broker.db")
+
+    if existing is not None and hasattr(existing, "ROWS"):
+        return existing.ROWS
+
+    rows = {}
+
+    module = types.ModuleType("tools.broker.db")
+    module.get_state = lambda state_id, user_id: rows.get((str(state_id), user_id))
+    module.ROWS = rows
+    sys.modules["tools.broker.db"] = module
+
+    return rows
+
+
 GATEWAY = _install_stubs()
+STATES = _install_state_rows()
 
 from agents.broker.contracts import AgentRequest, HistoryEntry, Ref  # noqa: E402
 from agents.responder import agent  # noqa: E402
@@ -104,6 +140,55 @@ class ModelReplyTests(unittest.TestCase):
         agent.start(_request([SAVED_NOTE]))
 
         self.assertNotIn("waiting", GATEWAY["requests"][0]["messages"][1]["content"])
+
+
+class ReadStateTests(unittest.TestCase):
+    """The history carries refs, not prose. An answer another agent composed is
+    only reachable through `read_state` — without it a Q&A turn could only be
+    reported as "found some notes"."""
+
+    def setUp(self):
+        GATEWAY["error"] = None
+        GATEWAY["requests"].clear()
+        GATEWAY["response"] = _completion("ok")
+        STATES.clear()
+
+    def test_an_earlier_hops_answer_reaches_the_prompt(self):
+        STATES[("s1", 7)] = {
+            "agent": "enrich",
+            "status": "done",
+            "state": {"answer": "You wrote about Postgres tuning."},
+        }
+
+        agent.start(_request([SAVED_NOTE]))
+
+        sent = GATEWAY["requests"][0]["messages"][1]["content"]
+        self.assertIn("What enrich produced:", sent)
+        self.assertIn("Postgres tuning", sent)
+
+    def test_an_unreadable_state_costs_detail_not_the_reply(self):
+        """No row for that id — the turn must still produce a reply."""
+        result = agent.start(_request([SAVED_NOTE]))
+
+        self.assertEqual("done", result.status)
+        self.assertTrue(result.reply)
+        self.assertNotIn("What enrich produced:",
+                         GATEWAY["requests"][0]["messages"][1]["content"])
+
+    def test_it_does_not_read_its_own_hop(self):
+        """The responder is in the history on a resumed turn; reporting on its
+        own earlier reply would have it quoting itself."""
+        STATES[("s9", 7)] = {
+            "agent": "responder",
+            "status": "done",
+            "state": {"reply": "an earlier reply"},
+        }
+        history = (SAVED_NOTE, HistoryEntry("responder", "done", state_id="s9"))
+
+        agent.start(_request(history))
+
+        self.assertNotIn("an earlier reply",
+                         GATEWAY["requests"][0]["messages"][1]["content"])
 
 
 class FallbackTests(unittest.TestCase):

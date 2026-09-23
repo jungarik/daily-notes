@@ -42,10 +42,14 @@ class AgentStructureTests(unittest.TestCase):
             "reminder/handoff_api.py", "reminder/graph.py", "reminder/state.py",
             "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
+            "finder/agent.py", "finder/graph.py", "finder/routing.py",
+            "finder/state.py", "finder/prompts.py",
+            "finder/nodes/reason.py", "finder/nodes/act.py",
             "responder/agent.py", "responder/prompts.py",
             "broker/__init__.py", "broker/contracts.py", "broker/broker.py",
             "broker/registry.py", "broker/state_store.py",
-            "broker/router.py",
+            "broker/router.py", "broker/model_selector.py",
+            "broker/routing_prompts.py",
             "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
             "enrich/nodes/write/validate.py", "bootstrap.py",
             "runtime/execute_tool.py",
@@ -76,9 +80,16 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/reminder/create_reminder.py",
             "../tools/reminder/specs.py", "../tools/reminder/db.py",
             "../tools/reminder/get_note_context.py",
+            "../tools/broker/__init__.py",
+            "../tools/broker/db.py",
+            "../tools/broker/read_state.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
         self.assertEqual([], list((root / "conversation" / "tools").rglob("*.py")))
+        # Finder is the conversation controller minus what the farm now owns:
+        # no approval pause of its own, and no handoff to a named peer.
+        self.assertEqual([], list((root / "finder").rglob("approve.py")))
+        self.assertEqual([], list((root / "finder").rglob("handoff.py")))
         self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
 

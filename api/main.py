@@ -35,6 +35,7 @@ from api.contextmenu.endpoints import router as contextmenu_router
 from api.header.endpoints import router as header_router
 from api.search.endpoints import router as search_section_router
 from api.chat.endpoints import router as chat_router
+from api.chat_v2.endpoints import router as chat_v2_router
 from api.telegram_bot.endpoints import router as telegram_bot_router
 from api.evals.endpoints import router as evals_router
 
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(header_router)
     app.include_router(search_section_router)
     app.include_router(chat_router)
+    app.include_router(chat_v2_router)
     app.include_router(telegram_bot_router)
     app.include_router(evals_router)
 
