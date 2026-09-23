@@ -56,6 +56,12 @@ def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
     One agent, one entry: a later row for the same agent replaces its earlier
     one, so a confirmed hop supersedes the `needs_input` that preceded it. Both
     rows stay in the table — that is the audit record.
+
+    A rebuilt entry carries no `error`: the table does not store one, so there is
+    nothing here to report. Within a single turn the live history holds the real
+    text — this path runs only to restore the hops that came *before* a suspend,
+    so what is lost is the wording of a failure the user has already been told
+    about. Its `status` survives, which is what routing reads.
     """
     with cursor() as cur:
         cur.execute(
@@ -76,8 +82,7 @@ def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
             produced=tuple(
                 Ref(kind=str(item.get("kind")), id=str(item.get("id")))
                 for item in produced or []),
-            error=error,
             state_id=str(state_id),
         )
-        for agent, status, produced, error, state_id in rows
+        for agent, status, produced, state_id in rows
     )

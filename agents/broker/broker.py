@@ -202,7 +202,6 @@ class Broker:
                 state=result.state,
                 error=f"invalid produced: {'; '.join(found)}")
 
-        turn_history = self._store.read_history(correlation_id)
         state_id = self._store.save(
             correlation_id=correlation_id,
             causation_id=pending.get("state_id"),
@@ -212,20 +211,20 @@ class Broker:
             produced=tuple(result.produced),
             state=result.state)
 
-        entry = HistoryEntry(
+        newHistory = merge_history(self._store.read_history(correlation_id), HistoryEntry(
             agent=agent.name,
             status=result.status,
             produced=tuple(result.produced),
             error=result.error,
-            state_id=state_id)
+            state_id=state_id))
 
         return self._run(
             correlation_id=correlation_id,
             message=message,
             context=context,
             references=references or {},
-            history=merge_history(turn_history, entry),
-            causation_id=entry.state_id,
+            history=newHistory,
+            causation_id=state_id,
             entry_tool=None)
 
     def _confirm(self, correlation_id: str, agent: AgentSpec, pending: dict,
