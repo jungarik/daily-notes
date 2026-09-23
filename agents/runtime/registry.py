@@ -1,4 +1,4 @@
-"""The agent roster, and the two lookups the loop routes by.
+"""The agent roster, and the lookups the loop routes by.
 
 Registration is where a conflicting farm is rejected: a duplicate agent name or a
 tool name claimed by two agents raises at startup, not on the turn that happens
@@ -8,6 +8,7 @@ to hit it.
 from agents.contracts import AgentSpec
 
 RESPONDER = "responder"
+ROUTER = "router"
 
 
 class AgentRegistry:
@@ -45,15 +46,28 @@ class AgentRegistry:
         return None if owner is None else self._agents[owner]
 
     def find_responder(self) -> AgentSpec | None:
-        """The reply-only agent, once one is registered (Phase 4)."""
+        """The reply-only agent."""
         return self._agents.get(RESPONDER)
 
+    def find_router(self) -> AgentSpec | None:
+        """The agent that chooses the next hop.
+
+        Reached by name rather than by routing: something has to choose
+        first, and that something cannot itself be chosen.
+        """
+        return self._agents.get(ROUTER)
+
     def list_agents(self) -> list[dict]:
-        """What the case-3 router is shown: who exists and what they do."""
+        """What the router is shown: who exists and what they do.
+
+        Both singletons are left out. The responder is not a choice — it
+        takes the last hop by construction. The router is not a choice
+        either, and offering it would let a decision pick itself.
+        """
         return [
             {"name": agent.name, "description": agent.description}
             for agent in self._agents.values()
-            if agent.name != RESPONDER
+            if agent.name not in (RESPONDER, ROUTER)
         ]
 
     def may_read(self, reader: str, subject: str) -> bool:

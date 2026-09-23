@@ -10,9 +10,9 @@ The full design — contracts, routing, the turn tree, idempotency — is
 agents/
 ├── contracts/                 every shape the farm exchanges, one per file:
 │                               AgentSpec/Request/Result, UserContext, Ref,
-│                               HistoryEntry, Status, TurnOutcome, plus
-│                               ToolResult and PlanRequest. Imports nothing —
-│                               that is what keeps the graph acyclic
+│                               AGENT_KIND, HistoryEntry, Status, TurnOutcome,
+│                               plus ToolResult and PlanRequest. Imports
+│                               nothing — that is what keeps the graph acyclic
 ├── runtime/                   the machinery that runs a turn — none of it is
 │   │                           any one agent's work
 │   ├── loop.py              the turn loop
@@ -21,9 +21,9 @@ agents/
 │   ├── execution_ledger.py    at-most-once confirmed writes
 │   └── checkpoint, model_gateway, execute_tool
 ├── router/                    who runs next — the farm's routing policy
-│   ├── agent.py               `Router`: three cases, cheapest first, plus
-│   │                           case 3's model call. The one `agent.py`
-│   │                           with no SPEC — it picks agents, it is not one
+│   ├── agent.py               a registered agent like any other; its SPEC
+│   │                           runs case 3's model call and reports the
+│   │                           choice as Ref(AGENT_KIND, name)
 │   └── prompts.py
 ├── finder/                    reads and answers — the vault's reader
 ├── enrich/                    note writes: create, move, tag, link, classify
@@ -47,8 +47,11 @@ tools/
 `api/chat_v2` calls `loop.start(message, context, references)`. Each hop:
 
 1. **Route.** The responder is taken unconditionally when the turn is finishing;
-   otherwise an entry tool resolves the agent for free; otherwise a model picks
-   from the agents that have not yet run. It declines rather than guessing.
+   otherwise an entry tool resolves the agent for free; otherwise the router
+   runs as a hop of its own and a model picks from the agents that have not yet
+   run. It declines rather than guessing, and a decline falls through to the
+   responder. A router hop is saved and lands in the history like any other, but
+   does not spend the hop budget — routing is free.
 2. **Run.** The agent gets an `AgentRequest` and returns an `AgentResult` —
    `done`, `needs_input` (it wants the user to confirm a write), or `failed`.
 3. **Record.** One row in `agent_states`, and one entry in the turn history.
@@ -72,9 +75,12 @@ budget ran out. `AGENT_MAX_HOPS` counts the reply.
 - **Writes happen at most once.** A confirmed action is keyed by its own
   fingerprint, not by the hop, so a retried confirm replays the stored outcome.
 - **Routing and the loop are separate packages.** `router/` decides who runs;
-  `runtime/loop.py` runs them. They meet only in `bootstrap.py`, which hands
-  one to the other — so a new routing rule never touches the loop, and neither
-  imports the other (enforced in `tests/test_agent_structure.py`).
+  `runtime/loop.py` runs them. They meet only in `bootstrap.py`, which registers
+  the router in the roster the loop is handed — so a new routing rule never
+  touches the loop, and neither imports the other (enforced in
+  `tests/test_agent_structure.py`). The loop reaches the router by the name the
+  registry knows it by; `AGENT_KIND`, the one `Ref.kind` the loop reads, is a
+  contract for exactly that reason.
 - **Extend by data.** A new agent is a spec plus a registry line in
   `bootstrap.py`; a new tool is a file in `tools/<agent>/`. Neither touches the
   loop.

@@ -10,31 +10,28 @@ from agents.enrich import agent as enrich_agent
 from agents.finder import agent as finder_agent
 from agents.reminder import agent as reminder_agent
 from agents.responder import agent as responder_agent
-from agents.router import Router
-from agents.router.agent import select_agent_name
+from agents.router import agent as router_agent
 from agents.runtime import execution_ledger, state_store
 from agents.runtime.loop import Loop
 from agents.runtime.registry import AgentRegistry
 
 # The farm. Agents register themselves as specs; the registry rejects a
 # duplicate name or a tool name two agents both claim, here at import time.
+# The router registers like any other — the loop reaches it by name.
 agents = AgentRegistry()
 agents.register(reminder_agent.SPEC)
 agents.register(enrich_agent.SPEC)
 agents.register(finder_agent.SPEC)
 agents.register(responder_agent.SPEC)
+agents.register(router_agent.SPEC)
 
-# Case 3: when no entry tool resolves a hop, a model picks from the roster. It
-# declines rather than guessing, and the router then falls through to the
-# responder, which takes the last hop.
-router = Router(
-    agents,
-    select_model=select_agent_name,
-    always_ask_model=config.AGENT_ROUTER_ALWAYS)
-
+# `always_route` forces the model router for every hop by skipping the
+# entry-tool shortcut. On in dev and in the eval harness, so the path
+# production almost never takes is the path a local turn always takes.
 loop = Loop(
     state_store,
     execution_ledger,
-    router,
+    agents,
     max_hops=config.AGENT_MAX_HOPS,
+    always_route=config.AGENT_ROUTER_ALWAYS,
 )

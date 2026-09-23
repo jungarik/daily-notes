@@ -240,9 +240,12 @@ has already been made.** Three cases, in order:
    looks it up in `entry_tools` across the registry. No router call. This is the
    common path and covers every single-agent turn.
 3. **Otherwise, ask.** When an agent finishes and more than one agent could
-   plausibly follow, the loop makes one model call: the roster (`name` +
-   `description`) plus the history of the turn so far — so it will not re-route to
-   an agent that already ran — returning the next agent's name.
+   plausibly follow, the loop runs the router as a hop: it gets the candidates
+   (`name` + `description`) in `references` plus the history of the turn so far
+   — so it will not re-route to an agent that already ran — and makes one model
+   call returning the next agent's name. The candidate list is the loop's, built
+   from the agents that have not yet run; an empty list short-circuits, so a
+   turn with nothing left to do never spends a call finding that out.
 
 So a typical turn spends **zero** router calls and a genuinely multi-agent turn
 spends one. `entry_tools` lives on the spec, meaning the agent declares what
@@ -260,29 +263,40 @@ router; it is on in dev and in the eval harness. The path that production almost
 never takes is the path every local turn takes, which is the cheapest place to
 find out it broke.
 
-**Where it lives.** `agents/router/agent.py` holds `Router.select_agent` and
-nothing else; the loop owns the loop and is handed a router. A new routing rule
-changes one file, and a change to how a hop is saved or suspended never touches
-routing. `Router(registry, select_model=None, always_ask_model=False)` —
-`select_model` is the case-3 seam, filled by
-`select_agent_name`, in the same module: one JSON call naming an agent from the
-candidate list, or `null`. It is conservative by construction — an unparseable
-answer, a missing key, or a name that was not offered all collapse to `None`,
-and the router then falls through to the responder. Routing badly is worse than
-routing nowhere, and the user gets a reply either way.
+**Where it lives.** `agents/router/agent.py` is **an agent**, not a service the
+loop calls. It has a `SPEC` like every peer, `SPEC` is the whole surface of
+`agents/router/`, and `bootstrap.py` registers it alongside the other four. Its
+`start` reads `references["candidates"]`, calls `select_agent_name` (one JSON
+call naming an agent from that list, or `null`), and reports the choice the way
+every agent reports its work — `produced=(Ref(AGENT_KIND, name),)`. So a routing
+decision is an ordinary row in `agent_states` and an ordinary `HistoryEntry`:
+the turn tree records *why* the next agent ran, not just that it did.
 
-It is not re-exported from `agents/router/__init__.py` — the package's surface
-is `Router` — but the old import-weight reason for keeping it in a separate
-module is gone: importing `Router` now reaches the OpenAI client either way.
-That is why `tests/test_loop.py`, the suite's first importer of `Router`,
-installs the shared gateway stub before it (`tests/gateway_stub.py`).
+Two things follow from that, and both are deliberate:
 
-The router is also the farm's only holder of the registry: `Loop` takes
-`(store, ledger, router)` and looks nothing up itself, resolving a suspended
-turn's agent through `router.get_agent(name)`, which raises on an unknown name.
-The composition root keeps its own reference for things that are not routing.
-`read_state` needs neither: an agent passes its own `may_read` in the tool
-context, so nothing has to look a spec up to make the check.
+- **Router hops are free.** The loop counts only entries whose agent is not the
+  router against `AGENT_MAX_HOPS`, so making routing visible did not halve the
+  work a turn can do.
+- **The router is never a candidate.** `registry.list_agents()` leaves out both
+  singletons — the responder, which takes the last hop by construction, and the
+  router, because offering it would let a decision pick itself.
+
+It is conservative by construction: an unparseable answer, a missing key, or a
+name that was not offered all collapse to `None`, which means an empty
+`produced`, which the loop reads as "the responder takes the hop". Routing badly
+is worse than routing nowhere, and the user gets a reply either way. Importing
+the router reaches the OpenAI client, which is why `tests/test_loop.py` installs
+the shared gateway stub first (`tests/gateway_stub.py`).
+
+`Loop` takes `(store, ledger, registry)` and does its own lookups:
+`find_responder()` for case 1, `find_by_entry_tool()` for case 2,
+`find_router()` and `list_agents()` for case 3, and `get(name)` to resolve a
+suspended turn's agent (it raises on an unknown name). The one value that
+crosses from routing to the loop is `AGENT_KIND` — the single reserved
+`Ref.kind`, and a contract rather than a literal in two files precisely because
+the loop and the router may not import each other. `read_state` needs none of
+this: an agent passes its own `may_read` in the tool context, so nothing has to
+look a spec up to make the check.
 
 ## The responder
 
@@ -290,11 +304,11 @@ A peer agent whose job is the user-facing reply, and the **last hop of every
 turn** — including failed ones, so the user gets a sensible message rather than a
 raw error. It may read any state (`may_read=["*"]`).
 
-**It is an ordinary hop, not a step outside the loop.** The router picks it when
-the turn is finishing; the loop says so with one flag, `force_responder`, set
-when the budget's last slot is reached or a hop returned `needs_input` or
-`failed`. The router never inspects a status itself. A hop that returns a `reply`
-ends the loop — which is also why a confirm gets a second reply even though the
+**It is an ordinary hop, not a step outside the loop.** The loop takes it
+directly when the turn is finishing — one flag, set when the budget's last slot
+is reached or a hop returned `needs_input` or `failed` — and never asks the
+router, because there is nothing to decide. The router never inspects a status
+itself. A hop that returns a `reply` ends the loop — which is also why a confirm gets a second reply even though the
 turn's history already holds the first.
 
 `AGENT_MAX_HOPS` therefore counts the reply: the default of 5 is four work hops

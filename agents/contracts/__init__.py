@@ -9,7 +9,8 @@ Three groups:
 
   - **what an agent implements and exchanges** — `AgentSpec`, `AgentRequest`,
     `AgentResult`;
-  - **what a turn is made of** — `UserContext`, `Ref`, `HistoryEntry`, `Status`;
+  - **what a turn is made of** — `UserContext`, `Ref`, `HistoryEntry`, `Status`,
+    and `AGENT_KIND`, the one ref kind the loop reads for itself;
   - **what a turn hands back** — `TurnOutcome`.
 
 Plus two that belong to an agent's own working, not to the loop's: `ToolResult`
@@ -20,6 +21,7 @@ implementation detail, so `from agents.contracts import AgentSpec` keeps working
 if a type moves. See `devdoc/agent-loop.md`.
 """
 
+from agents.contracts.agent_kind import AGENT_KIND
 from agents.contracts.agent_request import AgentRequest
 from agents.contracts.agent_result import AgentResult
 from agents.contracts.agent_spec import AgentSpec
@@ -32,6 +34,7 @@ from agents.contracts.turn_outcome import TurnOutcome
 from agents.contracts.user_context import UserContext
 
 __all__ = [
+    "AGENT_KIND",
     "AgentRequest",
     "AgentResult",
     "AgentSpec",

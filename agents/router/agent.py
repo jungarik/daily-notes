@@ -1,126 +1,75 @@
-"""The router: who runs the next hop.
+"""The router agent: which agent takes the next hop.
 
-Named `agent.py` for the folder's shape, not because it is a peer in the farm —
-it is the one `agent.py` with no `SPEC`, because it is what *chooses* the agents
-the registry holds. The loop takes it as a constructor argument; it is never
-registered and never takes a hop of its own.
+A registered peer like any other — a `SPEC`, a `start(request) -> AgentResult`,
+and a hop of its own in the turn history. What makes it unusual is only that
+the loop reaches it by name rather than by routing to it: something has to
+choose first, and that something cannot itself be chosen.
 
-The loop (`agents/runtime/loop.py`) drives a turn; this decides each hop.
-Splitting them means each file has one reason to change: a new routing rule
-lands here without touching the loop, and a change to how a hop is saved or
-suspended never touches routing. This package is the only one that holds the
-registry — the loop looks nothing up itself.
+**It runs only when a choice needs a model.** The loop resolves the two free
+cases itself — the responder when the turn is finishing, and an entry tool when
+the previous model call already named one — because both are loop-local state
+(`hops_left`, the not-yet-consumed entry tool) rather than routing policy. So a
+turn that never needs a model has no router hop and no router row, which is the
+honest record: the router appears exactly where a model made a decision.
 
-Three cases, cheapest first (`devdoc/agent-loop.md`):
+**It answers in `produced`.** `Ref("agent", "<name>")` names the agent that
+runs next; an empty `produced` means it declined, and the loop falls through to
+the responder. This is the one place the farm reserves a `Ref.kind` — see
+`agents/contracts/ref.py`.
 
-  1. the turn is finishing — the responder takes the hop;
-  2. an entry tool name resolves it — the previous model call already chose;
-  3. otherwise ask the model, which sees the candidates, the user's message and
-     the history of what has already run.
+It is conservative by construction. A model that answers with a name nobody
+registered, or with prose instead of JSON, declines rather than routing
+somewhere arbitrary. The responder still gets its hop, so the user is answered
+either way: routing badly is worse than routing nowhere.
 
-The responder is an ordinary hop, not a step outside the loop: it is picked here
-like anyone else. The router will hand it back as often as it is asked — the
-loop stops asking once a hop has produced a reply, which is what ends a turn.
-
-Case 3 lives at the bottom of this file as `select_agent_name`, but reaches
-`Router` as the injected `select_model` callable rather than by being called
-directly. Same module, still a seam: routing stays testable with no model, and
-a different selection strategy is a different callable rather than an edit to
-the class. Without one the router falls straight through to the responder after
-case 2.
+Nothing in this module imports another agent.
 """
 
 import json
 import logging
 
 import config
-from agents.contracts import AgentSpec, HistoryEntry
+from agents.contracts import AgentRequest, AgentResult, AgentSpec, HistoryEntry, Ref
 from agents.router.prompts import SYSTEM, selection_request
 from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)
 
+NAME = "router"
 
-class Router:
-    """Picks the next agent for one hop, and is the only holder of the registry.
+DESCRIPTION = (
+    "Picks the agent that takes the next hop. Never a candidate for its own "
+    "choice, and never routed to — the loop reaches it by name.")
 
-    The turn loop asks it who runs next and looks nothing up itself, so the roster
-    has exactly one reader inside the farm.
+# The kind the loop reads off this agent's `produced` to learn its decision.
+AGENT_KIND = "agent"
 
-    `always_ask_model` forces case 3 for every hop, skipping the entry-tool
-    shortcut. It is on in dev and in the eval harness, so the path production
-    almost never takes is the path a local turn always takes.
+
+def start(request: AgentRequest) -> AgentResult:
+    """Choose the agent for this hop from the candidates the loop resolved.
+
+    The candidates arrive in `references` because the roster is the registry's
+    and this agent holds no handle on it — the loop, which does, subtracts the
+    agents that already ran and passes on what is left.
+
+    Never fails: a model that is down must not take the turn with it. A decline
+    is `done` with nothing produced, and the loop reads that as "no one left".
     """
+    candidates = list(request.references.get("candidates") or [])
 
-    def __init__(self, registry, select_model=None, always_ask_model: bool = False):
-        self._registry = registry
-        self._select_model = select_model
-        self._always_ask_model = always_ask_model
+    if not candidates:
+        return AgentResult(status="done", state={"candidates": [], "chosen": None})
 
-    def get_agent(self, name: str) -> AgentSpec:
-        """The agent registered under a name.
+    chosen = select_agent_name(candidates, request.message, request.history)
+    produced = () if chosen is None else (Ref(kind=AGENT_KIND, id=chosen),)
 
-        Raises on an unknown name: a suspended turn naming an agent that no
-        longer exists is a deploy-time mistake, and a silent `None` would turn it
-        into a confusing failure three frames later.
-        """
-        return self._registry.get(name)
-
-    def select_agent(self, message: str, turns: tuple[HistoryEntry, ...],
-                     entry_tool: str | None, force_responder: bool = False) -> AgentSpec | None:
-        """The agent this hop belongs to, or None when the turn has run out of
-        moves.
-
-        `force_responder` says the turn is finishing — it is the caller's last
-        slot, or a hop asked the user or failed. The router does not work that
-        out itself: it never inspects a hop's status, only which agents have
-        already run.
-
-        When no work agent can be picked the responder takes the hop, so a turn
-        ends with a reply rather than with silence. An entry tool nothing claims
-        is not a dead end either: it falls through to the model, and then to the
-        responder.
-        """
-        if force_responder:
-            return self._registry.find_responder()
-
-        addressed = (
-            self._registry.find_by_entry_tool(entry_tool)
-            if entry_tool is not None and not self._always_ask_model
-            else None)
-
-        if addressed is not None:
-            return addressed
-
-        candidates = self._candidates(turns)
-        chosen = (
-            self._select_model(candidates, message, turns)
-            if candidates and self._select_model is not None
-            else None)
-
-        if chosen is None:
-            return self._registry.find_responder()
-
-        return self._registry.get(chosen)
-
-    def _candidates(self, turns: tuple[HistoryEntry, ...]) -> list[dict]:
-        """The agents that have not run yet.
-
-        "One agent, one entry" is enforced by this list rather than by asking the
-        prompt nicely — and because an empty list short-circuits, the common
-        single-agent turn ends without a model call at all.
-        """
-        ran_agent = {turn.agent for turn in turns}
-
-        return [agent for agent in self._registry.list_agents() if agent["name"] not in ran_agent]
-
-
-# --- Case 3: asking a model which agent runs next ---------------------------
-#
-# Deliberately conservative. A model that answers with a name nobody registered,
-# or with prose instead of JSON, ends the turn rather than routing somewhere
-# arbitrary — the responder still gets its hop, so the user is answered either
-# way. Routing badly is worse than routing nowhere.
+    return AgentResult(
+        status="done",
+        state={
+            "candidates": [candidate["name"] for candidate in candidates],
+            "chosen": chosen,
+        },
+        produced=produced)
 
 
 def render_hops(history: tuple[HistoryEntry, ...]) -> list[dict]:
@@ -180,7 +129,7 @@ def select_agent_name(candidates: list[dict], message: str, history) -> str | No
     """Ask the model which of these agents should take the next hop.
 
     Never raises: a model that is down or slow must not take the turn with it,
-    and the router's own fallback — the responder — still applies.
+    and the loop's own fallback — the responder — still applies.
     """
     try:
         model_response = model_gateway.chat_completion(
@@ -195,3 +144,11 @@ def select_agent_name(candidates: list[dict], message: str, history) -> str | No
         return None
 
     return choose_name(answer, candidates)
+
+
+SPEC = AgentSpec(
+    name=NAME,
+    description=DESCRIPTION,
+    start=start,
+    entry_tools=(),
+)

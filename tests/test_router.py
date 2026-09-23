@@ -1,8 +1,8 @@
 """Case 3 of routing: the model that picks the next agent.
 
-The gateway is stubbed, so this covers what case 3 promises the `Router` it is
-injected into — that it never raises, and never returns a name the router did
-not offer — without an API key or a network call.
+The gateway is stubbed, so this covers what the router agent promises the loop
+— that it never raises, and never names an agent it was not offered — without an
+API key or a network call.
 
 The other two cases need no model and are driven through the loop in
 `tests/test_loop.py`.
@@ -134,27 +134,81 @@ class FailureTests(unittest.TestCase):
         self.assertIsNone(routing.select_agent_name(CANDIDATES, "go", ()))
 
 
-class RouterIntegrationTests(unittest.TestCase):
+class StartTests(unittest.TestCase):
     """The selector is the router's `select_model` seam and nothing more."""
 
     def setUp(self):
         GATEWAY["error"] = None
         GATEWAY["requests"].clear()
 
-    def test_it_matches_the_signature_the_router_calls(self):
-        from agents.contracts import AgentResult, AgentSpec
-        from agents.router.agent import Router
-        from agents.runtime.registry import AgentRegistry
+    def test_a_choice_is_reported_as_a_typed_ref(self):
+        from agents.contracts import AGENT_KIND, AgentRequest, Ref
 
         GATEWAY["response"] = _completion('{"agent": "enrich"}')
-        registry = AgentRegistry()
-        registry.register(AgentSpec(
-            name="enrich",
-            description="creates and edits notes",
-            start=lambda request: AgentResult("done")))
-        router = Router(registry, select_model=routing.select_agent_name)
+        request = AgentRequest(
+            request_id="r1",
+            correlation_id="c1",
+            causation_id=None,
+            agent="router",
+            message="save this",
+            context={"user_id": 7},
+            references={"candidates": CANDIDATES})
 
-        self.assertEqual("enrich", router.select_agent("save this", (), None).name)
+        result = routing.start(request)
+
+        self.assertEqual((Ref(AGENT_KIND, "enrich"),), result.produced)
+        self.assertEqual("done", result.status)
+
+
+    def test_a_decline_produces_nothing(self):
+        """An empty `produced` is how the router says "no one" — the loop reads
+        that as the responder's cue, so a decline still ends in a reply."""
+        from agents.contracts import AgentRequest
+
+        GATEWAY["response"] = _completion('{"agent": null}')
+        request = AgentRequest(
+            request_id="r1", correlation_id="c1", causation_id=None,
+            agent="router", message="go", context={"user_id": 7},
+            references={"candidates": CANDIDATES})
+
+        result = routing.start(request)
+
+        self.assertEqual((), result.produced)
+        self.assertEqual("done", result.status, "declining is not failing")
+
+    def test_no_candidates_never_reaches_the_model(self):
+        """The loop short-circuits this too, but the agent must not depend on
+        that — asking a model to choose from nothing is pure cost."""
+        from agents.contracts import AgentRequest
+
+        GATEWAY["requests"].clear()
+        request = AgentRequest(
+            request_id="r1", correlation_id="c1", causation_id=None,
+            agent="router", message="go", context={"user_id": 7},
+            references={})
+
+        result = routing.start(request)
+
+        self.assertEqual((), result.produced)
+        self.assertEqual([], GATEWAY["requests"])
+
+
+class SpecTests(unittest.TestCase):
+    def test_it_claims_no_entry_tool(self):
+        """It is reached by name, never addressed by a tool — an entry tool
+        would make it routable, and something has to choose first."""
+        self.assertEqual((), routing.SPEC.entry_tools)
+
+    def test_it_never_pauses_so_it_needs_no_resume(self):
+        self.assertIsNone(routing.SPEC.resume)
+
+    def test_it_grants_itself_no_read_scope(self):
+        self.assertEqual((), routing.SPEC.may_read)
+
+    def test_the_registry_knows_it_by_name(self):
+        from agents.runtime.registry import ROUTER
+
+        self.assertEqual(ROUTER, routing.SPEC.name)
 
 
 if __name__ == "__main__":

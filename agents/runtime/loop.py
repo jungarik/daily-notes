@@ -19,6 +19,7 @@ import logging
 import uuid
 
 from agents.contracts import (
+    AGENT_KIND,
     AgentRequest,
     AgentResult,
     AgentSpec,
@@ -27,6 +28,8 @@ from agents.contracts import (
     TurnOutcome,
     UserContext,
 )
+
+from agents.runtime.registry import ROUTER
 
 logger = logging.getLogger(__name__)
 
@@ -140,11 +143,14 @@ def merge_history(history: tuple[HistoryEntry, ...],
 class Loop:
     """Drives one turn across the agent farm.
 
-    It runs the loop — pick, run, save, fold in, suspend or finish — and owns no
-    routing policy of its own: `router.select_agent` decides each hop. So a new
-    routing rule changes `router.py` and this file not at all.
+    It runs the loop — pick, run, save, fold in, suspend or finish — and owns
+    only the two routing cases that need no model: the responder takes the hop
+    when the turn is finishing, and an entry tool names its owner outright.
+    Both are this file's own state (`hops_left`, the unconsumed entry tool)
+    rather than routing policy. Everything else is the router agent's choice,
+    and it is an ordinary registered hop like any other.
 
-    The store, ledger and router arrive at construction because this is the
+    The store, ledger and registry arrive at construction because this is the
     impure top of the call stack — everything below it takes data and returns
     data.
     """
@@ -152,12 +158,14 @@ class Loop:
     def __init__(self,
                  store,
                  ledger,
-                 router,
-                 max_hops: int = 4):
+                 registry,
+                 max_hops: int = 4,
+                 always_route: bool = False):
         self._store = store
         self._ledger = ledger
-        self._router = router
+        self._registry = registry
         self._max_hops = max_hops
+        self._always_route = always_route
 
     def start(self, message: str, context: UserContext, references: dict | None = None,
               entry_tool: str | None = None) -> TurnOutcome:
@@ -187,7 +195,7 @@ class Loop:
         decline handling.
         """
         correlation_id = pending["correlation_id"]
-        agent = self._router.get_agent(pending["agent"])
+        agent = self._registry.get(pending["agent"])
 
         if decision.get("approve"):
             result = self._confirm(correlation_id, agent, pending, decision, context)
@@ -212,7 +220,7 @@ class Loop:
             produced=tuple(result.produced),
             state=result.state)
 
-        newHistory = merge_history(self._store.read_history(correlation_id), HistoryEntry(
+        merged_history = merge_history(self._store.read_history(correlation_id), HistoryEntry(
             agent=agent.name,
             status=result.status,
             produced=tuple(result.produced),
@@ -224,7 +232,7 @@ class Loop:
             message=message,
             context=context,
             references=references or {},
-            history=newHistory,
+            history=merged_history,
             causation_id=state_id,
             entry_tool=None)
 
@@ -246,6 +254,45 @@ class Loop:
             action,
             lambda: encode(agent.resume(pending["token"], decision, context))))
 
+    def _resolve_entry_tool(self, entry_tool: str | None) -> AgentSpec | None:
+        """Case 2: the agent an unspent entry tool names, or None.
+
+        The only routing this file owns besides the finishing hop, and it reads
+        loop-local state rather than policy — whether a tool name from the
+        previous model call is still unspent. A tool nothing claims is not a
+        dead end: it returns None and the router is asked.
+        """
+        if entry_tool is None or self._always_route:
+            return None
+
+        return self._registry.find_by_entry_tool(entry_tool)
+
+    def _find_candidates(self, history: tuple[HistoryEntry, ...]) -> list[dict]:
+        """The agents that have not run yet, for the router to choose among.
+
+        "One agent, one entry" is enforced by this list rather than by asking
+        the prompt nicely — and because an empty list short-circuits, a turn
+        with nothing left to do never spends a model call finding that out.
+        """
+        ran_agent = {entry.agent for entry in history}
+
+        return [agent for agent in self._registry.list_agents()
+                if agent["name"] not in ran_agent]
+
+    def _read_choice(self, result: AgentResult) -> AgentSpec | None:
+        """The agent the router named, or the responder when it declined.
+
+        The decision arrives as a `Ref(AGENT_KIND, name)` in `produced` — the
+        router reports what it did exactly as every other agent does. Nothing
+        produced means it found no one, and the responder still takes the hop
+        so the turn ends with a reply rather than with silence.
+        """
+        for ref in result.produced:
+            if ref.kind == AGENT_KIND:
+                return self._registry.get(ref.id)
+
+        return self._registry.find_responder()
+
     def _run(self, correlation_id: str,
                message: str,
                context: UserContext,
@@ -253,19 +300,94 @@ class Loop:
                history: tuple[HistoryEntry, ...],
                causation_id: str | None,
                entry_tool: str | None) -> TurnOutcome:
-        user_id = context["user_id"]
-        hops_left = self._max_hops - len(history)
+        # The router's own entries do not spend the budget: routing is free, so
+        # a turn still gets `max_hops` agents that do work plus the reply.
+        worked = sum(1 for entry in history if entry.agent != ROUTER)
+        hops_left = self._max_hops - worked
         finishing = False
         failed = False
         pending = None
         reply = None
 
         while hops_left > 0:
-            agent = self._router.select_agent(
-                message,
-                history,
-                entry_tool,
-                force_responder=finishing or hops_left <= 1)
+            # Case 1. The turn is finishing — it asked the user, it broke, or
+            # this is the last slot — so the responder takes the hop and no
+            # decision is needed. A farm with no responder simply stops here.
+            if finishing or hops_left <= 1:
+                agent = self._registry.find_responder()
+
+                if agent is None:
+                    break
+            else:
+                agent = self._resolve_entry_tool(entry_tool)
+
+            if agent is None:
+                # Case 3. The router is an ordinary hop — it runs, it is saved,
+                # and it lands in the history — and then its `produced` names
+                # whoever runs next. Two agents per iteration, and only this
+                # one costs a model call.
+                candidates = self._find_candidates(history)
+                router = self._registry.find_router()
+
+                if not candidates or router is None:
+                    # Nothing to choose between, so there is nothing to ask:
+                    # the responder takes the hop and the turn ends with a
+                    # reply. Skipping the call also skips the row — a router
+                    # hop on the record should mean a decision was made.
+                    agent = self._registry.find_responder()
+                else:
+                    router_request = AgentRequest(
+                        request_id=str(uuid.uuid4()),
+                        correlation_id=correlation_id,
+                        causation_id=causation_id,
+                        agent=router.name,
+                        message=message,
+                        context=context,
+                        references={**references, "candidates": candidates},
+                        history=history,
+                        hops_left=hops_left)
+
+                    # Only the agent's own call is guarded: a crash inside it is
+                    # a failed state in the tree, while a loop bug building the
+                    # request above is not an agent failure and must not be
+                    # disguised as one.
+                    try:
+                        router_result = router.start(router_request)
+                    except Exception as exc:
+                        logger.exception("agent %s failed on turn %s", router.name,
+                                         correlation_id)
+                        router_result = AgentResult(status="failed", error=str(exc))
+
+                    found = find_problems(router_result.produced)
+
+                    if found:
+                        logger.error("agent %s reported invalid refs: %s",
+                                     router.name, found)
+                        router_result = AgentResult(
+                            status="failed",
+                            state=router_result.state,
+                            error=f"invalid produced: {'; '.join(found)}")
+
+                    # The row is saved before the entry is built: its id is what
+                    # the entry carries, and that is the handle a later agent
+                    # follows to `read_state`.
+                    router_state_id = self._store.save(
+                        correlation_id=correlation_id,
+                        causation_id=causation_id,
+                        user_id=context["user_id"],
+                        agent=router.name,
+                        status=router_result.status,
+                        produced=tuple(router_result.produced),
+                        state=router_result.state)
+
+                    history = merge_history(history, HistoryEntry(
+                        agent=router.name,
+                        status=router_result.status,
+                        produced=tuple(router_result.produced),
+                        error=router_result.error,
+                        state_id=router_state_id))
+                    causation_id = router_state_id
+                    agent = self._read_choice(router_result)
 
             if agent is None:
                 break
@@ -282,9 +404,9 @@ class Loop:
                 history=history,
                 hops_left=hops_left)
 
-            # Only the agent's own call is guarded: a crash inside it is a failed
-            # state in the tree, while a loop bug building the request above is
-            # not an agent failure and must not be disguised as one.
+            # Guarded, validated and saved exactly as the router hop above —
+            # the router is an ordinary agent, so it gets no shortcut and no
+            # special handling.
             try:
                 result = agent.start(request)
             except Exception as exc:
@@ -300,25 +422,22 @@ class Loop:
                     state=result.state,
                     error=f"invalid produced: {'; '.join(found)}")
 
-            # The row is saved before the entry is built: its id is what the
-            # entry carries, and that is the handle a later agent follows to
-            # `read_state`.
             state_id = self._store.save(
                 correlation_id=correlation_id,
                 causation_id=causation_id,
-                user_id=user_id,
+                user_id=context["user_id"],
                 agent=agent.name,
                 status=result.status,
                 produced=tuple(result.produced),
                 state=result.state)
-            
+
             history = merge_history(history, HistoryEntry(
                 agent=agent.name,
                 status=result.status,
                 produced=tuple(result.produced),
                 error=result.error,
                 state_id=state_id))
-            
+
             causation_id = state_id
             hops_left -= 1
 
@@ -336,8 +455,7 @@ class Loop:
             failed = failed or result.status == "failed"
 
             # One flag for every way a turn can be over: it asked the user, it
-            # broke, or this was the last slot. The router needs no more than
-            # that, and never inspects a status itself.
+            # broke, or this was the last slot.
             finishing = finishing or result.status in ("needs_input", "failed")
 
             if result.reply is not None:

@@ -7,14 +7,12 @@ exercised without a database, a model, or LangGraph.
 
 import unittest
 
-# Importing `Router` reaches the model gateway — case 3 lives in the same
-# module — and this file is the suite's first importer of it. Stub before
-# that import or every later file inherits the real one.
+# Nothing here reaches a model — the router is stubbed as a spec — but this
+# file is early in the suite, so it installs the shared gateway stub before
+# any import that might bind the real one.
 from tests import gateway_stub
 
 gateway_stub.install()
-
-from agents.router import Router  # noqa: E402
 from agents.runtime.registry import AgentRegistry
 from agents.runtime.loop import (
     Loop,
@@ -25,6 +23,7 @@ from agents.runtime.loop import (
     merge_history,
 )
 from agents.contracts import (
+    AGENT_KIND,
     AgentResult,
     AgentSpec,
     HistoryEntry,
@@ -93,18 +92,60 @@ def _agent(name, result, **kwargs):
         **kwargs)
 
 
-def _loop(agents, router=None, router_always=False, **kwargs):
-    """A loop over a fresh registry. `router` is the case-3 model seam."""
+def _router(choose=None):
+    """A stand-in for the router agent, registered like the real one.
+
+    `choose(candidates, message, history)` returns the name to route to, or
+    None to decline — the same signature the real router's model seam had. It
+    answers in `produced` exactly as the real router does, so these tests
+    exercise the loop's own decoding of that ref rather than a seam built for
+    them.
+    """
+    def start(request):
+        candidates = list(request.references.get("candidates") or [])
+        chosen = (None if choose is None
+                  else choose(candidates, request.message, request.history))
+
+        return AgentResult(
+            status="done",
+            state={"chosen": chosen},
+            produced=() if chosen is None else (Ref(AGENT_KIND, chosen),))
+
+    return AgentSpec(name="router", description="picks the next agent", start=start)
+
+
+def _registry(agents, router=None):
+    """A registry holding these agents plus a stub router."""
     registry = AgentRegistry()
 
     for agent in agents:
         registry.register(agent)
 
+    registry.register(_router(router))
+
+    return registry
+
+
+def _loop(agents, router=None, router_always=False, store=None, **kwargs):
+    """A loop over a fresh registry, with a stub router registered."""
+    registry = _registry(agents, router)
+
     return Loop(
-        FakeStore(),
+        store or FakeStore(),
         FakeLedger(),
-        Router(registry, select_model=router, always_ask_model=router_always),
+        registry,
+        always_route=router_always,
         **kwargs), registry
+
+
+def _worked(outcome):
+    """The agents that took a work hop, in order.
+
+    The router now lands in the history too, so a test about *what ran* says
+    so by filtering it out — and a test about *whether the router ran* asserts
+    on the unfiltered history instead.
+    """
+    return [entry.agent for entry in outcome.history if entry.agent != "router"]
 
 
 CONTEXT: UserContext = {
@@ -159,75 +200,85 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(finished, merged[-1])
 
 
-class RouterTests(unittest.TestCase):
-    """The routing policy on its own, with no loop and no turn."""
+class RouterHopTests(unittest.TestCase):
+    """The router is a registered agent that takes a hop like any other. These
+    are the properties that follow from that, and from nothing else."""
 
     def setUp(self):
-        self.registry = AgentRegistry()
-        self.registry.register(
-            _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
-        self.registry.register(_agent("enrich", AgentResult("done")))
+        self.agents = [
+            _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
+            _agent("enrich", AgentResult("done")),
+        ]
 
-    def test_an_entry_tool_resolves_the_hop_with_no_model_call(self):
-        asked = []
-        router = Router(self.registry, select_model=lambda *args: asked.append(1))
+    def test_a_routed_hop_puts_the_router_in_the_history(self):
+        loop, _ = _loop(
+            [*self.agents, _responder()],
+            router=lambda candidates, message, history: "enrich")
 
-        agent = router.select_agent("remind me", (), "set_reminder")
+        outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual("reminder", agent.name)
-        self.assertEqual([], asked)
+        self.assertIn("router", [entry.agent for entry in outcome.history])
 
-    def test_no_model_seam_means_the_turn_runs_out_of_moves(self):
-        router = Router(self.registry)
+    def test_a_free_hop_leaves_no_router_entry(self):
+        """Cases 1 and 2 need no model, so the router neither runs nor records.
+        The history says where a decision actually cost something.
 
-        self.assertIsNone(router.select_agent("go", (), None))
+        The farm here holds only the entry tool's owner, so once it has run
+        there is nothing left to choose and no second hop asks."""
+        loop, _ = _loop(
+            [_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
+             _responder()])
 
-    def test_always_ask_model_skips_the_entry_tool(self):
-        router = Router(
-            self.registry,
-            select_model=lambda candidates, message, history: "enrich",
-            always_ask_model=True)
+        outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
-        agent = router.select_agent("remind me", (), "set_reminder")
+        self.assertEqual(["reminder", "responder"], [e.agent for e in outcome.history])
 
-        self.assertEqual("enrich", agent.name)
+    def test_the_choice_travels_as_a_typed_ref(self):
+        """`Ref(AGENT_KIND, name)` is the whole channel — the loop reads no
+        agent's state to learn where a turn goes next."""
+        loop, _ = _loop(
+            [*self.agents, _responder()],
+            router=lambda candidates, message, history: "enrich")
 
-    def test_a_spent_agent_is_not_offered_as_a_candidate(self):
+        outcome = loop.start("go", CONTEXT)
+        routed = next(e for e in outcome.history if e.agent == "router")
+
+        self.assertEqual((Ref(AGENT_KIND, "enrich"),), routed.produced)
+
+    def test_neither_singleton_is_ever_a_candidate(self):
+        """The responder takes the last hop by construction, and offering the
+        router would let a decision pick itself."""
         seen = {}
-        router = Router(
-            self.registry,
-            select_model=lambda candidates, message, history: (
-                seen.update(candidates=candidates) or candidates[0]["name"]))
+        loop, _ = _loop(
+            [*self.agents, _responder()],
+            router=lambda candidates, message, history: (
+                seen.update(names=[c["name"] for c in candidates]) or None))
 
-        router.select_agent("go", (HistoryEntry("reminder", "done"),), None)
+        loop.start("go", CONTEXT)
 
-        self.assertEqual(["enrich"], [item["name"] for item in seen["candidates"]])
+        self.assertNotIn("responder", seen["names"])
+        self.assertNotIn("router", seen["names"])
 
-    def test_no_candidates_left_short_circuits_the_model(self):
-        asked = []
-        router = Router(self.registry, select_model=lambda *args: asked.append(1))
-        spent = (HistoryEntry("reminder", "done"), HistoryEntry("enrich", "done"))
+    def test_routing_is_free_so_it_does_not_spend_the_hop_budget(self):
+        """Two work hops plus a reply still fit a budget of three, however many
+        router hops were needed to arrange them."""
+        order = iter(["reminder", "enrich"])
+        loop, _ = _loop(
+            [*self.agents, _responder()],
+            router=lambda *args: next(order, None),
+            max_hops=3)
 
-        self.assertIsNone(router.select_agent("go", spent, None))
-        self.assertEqual([], asked, "no point asking a model with nothing to choose")
+        outcome = loop.start("go", CONTEXT)
 
-    def test_a_model_declining_ends_the_turn(self):
-        router = Router(self.registry, select_model=lambda *args: None)
+        self.assertEqual(["reminder", "enrich", "responder"], _worked(outcome))
 
-        self.assertIsNone(router.select_agent("go", (), None))
+    def test_a_declining_router_still_leaves_the_user_answered(self):
+        loop, _ = _loop([*self.agents, _responder("Nothing to do.")],
+                        router=lambda *args: None)
 
-    def test_get_agent_resolves_a_suspended_turn_by_name(self):
-        router = Router(self.registry)
+        outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual("reminder", router.get_agent("reminder").name)
-
-    def test_get_agent_raises_on_a_name_that_no_longer_exists(self):
-        """A suspended turn naming a retired agent is a deploy mistake; it must
-        surface here rather than as a `None` three frames later."""
-        router = Router(self.registry)
-
-        with self.assertRaises(LookupError):
-            router.get_agent("retired")
+        self.assertEqual("Nothing to do.", outcome.reply)
 
 
 def _responder(reply="a reply"):
@@ -264,7 +315,7 @@ class ResponderHopTests(unittest.TestCase):
         registry.register(AgentSpec(
             name="reminder", description="", start=explode, entry_tools=("set_reminder",)))
         registry.register(_responder("That went wrong."))
-        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), registry)
 
         outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -280,7 +331,7 @@ class ResponderHopTests(unittest.TestCase):
                 "needs_input", ask={"kind": "confirm"}, token="tok"),
             entry_tools=("set_reminder",)))
         registry.register(_responder("Shall I set that for tomorrow?"))
-        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), registry)
 
         outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -303,7 +354,7 @@ class ResponderHopTests(unittest.TestCase):
         loop = Loop(
             FakeStore(),
             FakeLedger(),
-            Router(registry, select_model=lambda candidates, *args: candidates[0]["name"]),
+            registry,
             max_hops=5)
 
         outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
@@ -315,7 +366,7 @@ class ResponderHopTests(unittest.TestCase):
         registry = AgentRegistry()
         registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
         registry.register(_responder())
-        loop = Loop(store, FakeLedger(), Router(registry), max_hops=5)
+        loop = Loop(store, FakeLedger(), registry, max_hops=5)
 
         loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -326,7 +377,7 @@ class ResponderHopTests(unittest.TestCase):
         registry = AgentRegistry()
         registry.register(_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)))
         registry.register(_responder())
-        loop = Loop(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), registry)
 
         loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -360,7 +411,7 @@ class ResponderHopTests(unittest.TestCase):
         registry.register(_agent("enrich", AgentResult(
             "done", produced=(Ref("note", "3"),)), entry_tools=("perform_action",)))
         registry.register(AgentSpec(name="responder", description="", start=explode))
-        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), registry)
 
         outcome = loop.start("save this", CONTEXT, entry_tool="perform_action")
 
@@ -381,7 +432,7 @@ class ResponderHopTests(unittest.TestCase):
                 "done", produced=(Ref("reminder", "42"),)),
             entry_tools=("set_reminder",)))
         registry.register(_responder("Set for tomorrow."))
-        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), registry)
         paused = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         outcome = loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
@@ -400,7 +451,7 @@ class RoutingTests(unittest.TestCase):
         outcome = loop.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
 
         self.assertEqual("done", outcome.status)
-        self.assertEqual(["reminder"], [item.agent for item in outcome.history])
+        self.assertEqual(["reminder"], _worked(outcome))
         self.assertEqual([], called)
 
     def test_router_always_ignores_the_entry_tool(self):
@@ -426,7 +477,7 @@ class RoutingTests(unittest.TestCase):
 
         outcome = loop.start("hello", CONTEXT, entry_tool="nonesuch")
 
-        self.assertEqual((), outcome.history)
+        self.assertEqual([], _worked(outcome), "nothing it names, nothing it runs")
 
     def test_the_router_never_sees_an_agent_that_already_ran(self):
         seen = []
@@ -460,7 +511,7 @@ class RoutingTests(unittest.TestCase):
 
         outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual(["a", "responder"], [item.agent for item in outcome.history])
+        self.assertEqual(["a", "responder"], _worked(outcome))
         self.assertEqual("done", outcome.reply)
 
     def test_a_farm_with_no_responder_leaves_the_reserved_slot_unused(self):
@@ -473,24 +524,26 @@ class RoutingTests(unittest.TestCase):
 
         outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual(["a"], [item.agent for item in outcome.history])
+        self.assertEqual(["a"], _worked(outcome))
         self.assertIsNone(outcome.reply)
 
 
 class TurnTreeTests(unittest.TestCase):
     def test_each_hop_is_caused_by_the_one_before_it(self):
         store = FakeStore()
-        registry = AgentRegistry()
-        registry.register(_agent("a", AgentResult("done")))
-        registry.register(_agent("b", AgentResult("done")))
         order = iter(["a", "b", None])
-        loop = Loop(store, FakeLedger(),
-                        Router(registry, select_model=lambda *args: next(order)),
-                        max_hops=4)
+        loop, _ = _loop(
+            [_agent("a", AgentResult("done")), _agent("b", AgentResult("done"))],
+            router=lambda *args: next(order, None),
+            store=store,
+            max_hops=4)
 
         loop.start("go", CONTEXT)
 
-        self.assertEqual([None, "s1"], [row["causation_id"] for row in store.rows])
+        caused_by = [row["causation_id"] for row in store.rows]
+        self.assertIsNone(caused_by[0], "the first hop is caused by nothing")
+        self.assertEqual(caused_by[1:], [f"s{index}" for index in range(1, len(caused_by))],
+                         "every later hop names the row before it")
         self.assertEqual(1, len({row["correlation_id"] for row in store.rows}))
 
     def test_the_owner_comes_from_the_context_and_nowhere_else(self):
@@ -504,7 +557,7 @@ class TurnTreeTests(unittest.TestCase):
             description="",
             start=lambda request: seen.append(request.context["user_id"]) or AgentResult("done"),
             entry_tools=("set_reminder",)))
-        loop = Loop(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), registry)
 
         loop.start("go", {**CONTEXT, "user_id": 42}, entry_tool="set_reminder")
 
@@ -526,7 +579,7 @@ class TurnTreeTests(unittest.TestCase):
             start=lambda request: seen.update(
                 refs=request.references, ctx=request.context) or AgentResult("done"),
             entry_tools=("t",)))
-        loop = Loop(FakeStore(), FakeLedger(), Router(registry))
+        loop = Loop(FakeStore(), FakeLedger(), registry)
 
         loop.start("go", CONTEXT, references={"citations": [{"note_id": 3}]}, entry_tool="t")
 
@@ -541,7 +594,7 @@ class TurnTreeTests(unittest.TestCase):
         registry.register(AgentSpec(
             name="reminder", description="", start=explode, entry_tools=("set_reminder",)))
         store = FakeStore()
-        loop = Loop(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), registry)
 
         outcome = loop.start("go", CONTEXT, entry_tool="set_reminder")
 
@@ -575,7 +628,7 @@ class ConfirmationTests(unittest.TestCase):
             entry_tools=("set_reminder",)))
         self.store = FakeStore()
         self.ledger = FakeLedger()
-        self.loop = Loop(self.store, self.ledger, Router(self.registry))
+        self.loop = Loop(self.store, self.ledger, self.registry)
 
     @unittest.expectedFailure
     def test_invalid_refs_on_the_resume_path_are_also_downgraded(self):
@@ -598,7 +651,7 @@ class ConfirmationTests(unittest.TestCase):
                 "done", produced=({"kind": "note", "id": "1"},)),
             entry_tools=("set_reminder",)))
         store = FakeStore()
-        loop = Loop(store, FakeLedger(), Router(registry))
+        loop = Loop(store, FakeLedger(), registry)
         paused = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
         outcome = loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)

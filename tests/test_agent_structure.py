@@ -57,7 +57,7 @@ class AgentStructureTests(unittest.TestCase):
             "contracts/history_entry.py", "contracts/agent_request.py",
             "contracts/agent_result.py", "contracts/agent_spec.py",
             "contracts/turn_outcome.py", "contracts/plan_request.py",
-            "contracts/tool_result.py",
+            "contracts/tool_result.py", "contracts/agent_kind.py",
             "bootstrap.py",
             "../common/__init__.py", "../common/embedings.py", "../common/helper.py",
             "../tools/__init__.py",
@@ -156,14 +156,18 @@ class AgentStructureTests(unittest.TestCase):
         """Neither half of the split may reach for the other.
 
         `agents/router/` decides who runs next; `agents/runtime/loop.py` runs
-        them. They meet only in `bootstrap.py`, which hands the router to the
-        loop as a parameter — that is what lets a routing rule change without
-        touching the loop, and the reverse. An import either way would collapse
-        the split back into one module with two reasons to change.
+        them. They meet only in `bootstrap.py`, which registers the router in
+        the roster the loop is handed — that is what lets a routing rule change
+        without touching the loop, and the reverse. An import either way would
+        collapse the split back into one module with two reasons to change.
 
         Only the loop machinery is off limits, not all of `runtime/`: the rest
         of that package is shared infrastructure, and case 3 reaching
-        `model_gateway` is exactly what it is there for."""
+        `model_gateway` is exactly what it is there for.
+
+        The router is a registered agent now, so the loop runs it — but by the
+        name the registry knows it by, never by importing the package. That is
+        what keeps the two sides swappable."""
         root = Path(__file__).parents[1] / "agents"
         loop_machinery = ("agents.runtime.loop", "agents.runtime.registry",
                           "agents.runtime.state_store")
@@ -189,7 +193,7 @@ class AgentStructureTests(unittest.TestCase):
         module that imports a sibling has re-introduced the coupling. Only
         `bootstrap.py` may name them, because naming them is its job."""
         root = Path(__file__).parents[1] / "agents"
-        peers = ("enrich", "reminder", "finder", "responder")
+        peers = ("enrich", "reminder", "finder", "responder", "router")
         offending = []
 
         for path in root.rglob("*.py"):
@@ -234,16 +238,18 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], reaching)
 
     def test_every_agent_is_registered_with_the_farm(self):
-        for name in ("enrich", "reminder", "finder", "responder"):
+        for name in ("enrich", "reminder", "finder", "responder", "router"):
             with self.subTest(agent=name):
-                self.assertEqual(name, bootstrap.router.get_agent(name).name)
+                self.assertEqual(name, bootstrap.agents.get(name).name)
 
-    def test_the_responder_is_never_a_routing_candidate(self):
-        """It takes the last hop by construction; offering it to the model as a
-        peer would let a turn answer without doing anything."""
-        self.assertNotIn("responder", {
-            agent["name"] for agent in bootstrap.agents.list_agents()
-        })
+    def test_neither_singleton_is_ever_a_routing_candidate(self):
+        """The responder takes the last hop by construction; offering it as a
+        peer would let a turn answer without doing anything. The router is not
+        a choice either — offering it would let a decision pick itself."""
+        candidates = {agent["name"] for agent in bootstrap.agents.list_agents()}
+
+        self.assertNotIn("responder", candidates)
+        self.assertNotIn("router", candidates)
 
 
 if __name__ == "__main__":

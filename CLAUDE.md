@@ -462,12 +462,18 @@ next is `agents/router/`. They meet only in `bootstrap.py` and never import
 each other. `AGENT_MAX_HOPS` bounds the turn and counts the
 reply.
 
-**Routing** is `agents/router/agent.py` — the one `agent.py` in the tree with
-no `SPEC`, because it picks agents rather than being one. Cheapest case first: the responder is
-taken unconditionally when the turn is finishing; otherwise an entry tool names
-the agent for free; otherwise `ROUTER_MODEL` picks from the agents that have not
-yet run, and declines rather than guessing (a decline falls through to the
-responder). Adding an agent is a spec plus a line in `agents/bootstrap.py` — the
+**Routing** is `agents/router/agent.py`, a registered agent like any other —
+same `SPEC`, same `AgentRequest`, and its own row and `HistoryEntry` when it
+runs. Cheapest case first: the responder is taken unconditionally when the turn
+is finishing; otherwise an entry tool names the agent for free; otherwise the
+loop runs the router hop and `ROUTER_MODEL` picks from the agents that have not
+yet run. The router reports its choice the way every agent reports its work — a
+`Ref(AGENT_KIND, name)` in `produced` — and declines rather than guessing (a
+decline produces nothing and the responder takes the hop). Two agents are never
+candidates for that choice: the responder, which takes the last hop by
+construction, and the router itself, which would otherwise let a decision pick
+itself. Router hops don't spend the budget, so `AGENT_MAX_HOPS` still buys the
+same work. Adding an agent is a spec plus a line in `agents/bootstrap.py` — the
 only module that names an agent — and never an edit to the loop.
 
 **The agents.** `finder` reads and answers (`tools/finder/`: `search_notes`,
