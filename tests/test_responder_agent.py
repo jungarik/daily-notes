@@ -177,6 +177,24 @@ class ReadStateTests(unittest.TestCase):
         self.assertNotIn("What enrich produced:",
                          GATEWAY["requests"][0]["messages"][1]["content"])
 
+    def test_a_markered_answer_reaches_the_prompt_with_its_markers(self):
+        """`[[note:ID]]` is the reference itself — the client turns each one into
+        a note card. The responder rewrites the prose around it, so the markers
+        have to survive both the read and the prompt, and the system prompt has
+        to say to carry them through."""
+        STATES[("s1", 7)] = {
+            "agent": "finder",
+            "status": "done",
+            "state": {"answer": "Two on tuning:\n[[note:12]]\n[[note:34]]"},
+        }
+
+        agent.start(_request([SAVED_NOTE]))
+
+        model_request = GATEWAY["requests"][0]
+        self.assertIn("[[note:12]]", model_request["messages"][1]["content"])
+        self.assertIn("[[note:34]]", model_request["messages"][1]["content"])
+        self.assertIn("[[note:ID]]", model_request["messages"][0]["content"])
+
     def test_it_does_not_read_its_own_hop(self):
         """The responder is in the history on a resumed turn; reporting on its
         own earlier reply would have it quoting itself."""

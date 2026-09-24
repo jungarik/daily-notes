@@ -526,7 +526,11 @@ it in its package — never by editing the loop.
 `apply_tool_result`), and the finder reports each cited note as a `Ref`. The v2
 response does **not** yet carry citations — `TurnOutcome` has no agent state, so
 the chips are unavailable to the endpoint; inline `[[note:ID]]` markers still
-render, since the client fetches those by id. See `devdoc/agent-loop.md`.
+render, since the client fetches those by id. The finder writes those markers
+into its answer, but the responder is what the user actually reads, so the
+responder's prompt requires it to carry every marker through verbatim, one per
+line — rewriting a marker into a note's title silently drops the card. See
+`devdoc/agent-loop.md`.
 
 ## Design docs
 

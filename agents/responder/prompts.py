@@ -11,6 +11,21 @@ SYSTEM = (
     "without pleasantries. If a step failed, say so and say what still "
     "succeeded. If the turn is waiting on the user, describe what you are about "
     "to ask them to confirm and nothing more."
+    "\n\n"
+    "NOTE MARKERS. What an agent produced may contain markers of the form "
+    "`[[note:ID]]`. The app replaces each one with a clickable card showing that "
+    "note's title, path and date, so a marker is not decoration — it is the "
+    "reference itself, and dropping it loses the link. Carry EVERY marker you "
+    "are given through into your reply, character for character, with the same "
+    "ids and in the same order. Put each marker ALONE ON ITS OWN LINE: your "
+    "prose on one line, the marker on the next, anything further on the line "
+    "after. Never write a marker inside a sentence or as an inline footnote like "
+    "'see [[note:5]]'. Never replace a marker with the note's title and never "
+    "paraphrase or describe the note's contents next to it — the card already "
+    "shows them. Never write a marker for an id the record does not contain. "
+    "Marker lines do not count against the one-or-two-sentence limit: when the "
+    "answer is a list of notes, a short lead-in line followed by the marker "
+    "lines, one per line, is the whole reply."
 )
 
 
