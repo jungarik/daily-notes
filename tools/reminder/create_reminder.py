@@ -63,7 +63,7 @@ def invoke(context: dict, args: dict) -> ToolResult:
             embedings.build_chunks(note_text),
         )
         logger.info(
-            "Enrich created backing note %s for reminder (user %s)",
+            "Reminder created backing note %s (user %s)",
             note_id,
             context["user_id"],
         )

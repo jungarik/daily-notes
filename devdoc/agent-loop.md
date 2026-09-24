@@ -1,7 +1,7 @@
 # The agent loop
 
 **Status:** built and live. The chat tab runs on the farm
-(`api/chat_v2` → `agents/bootstrap.loop`), with `finder`, `enrich`, `reminder`
+(`api/chat_v2` → `agents/bootstrap.loop`), with `finder`, `enricher`, `reminder`
 and `responder` registered. The handoff path this replaced — `conversation`,
 `handoff_dispatch`, `specialist_registry`, `api/chat` — has been deleted.
 
@@ -18,7 +18,7 @@ POST /api/chat/v2│          turn loop          │
        ───────▶  │  route → run → save → route │
                  └─────────────────────────────┘
                     │        │        │       │
-               finder     enrich  reminder  responder
+               finder    enricher reminder  responder
              (answers)   (writes) (schedules) (replies)
 ```
 
@@ -151,7 +151,7 @@ Rules that keep it reliable:
   because a history that lies is worse than a turn that stops.
 - **An *empty* `produced` is valid.** An agent that searched and found nothing
   genuinely produced nothing, and the loop cannot tell that apart from an agent
-  that forgot to report. So the guard is a per-agent test — "enrich, given this
+  that forgot to report. So the guard is a per-agent test — "enricher, given this
   input, reports the note it wrote" — not a loop rule.
 - **One agent, one entry.** A `needs_input` entry is *replaced* by the outcome
   when the agent resumes. `agent_states` keeps both rows — that is the audit
@@ -199,7 +199,7 @@ AGENTS = {
     "responder": AgentSpec(..., entry_tools=[],                  may_read=["*"]),
     "finder":    AgentSpec(..., entry_tools=[],                  may_read=[]),
     "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=[]),
-    "enrich":    AgentSpec(..., entry_tools=["perform_action"],  may_read=[]),
+    "enricher":  AgentSpec(..., entry_tools=["perform_action"],  may_read=[]),
 }
 ```
 
@@ -380,8 +380,8 @@ with a reply — an error is a thing the user is told, not a stack trace.
 |---|---|---|
 | **1** ✅ | `AgentSpec`, `AgentResult`, `AgentMessage`, loop skeleton, `agent_states` + migration 0022. Nothing wired. | yes |
 | **2** ✅ | Port `reminder` (smallest). Old handoff path still serves chat. | yes |
-| **3** ✅ | Port `enrich`. | yes |
-| **4** ✅ | Add `responder`. Loop drives reminder + enrich end to end behind a flag. | yes |
+| **3** ✅ | Port `enricher`. | yes |
+| **4** ✅ | Add `responder`. Loop drives reminder + enricher end to end behind a flag. | yes |
 | **5** ✅ | `conversation` becomes a peer (as `finder`); endpoint calls the loop; the old handoff path deleted. | no |
 
 Phase 5 was taken in pieces so each was reviewable on its own: the model router,
@@ -451,7 +451,7 @@ What is left is `reason` + `act` over `tools/finder/` — the old
 `tools/conversation/`, renamed when the controller went, minus the two handoff
 tool specs.
 
-Phase 4 is the checkpoint: if the loop cannot drive a two-hop turn (enrich
+Phase 4 is the checkpoint: if the loop cannot drive a two-hop turn (enricher
 writes a note, reminder schedules it, responder explains both) without an agent
 knowing about another, stop before Phase 5.
 

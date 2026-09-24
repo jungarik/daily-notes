@@ -26,7 +26,7 @@ agents/
 │   │                           choice as Ref(AGENT_KIND, name)
 │   └── prompts.py
 ├── finder/                    reads and answers — the vault's reader
-├── enrich/                    note writes: create, move, tag, link, classify
+├── enricher/                  note writes: create, move, tag, link, classify
 ├── reminder/                  scheduling
 │                               each: agent.py (start + resume), graph.py,
 │                               state.py, prompts.py, nodes/ — SPEC is the
@@ -36,7 +36,7 @@ agents/
 
 tools/
 ├── finder/                    owner-scoped reads
-├── enrich/                    note writes
+├── enricher/                  note writes
 ├── reminder/                  the reminder write
 └── responder/                 read_state — how the reply reads what the
                                 turn's earlier hops produced

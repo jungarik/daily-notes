@@ -14,7 +14,7 @@ Three groups:
   - **what a turn hands back** — `TurnOutcome`.
 
 Plus two that belong to an agent's own working, not to the loop's: `ToolResult`
-(what every tool returns) and `PlanRequest` (what enrich and reminder plan from).
+(what every tool returns) and `PlanRequest` (what the enricher and reminder plan from).
 
 Import from this package rather than the leaf module — the split is an
 implementation detail, so `from agents.contracts import AgentSpec` keeps working

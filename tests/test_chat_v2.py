@@ -93,7 +93,7 @@ class PendingTests(unittest.TestCase):
     """v1 and v2 share the `chat_threads` row but not the shape of `pending`."""
 
     def test_a_turn_handle_is_resumable(self):
-        pending = {"correlation_id": "c1", "agent": "enrich", "token": "{}"}
+        pending = {"correlation_id": "c1", "agent": "enricher", "token": "{}"}
 
         self.assertEqual(pending, helper.find_resumable(pending))
 

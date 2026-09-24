@@ -6,7 +6,7 @@ below it is an agent that knows nothing of its peers.
 """
 
 import config
-from agents.enrich import agent as enrich_agent
+from agents.enricher import agent as enricher_agent
 from agents.finder import agent as finder_agent
 from agents.reminder import agent as reminder_agent
 from agents.responder import agent as responder_agent
@@ -20,7 +20,7 @@ from agents.runtime.registry import AgentRegistry
 # The router registers like any other — the loop reaches it by name.
 agents = AgentRegistry()
 agents.register(reminder_agent.SPEC)
-agents.register(enrich_agent.SPEC)
+agents.register(enricher_agent.SPEC)
 agents.register(finder_agent.SPEC)
 agents.register(responder_agent.SPEC)
 agents.register(router_agent.SPEC)

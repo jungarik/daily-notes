@@ -10,6 +10,15 @@ from agents.contracts import AgentSpec
 RESPONDER = "responder"
 ROUTER = "router"
 
+# Names an agent used to be registered under, mapped to what it is called now.
+#
+# A renamed agent is not only a code change: its old name is already written
+# into `agent_states` rows and into the `pending` blob a suspended turn stored,
+# so a user who was mid-confirmation when the deploy landed resumes through a
+# name this farm no longer has. One entry here keeps that turn resumable; drop
+# it once no pending row can still carry the old name.
+LEGACY_NAMES = {"enrich": "enricher"}
+
 
 class AgentRegistry:
     """Every agent in the farm, indexed by name and by entry tool."""
@@ -34,10 +43,18 @@ class AgentRegistry:
         self._agents[agent.name] = agent
 
     def get(self, name: str) -> AgentSpec:
-        try:
-            return self._agents[name]
-        except KeyError as exc:
-            raise LookupError(f"Unknown agent: {name}") from exc
+        """The agent registered under this name, or the one it was renamed to.
+
+        Resolving the rename here rather than at each call site is what keeps
+        the rename invisible: the loop asks for whatever name the stored row
+        carries and gets a live agent back.
+        """
+        agent = self._agents.get(name) or self._agents.get(LEGACY_NAMES.get(name))
+
+        if agent is None:
+            raise LookupError(f"Unknown agent: {name}")
+
+        return agent
 
     def find_by_entry_tool(self, tool_name: str) -> AgentSpec | None:
         """The agent a tool name addresses, or None when nothing claims it."""

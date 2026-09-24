@@ -21,7 +21,7 @@ from agents.router import agent as routing  # noqa: E402
 from agents.contracts import HistoryEntry, Ref  # noqa: E402
 
 CANDIDATES = [
-    {"name": "enrich", "description": "creates and edits notes"},
+    {"name": "enricher", "description": "creates and edits notes"},
     {"name": "reminder", "description": "schedules reminders"},
 ]
 
@@ -38,8 +38,8 @@ class ChooseNameTests(unittest.TestCase):
 
     def test_a_named_candidate_is_chosen(self):
         self.assertEqual(
-            "enrich",
-            routing.choose_name('{"agent": "enrich"}', CANDIDATES))
+            "enricher",
+            routing.choose_name('{"agent": "enricher"}', CANDIDATES))
 
     def test_an_explicit_null_declines(self):
         self.assertIsNone(routing.choose_name('{"agent": null}', CANDIDATES))
@@ -54,15 +54,15 @@ class ChooseNameTests(unittest.TestCase):
 
     def test_prose_instead_of_json_declines(self):
         self.assertIsNone(
-            routing.choose_name("I think enrich should go next!", CANDIDATES))
+            routing.choose_name("I think enricher should go next!", CANDIDATES))
 
     def test_a_missing_key_declines(self):
-        self.assertIsNone(routing.choose_name('{"choice": "enrich"}', CANDIDATES))
+        self.assertIsNone(routing.choose_name('{"choice": "enricher"}', CANDIDATES))
 
     def test_a_json_scalar_declines(self):
         """`json.loads("4")` parses fine and then has no `.get`."""
         self.assertIsNone(routing.choose_name("4", CANDIDATES))
-        self.assertIsNone(routing.choose_name('"enrich"', CANDIDATES))
+        self.assertIsNone(routing.choose_name('"enricher"', CANDIDATES))
 
     def test_an_empty_answer_declines(self):
         self.assertIsNone(routing.choose_name("", CANDIDATES))
@@ -72,26 +72,26 @@ class PromptTests(unittest.TestCase):
     def setUp(self):
         GATEWAY["error"] = None
         GATEWAY["requests"].clear()
-        GATEWAY["response"] = _completion('{"agent": "enrich"}')
+        GATEWAY["response"] = _completion('{"agent": "enricher"}')
 
     def test_the_prompt_lists_only_the_candidates_it_was_given(self):
         routing.select_agent_name(CANDIDATES, "save this", ())
 
         sent = GATEWAY["requests"][0]["messages"][1]["content"]
-        self.assertIn("- enrich: creates and edits notes", sent)
+        self.assertIn("- enricher: creates and edits notes", sent)
         self.assertIn("- reminder: schedules reminders", sent)
         self.assertNotIn("responder", sent)
 
     def test_the_prompt_carries_the_record_not_agent_prose(self):
         history = (
-            HistoryEntry("enrich", "done", produced=(Ref("note", "12"),)),
+            HistoryEntry("enricher", "done", produced=(Ref("note", "12"),)),
             HistoryEntry("reminder", "failed", error="no time found"),
         )
 
         routing.select_agent_name(CANDIDATES, "save this", history)
 
         sent = GATEWAY["requests"][0]["messages"][1]["content"]
-        self.assertIn("enrich: done, produced note 12", sent)
+        self.assertIn("enricher: done, produced note 12", sent)
         self.assertIn("reminder: failed", sent)
         self.assertIn("no time found", sent)
 
@@ -144,7 +144,7 @@ class StartTests(unittest.TestCase):
     def test_a_choice_is_reported_as_a_typed_ref(self):
         from agents.contracts import AGENT_KIND, AgentRequest, Ref
 
-        GATEWAY["response"] = _completion('{"agent": "enrich"}')
+        GATEWAY["response"] = _completion('{"agent": "enricher"}')
         request = AgentRequest(
             request_id="r1",
             correlation_id="c1",
@@ -156,7 +156,7 @@ class StartTests(unittest.TestCase):
 
         result = routing.start(request)
 
-        self.assertEqual((Ref(AGENT_KIND, "enrich"),), result.produced)
+        self.assertEqual((Ref(AGENT_KIND, "enricher"),), result.produced)
         self.assertEqual("done", result.status)
 
 

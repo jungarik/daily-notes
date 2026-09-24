@@ -48,7 +48,7 @@ shared, at the root.
 | `agents/runtime/` | the turn loop, the roster, the turn tree (`agent_states`), the write ledger, and the graph plumbing |
 | `agents/router/`  | who runs the next hop (three cases, cheapest first) |
 | `agents/finder/`  | reads and answers from the user's notes (RAG) |
-| `agents/enrich/`, `agents/reminder/` | confirmed writes: note actions, scheduling |
+| `agents/enricher/`, `agents/reminder/` | confirmed writes: note actions, scheduling |
 | `agents/responder/` | the only agent that writes the user-facing reply |
 | `agents/bootstrap.py` | the one place an agent is named |
 | `agents/contracts/`, `agents/runtime/` | typed boundaries and shared technical runtime |

@@ -9,12 +9,12 @@ import unittest
 from pathlib import Path
 
 from agents import bootstrap
-from tools import enrich as enrich_tools, reminder as reminder_tools
+from tools import enricher as enricher_tools, reminder as reminder_tools
 
 
 class AgentStructureTests(unittest.TestCase):
     def test_specialist_tool_specs_match_registered_handlers(self):
-        for specialist in (enrich_tools, reminder_tools):
+        for specialist in (enricher_tools, reminder_tools):
             with self.subTest(specialist=specialist.__name__):
                 advertised = {
                     spec["function"]["name"] for spec in specialist.TOOL_SPECS
@@ -22,24 +22,24 @@ class AgentStructureTests(unittest.TestCase):
                 self.assertLessEqual(advertised, set(specialist.TOOLS))
                 self.assertLessEqual(specialist.WRITE_TOOLS, advertised)
 
-        self.assertNotIn("create_reminder", enrich_tools.TOOLS)
+        self.assertNotIn("create_reminder", enricher_tools.TOOLS)
         self.assertNotIn("create_reminder", {
-            spec["function"]["name"] for spec in enrich_tools.TOOL_SPECS
+            spec["function"]["name"] for spec in enricher_tools.TOOL_SPECS
         })
 
     def test_the_agent_layout(self):
         root = Path(__file__).parents[1] / "agents"
         expected = {
-            "enrich/state.py",
-            "enrich/graph.py", "enrich/routing.py",
-            "enrich/agent.py",
-            "enrich/prompts.py",
-            "enrich/nodes/reason.py", "enrich/nodes/plan.py",
-            "enrich/nodes/act.py", "enrich/nodes/approve.py",
-            "enrich/nodes/classify/gather.py", "enrich/nodes/classify/propose.py",
-            "enrich/nodes/classify/normalize.py",
-            "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
-            "enrich/nodes/write/validate.py",
+            "enricher/state.py",
+            "enricher/graph.py", "enricher/routing.py",
+            "enricher/agent.py",
+            "enricher/prompts.py",
+            "enricher/nodes/reason.py", "enricher/nodes/plan.py",
+            "enricher/nodes/act.py", "enricher/nodes/approve.py",
+            "enricher/nodes/classify/gather.py", "enricher/nodes/classify/propose.py",
+            "enricher/nodes/classify/normalize.py",
+            "enricher/nodes/write/link.py", "enricher/nodes/write/stage.py",
+            "enricher/nodes/write/validate.py",
             "reminder/graph.py", "reminder/state.py",
             "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
@@ -71,18 +71,18 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/finder/list_agenda.py",
             "../tools/finder/list_paths.py",
             "../tools/finder/detect_reminder.py",
-            "../tools/enrich/__init__.py",
-            "../tools/enrich/db.py",
-            "../tools/enrich/specs.py",
-            "../tools/enrich/list_paths.py",
-            "../tools/enrich/list_tags.py",
-            "../tools/enrich/get_note_context.py",
-            "../tools/enrich/get_vault_context.py",
-            "../tools/enrich/find_related_notes.py",
-            "../tools/enrich/create_note.py",
-            "../tools/enrich/set_note_path.py",
-            "../tools/enrich/add_note_tags.py",
-            "../tools/enrich/enrich_note.py",
+            "../tools/enricher/__init__.py",
+            "../tools/enricher/db.py",
+            "../tools/enricher/specs.py",
+            "../tools/enricher/list_paths.py",
+            "../tools/enricher/list_tags.py",
+            "../tools/enricher/get_note_context.py",
+            "../tools/enricher/get_vault_context.py",
+            "../tools/enricher/find_related_notes.py",
+            "../tools/enricher/create_note.py",
+            "../tools/enricher/set_note_path.py",
+            "../tools/enricher/add_note_tags.py",
+            "../tools/enricher/enrich_note.py",
             "../tools/reminder/create_reminder.py",
             "../tools/reminder/specs.py", "../tools/reminder/db.py",
             "../tools/reminder/get_note_context.py",
@@ -91,7 +91,7 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/responder/read_state.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
-        self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
+        self.assertEqual([], list((root / "enricher" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
 
     def test_the_replaced_handoff_path_is_gone(self):
@@ -104,6 +104,7 @@ class AgentStructureTests(unittest.TestCase):
         for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
                      "agents/runtime/specialist_registry.py", "api/chat",
                      "tools/conversation", "agents/enrich/handoff_api.py",
+                     "agents/enricher/handoff_api.py",
                      "agents/reminder/handoff_api.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
@@ -193,7 +194,7 @@ class AgentStructureTests(unittest.TestCase):
         module that imports a sibling has re-introduced the coupling. Only
         `bootstrap.py` may name them, because naming them is its job."""
         root = Path(__file__).parents[1] / "agents"
-        peers = ("enrich", "reminder", "finder", "responder", "router")
+        peers = ("enricher", "reminder", "finder", "responder", "router")
         offending = []
 
         for path in root.rglob("*.py"):
@@ -238,7 +239,7 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], reaching)
 
     def test_every_agent_is_registered_with_the_farm(self):
-        for name in ("enrich", "reminder", "finder", "responder", "router"):
+        for name in ("enricher", "reminder", "finder", "responder", "router"):
             with self.subTest(agent=name):
                 self.assertEqual(name, bootstrap.agents.get(name).name)
 

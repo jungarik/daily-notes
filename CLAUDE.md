@@ -342,7 +342,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
 There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
 `api/telegram_bot` in its `helper.py`/`db.py`; each agent in the farm owns the
-domain it needs (`agents/finder` reads, `agents/enrich` writes notes,
+domain it needs (`agents/finder` reads, `agents/enricher` writes notes,
 `agents/reminder` schedules). Only
 true infra is shared, at the repo root — `config`, `db`, `openai_client`, `i18n`,
 `migrate`, and `file_store` (the S3 client) — plus `api/deps.py` (auth, incl. the
@@ -367,7 +367,7 @@ a single photo saves immediately; an album (updates sharing a `media_group_id`)
 is buffered with a short debounce and saved as one note. Bot capture stays
 **deferred** — the note saves fast and the user enriches on demand with the 🧠
 Enrich button (one-shot enrichment in `api/telegram_bot/helper.py`). The
-capture-time enrichment agent (`agents/enrich`) is reserved for the **web app** and
+capture-time enrichment agent (`agents/enricher`) is reserved for the **web app** and
 is not wired into the bot's capture endpoints.
 
 The `api/` service (FastAPI) hosts the section verticals; it is the
@@ -478,7 +478,7 @@ only module that names an agent — and never an edit to the loop.
 
 **The agents.** `finder` reads and answers (`tools/finder/`: `search_notes`,
 `get_note`, `neighbors`, `list_reminders`, `list_agenda`, `list_paths`,
-`detect_reminder`); `enrich` owns note writes; `reminder` owns scheduling;
+`detect_reminder`); `enricher` owns note writes; `reminder` owns scheduling;
 `responder` is the only one that writes prose to the user. A work agent puts its
 output in `AgentResult.state` and reports what it touched as typed
 `Ref(kind, id)`; the responder reaches an earlier hop's state through the
@@ -516,7 +516,7 @@ other. `tests/test_agent_structure.py` enforces both the no-imports rule and
 one-type-per-file.
 
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
-package, not inside `agents/*/tools`: `tools/finder/` for reads, `tools/enrich/`
+package, not inside `agents/*/tools`: `tools/finder/` for reads, `tools/enricher/`
 and `tools/reminder/` for writes, and `tools/responder/` for `read_state` —
 the responder's own tool, and its only caller. Each tool file exposes `invoke(context: dict, args: dict)` and
 returns `ToolResult` with typed `data: dict`; specs stay with their namespace as
@@ -550,8 +550,8 @@ when the code it describes is deleted, delete it.
 - `devdoc/agents-architecture.md` — the map: which folder is what, and the rules
   that keep it extendable.
 - `devdoc/agent-workflows-langgraph.md` — the graphs *inside* agents (finder,
-  enrich, reminder) and the two persistence boundaries.
-- `devdoc/agentic-enrich.md` — the note action/enrichment agent.
+  enricher, reminder) and the two persistence boundaries.
+- `devdoc/agentic-enricher.md` — the note action/enrichment agent.
 - `devdoc/agentic-reminder.md` — the reminder agent.
 - `devdoc/action-idempotency.md` — how a confirmed write runs at most once.
 - `devdoc/plugin-capture-tokens.md` — **not yet built**: personal access tokens

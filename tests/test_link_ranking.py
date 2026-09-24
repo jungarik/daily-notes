@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import config
-from agents.enrich.nodes.write import _rank, link
+from agents.enricher.nodes.write import _rank, link
 from agents.runtime import model_gateway
 
 

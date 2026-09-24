@@ -40,17 +40,17 @@ from tools.responder import read_state  # noqa: E402
 
 class MayReadTests(unittest.TestCase):
     def test_the_wildcard_reads_anyone(self):
-        self.assertTrue(read_state.may_read(("*",), "enrich"))
+        self.assertTrue(read_state.may_read(("*",), "enricher"))
 
     def test_a_named_agent_is_allowed(self):
-        self.assertTrue(read_state.may_read(("conversation", "enrich"), "enrich"))
+        self.assertTrue(read_state.may_read(("conversation", "enricher"), "enricher"))
 
     def test_an_unnamed_agent_is_refused(self):
-        self.assertFalse(read_state.may_read(("conversation",), "enrich"))
+        self.assertFalse(read_state.may_read(("conversation",), "enricher"))
 
     def test_an_empty_allowlist_reads_nothing(self):
-        self.assertFalse(read_state.may_read((), "enrich"))
-        self.assertFalse(read_state.may_read(None, "enrich"))
+        self.assertFalse(read_state.may_read((), "enricher"))
+        self.assertFalse(read_state.may_read(None, "enricher"))
 
 
 class InvokeTests(unittest.TestCase):

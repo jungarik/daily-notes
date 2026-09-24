@@ -1,6 +1,6 @@
 """The typed input an agent's planning graph is given.
 
-Shared by `enrich` and `reminder`, which both plan a single write from a
+Shared by `enricher` and `reminder`, which both plan a single write from a
 natural-language instruction plus whatever context the turn had already
 resolved. It is a contract, not a mapper — each agent builds its own from the
 `AgentRequest` it was handed — so it stays shared without breaking the

@@ -96,7 +96,7 @@ def _request(history=(), message="save this"):
         hops_left=1)
 
 
-SAVED_NOTE = HistoryEntry("enrich", "done", produced=(Ref("note", "12"),), state_id="s1")
+SAVED_NOTE = HistoryEntry("enricher", "done", produced=(Ref("note", "12"),), state_id="s1")
 FAILED_HOP = HistoryEntry("reminder", "failed", error="no time found", state_id="s2")
 
 
@@ -121,7 +121,7 @@ class ModelReplyTests(unittest.TestCase):
         agent.start(_request([SAVED_NOTE, FAILED_HOP]))
 
         sent = GATEWAY["requests"][0]["messages"][1]["content"]
-        self.assertIn("enrich: done, produced note 12", sent)
+        self.assertIn("enricher: done, produced note 12", sent)
         self.assertIn("reminder: failed", sent)
         self.assertIn("no time found", sent)
         self.assertIn("uk", sent, "the reply language travels with the prompt")
@@ -190,7 +190,7 @@ class ReadStateTests(unittest.TestCase):
 
     def test_an_earlier_hops_answer_reaches_the_prompt(self):
         STATES[("s1", 7)] = {
-            "agent": "enrich",
+            "agent": "enricher",
             "status": "done",
             "state": {"answer": "You wrote about Postgres tuning."},
         }
@@ -198,7 +198,7 @@ class ReadStateTests(unittest.TestCase):
         agent.start(_request([SAVED_NOTE]))
 
         sent = GATEWAY["requests"][0]["messages"][1]["content"]
-        self.assertIn("What enrich produced:", sent)
+        self.assertIn("What enricher produced:", sent)
         self.assertIn("Postgres tuning", sent)
 
     def test_an_unreadable_state_costs_detail_not_the_reply(self):
@@ -207,7 +207,7 @@ class ReadStateTests(unittest.TestCase):
 
         self.assertEqual("done", result.status)
         self.assertTrue(result.reply)
-        self.assertNotIn("What enrich produced:",
+        self.assertNotIn("What enricher produced:",
                          GATEWAY["requests"][0]["messages"][1]["content"])
 
     def test_a_markered_answer_reaches_the_prompt_with_its_markers(self):
@@ -257,7 +257,7 @@ class FallbackTests(unittest.TestCase):
         result = agent.start(_request([SAVED_NOTE]))
 
         self.assertEqual("done", result.status, "a failed reply is not a failed turn")
-        self.assertEqual("Enrich saved 1 note.", result.reply)
+        self.assertEqual("Enricher saved 1 note.", result.reply)
         self.assertTrue(result.state["fallback"])
         self.assertIn("model_rate_limited", result.state["error"])
 
@@ -280,10 +280,10 @@ class FallbackTests(unittest.TestCase):
 
     def test_the_fallback_counts_each_kind(self):
         history = (HistoryEntry(
-            "enrich", "done",
+            "enricher", "done",
             produced=(Ref("note", "1"), Ref("link", "1-2"), Ref("link", "1-3"))),)
 
-        self.assertEqual("Enrich saved 1 note, 2 links.", agent.write_fallback(history))
+        self.assertEqual("Enricher saved 1 note, 2 links.", agent.write_fallback(history))
 
     def test_the_fallback_names_a_failure(self):
         self.assertIn("reminder failed", agent.write_fallback((FAILED_HOP,)).lower())

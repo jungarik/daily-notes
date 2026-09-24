@@ -14,7 +14,7 @@ by the loop, joined by `correlation_id`. It is what survives a suspend, what
 `read_state` reads, and what the confirm path rebuilds the history from.
 
 `PostgresSaver` is **execution state inside a graph that pauses**. Only the
-agents that interrupt for approval need it — enrich and reminder — and they
+agents that interrupt for approval need it — enricher and reminder — and they
 resume through `Command(resume=…)` so planning nodes are not rerun. Finder never
 pauses, so it compiles with an `InMemorySaver` and runs start to finish inside
 one hop; checkpointing it would duplicate the `agent_states` row.
@@ -39,7 +39,7 @@ spent, so it must answer rather than loop. `act` runs one owner-scoped read and
 records citations onto the turn context. The answer leaves in
 `AgentResult.state` as `{answer, citations, trace}`; the responder relays it.
 
-## Enrich graph
+## Enricher graph
 
 `EnrichState` carries messages, context, step count, tool call, terminal state,
 pending write, and confirmation flags. Every node is a module under `nodes/`
@@ -71,7 +71,7 @@ flowchart TD
 
 `link_notes` first runs `link_context` (candidate lookup) before `stage`.
 
-`agents/enrich/agent.py` drives `ACTION_PLAN_GRAPH`
+`agents/enricher/agent.py` drives `ACTION_PLAN_GRAPH`
 (`START -> plan -> act -> plan … -> validate_write -> END`) directly. That
 graph reads note context, paths and tags and returns only a validated write
 proposal; the agent then pauses the *turn* with `needs_input` and performs the
@@ -82,7 +82,7 @@ that path — the loop owns the pause.
 
 `schedule_resolve -> schedule_build`. Resolve fixes the natural-language time;
 build resolves referenced notes deterministically and returns a frozen
-`create_reminder` proposal. Same shape as enrich's: plan here, pause in the
+`create_reminder` proposal. Same shape as enricher's: plan here, pause in the
 loop, write on approval.
 
 Telegram keeps its own reminder detection, creation, delivery, claiming, list,

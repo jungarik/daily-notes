@@ -171,6 +171,23 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             registry.register(_agent("a", AgentResult("done")))
 
+    def test_a_renamed_agent_is_still_reachable_by_its_old_name(self):
+        """A suspended turn stored the name the agent had when it paused. If the
+        rename made that name unknown, the user's confirmation would fail on the
+        one path where a write is already planned and waiting."""
+        registry = AgentRegistry()
+        registry.register(_agent("enricher", AgentResult("done")))
+
+        self.assertEqual("enricher", registry.get("enrich").name)
+
+    def test_an_unknown_name_is_still_an_error(self):
+        """The alias resolves one rename, not any name at all."""
+        registry = AgentRegistry()
+        registry.register(_agent("enricher", AgentResult("done")))
+
+        with self.assertRaises(LookupError):
+            registry.get("nobody")
+
     def test_may_read_honours_the_wildcard(self):
         registry = AgentRegistry()
         registry.register(_agent("responder", AgentResult("done"), may_read=("*",)))
@@ -194,9 +211,9 @@ class HistoryTests(unittest.TestCase):
     def test_one_agent_keeps_one_entry(self):
         paused = HistoryEntry("reminder", "needs_input")
         finished = HistoryEntry("reminder", "done", produced=(Ref("reminder", "9"),))
-        merged = merge_history((HistoryEntry("enrich", "done"), paused), finished)
+        merged = merge_history((HistoryEntry("enricher", "done"), paused), finished)
 
-        self.assertEqual(["enrich", "reminder"], [item.agent for item in merged])
+        self.assertEqual(["enricher", "reminder"], [item.agent for item in merged])
         self.assertEqual(finished, merged[-1])
 
 
@@ -207,13 +224,13 @@ class RouterHopTests(unittest.TestCase):
     def setUp(self):
         self.agents = [
             _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
-            _agent("enrich", AgentResult("done")),
+            _agent("enricher", AgentResult("done")),
         ]
 
     def test_a_routed_hop_puts_the_router_in_the_history(self):
         loop, _ = _loop(
             [*self.agents, _responder()],
-            router=lambda candidates, message, history: "enrich")
+            router=lambda candidates, message, history: "enricher")
 
         outcome = loop.start("go", CONTEXT)
 
@@ -238,12 +255,12 @@ class RouterHopTests(unittest.TestCase):
         agent's state to learn where a turn goes next."""
         loop, _ = _loop(
             [*self.agents, _responder()],
-            router=lambda candidates, message, history: "enrich")
+            router=lambda candidates, message, history: "enricher")
 
         outcome = loop.start("go", CONTEXT)
         routed = next(e for e in outcome.history if e.agent == "router")
 
-        self.assertEqual((Ref(AGENT_KIND, "enrich"),), routed.produced)
+        self.assertEqual((Ref(AGENT_KIND, "enricher"),), routed.produced)
 
     def test_neither_singleton_is_ever_a_candidate(self):
         """The responder takes the last hop by construction, and offering the
@@ -262,7 +279,7 @@ class RouterHopTests(unittest.TestCase):
     def test_routing_is_free_so_it_does_not_spend_the_hop_budget(self):
         """Two work hops plus a reply still fit a budget of three, however many
         router hops were needed to arrange them."""
-        order = iter(["reminder", "enrich"])
+        order = iter(["reminder", "enricher"])
         loop, _ = _loop(
             [*self.agents, _responder()],
             router=lambda *args: next(order, None),
@@ -270,7 +287,7 @@ class RouterHopTests(unittest.TestCase):
 
         outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual(["reminder", "enrich", "responder"], _worked(outcome))
+        self.assertEqual(["reminder", "enricher", "responder"], _worked(outcome))
 
     def test_a_declining_router_still_leaves_the_user_answered(self):
         loop, _ = _loop([*self.agents, _responder("Nothing to do.")],
@@ -349,7 +366,7 @@ class ResponderHopTests(unittest.TestCase):
             description="",
             start=lambda request: AgentResult("needs_input", ask={}, token="tok"),
             entry_tools=("set_reminder",)))
-        registry.register(_agent("enrich", AgentResult("done")))
+        registry.register(_agent("enricher", AgentResult("done")))
         registry.register(_responder())
         loop = Loop(
             FakeStore(),
@@ -386,13 +403,13 @@ class ResponderHopTests(unittest.TestCase):
     def test_it_is_never_offered_to_the_model_as_a_candidate(self):
         seen = []
         loop, _ = _loop(
-            [_agent("enrich", AgentResult("done")), _responder()],
+            [_agent("enricher", AgentResult("done")), _responder()],
             router=lambda candidates, message, history: (
                 seen.append([c["name"] for c in candidates]) or candidates[0]["name"]))
 
         loop.start("go", CONTEXT)
 
-        self.assertEqual([["enrich"]], seen, "picked by the rule, not by the model")
+        self.assertEqual([["enricher"]], seen, "picked by the rule, not by the model")
 
     def test_it_replies_even_when_no_work_agent_ran(self):
         loop, _ = _loop([_responder("I could not do anything with that.")])
@@ -408,7 +425,7 @@ class ResponderHopTests(unittest.TestCase):
             raise RuntimeError("no model")
 
         registry = AgentRegistry()
-        registry.register(_agent("enrich", AgentResult(
+        registry.register(_agent("enricher", AgentResult(
             "done", produced=(Ref("note", "3"),)), entry_tools=("perform_action",)))
         registry.register(AgentSpec(name="responder", description="", start=explode))
         loop = Loop(FakeStore(), FakeLedger(), registry)
@@ -418,7 +435,7 @@ class ResponderHopTests(unittest.TestCase):
         self.assertIsNone(outcome.reply)
         self.assertEqual(
             (Ref("note", "3"),),
-            next(i for i in outcome.history if i.agent == "enrich").produced,
+            next(i for i in outcome.history if i.agent == "enricher").produced,
             "the note is still reported")
 
     def test_a_confirm_also_ends_with_a_reply(self):

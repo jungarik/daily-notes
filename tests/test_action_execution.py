@@ -58,7 +58,7 @@ class ActionExecutionTests(unittest.TestCase):
                 patch.object(action_execution, "fail") as fail:
             with self.assertRaisesRegex(RuntimeError, "connection lost"):
                 action_execution.execute_once(
-                    "action-1", 7, "enrich", self.action, execute)
+                    "action-1", 7, "enricher", self.action, execute)
 
         fail.assert_has_calls([call("action-1", 7, "connection lost")])
 
