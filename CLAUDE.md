@@ -490,7 +490,12 @@ that reads a peer's state today, so it is the only one with a non-empty
 an `ask`; the section stores `TurnOutcome.pending` and
 `POST /api/chat/v2/confirm {approve}` resumes the turn. The write runs at most
 once — keyed by its own fingerprint in `action_executions`, not by the hop — so
-a retried confirm replays the stored outcome. A decline runs nothing.
+a retried confirm replays the stored outcome. A decline runs nothing. The
+responder still takes the last hop on a suspended turn, and its prompt carries
+the paused agent's own `planned.summary` — pulled out of that agent's state
+rather than handed over by the loop, so the responder keeps no private channel —
+because a reply that doesn't say what is being confirmed leaves the user in
+front of Confirm/Cancel with nothing to go on.
 
 **Thread state** lives in `chat_threads` (`api/chat_v2/db.py`, migration 0019)
 and belongs to the section, not to any agent: the loop returns no message

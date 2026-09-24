@@ -104,6 +104,7 @@ class ModelReplyTests(unittest.TestCase):
     def setUp(self):
         GATEWAY["error"] = None
         GATEWAY["requests"].clear()
+        STATES.clear()
 
     def test_the_model_reply_is_used_when_it_comes_back(self):
         GATEWAY["response"] = _completion("Saved your note.")
@@ -135,6 +136,38 @@ class ModelReplyTests(unittest.TestCase):
 
         sent = GATEWAY["requests"][0]["messages"][1]["content"]
         self.assertIn("reminder is waiting for the user to confirm", sent)
+
+    def test_a_suspended_turn_carries_the_action_being_confirmed(self):
+        """Naming the waiting agent is not enough. The app is already showing
+        Confirm/Cancel, so a reply that cannot say what is being confirmed
+        strands the user — the summary the agent saved has to reach the model."""
+        GATEWAY["response"] = _completion("ok")
+        STATES[("s2", 7)] = {
+            "agent": "reminder",
+            "status": "needs_input",
+            "state": {"planned": {"summary": "Remind you about the dentist at 9am"}},
+        }
+        paused = HistoryEntry("reminder", "needs_input", state_id="s2")
+
+        agent.start(_request([SAVED_NOTE, paused]))
+
+        sent = GATEWAY["requests"][0]["messages"][1]["content"]
+        self.assertIn("Remind you about the dentist at 9am", sent)
+
+    def test_a_confirmation_with_no_summary_still_shows_the_action(self):
+        """An agent that paused without writing a summary must not turn into a
+        bare "something is waiting" — the raw proposal is better than nothing."""
+        GATEWAY["response"] = _completion("ok")
+        STATES[("s2", 7)] = {
+            "agent": "reminder",
+            "status": "needs_input",
+            "state": {"planned": {"name": "create_reminder", "args": {"at": "09:00"}}},
+        }
+        paused = HistoryEntry("reminder", "needs_input", state_id="s2")
+
+        agent.start(_request([SAVED_NOTE, paused]))
+
+        self.assertIn("create_reminder", GATEWAY["requests"][0]["messages"][1]["content"])
 
     def test_a_finished_turn_says_nothing_about_waiting(self):
         GATEWAY["response"] = _completion("ok")
