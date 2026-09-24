@@ -27,10 +27,17 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import config
-from agents.contracts import AgentRequest, AgentResult, AgentSpec, Ref, UserContext
+from agents.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentSpec,
+    Ref,
+    UserContext,
+    restore_clock,
+)
 from agents.finder.graph import FINDER_GRAPH
 from agents.finder.prompts import with_system
-from agents.finder.state import Ctx, initial_state
+from agents.finder.state import initial_state
 from agents.runtime import checkpoint
 
 logger = logging.getLogger(__name__)
@@ -42,16 +49,6 @@ DESCRIPTION = (
     "notes, reading one, following its links, listing reminders or an agenda. "
     "Use for anything the user wants to know or find. Reads only; it never "
     "creates, edits or schedules anything.")
-
-def _restore_clock(context: UserContext) -> tuple:
-    """The caller's clock and locale, restored from the envelope's plain JSON."""
-    raw_now = context.get("now")
-    now = datetime.fromisoformat(raw_now) if isinstance(raw_now, str) else raw_now
-    raw_tz = context.get("tz")
-    tz = ZoneInfo(raw_tz) if raw_tz else None
-
-    return now, tz, context.get("locale") or "en"
-
 
 def _build_messages(request: AgentRequest, now, tz) -> list[dict]:
     """The conversation so far, plus this turn's message.
@@ -82,11 +79,11 @@ def _collect_refs(citations: list[dict]) -> tuple[Ref, ...]:
 
 def start(request: AgentRequest) -> AgentResult:
     """Answer the user's question from their own notes."""
-    now, tz, locale = _restore_clock(request.context)
-    ctx = Ctx(request.context["user_id"], now, tz=tz, locale=locale)
+    # The locale is the responder's business, not finder's — it reads only.
+    now, tz, _ = restore_clock(request.context)
     graph_config = checkpoint.graph_config(NAME, uuid.uuid4(), config.AGENT_MAX_STEPS)
     state = FINDER_GRAPH.invoke(
-        initial_state(ctx, _build_messages(request, now, tz),
+        initial_state(request.context, _build_messages(request, now, tz),
                       request.references.get("reference_notes")),
         graph_config)
     citations = state.get("citations") or []

@@ -72,8 +72,8 @@ a turn reconstructable as a tree:
 class UserContext(TypedDict, total=False):
     user_id: int              # the turn's owner, written down exactly once
     now: str                  # ISO string, not a datetime — the envelope is JSON
-    tz: str | None
-    locale: str
+    tz: str | None            # `restore_clock` turns these back into live
+    locale: str               # values where a tool needs them
 
 @dataclass(frozen=True)
 class AgentRequest:

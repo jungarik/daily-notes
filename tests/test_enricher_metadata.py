@@ -9,7 +9,7 @@ import config
 from agents.enricher import graph as enrich_graph
 from agents.enricher.nodes.classify import gather as classify_gather
 from agents.enricher.nodes.classify import propose as classify_propose
-from agents.enricher.state import UserContext, context_to_dict
+from agents.contracts import build_context
 from tools.enricher import METADATA_CONTEXT_TOOLS, TOOL_SPECS
 from tools import enricher as enricher_tools
 from tools.enricher import enrich_note, find_related_notes, get_vault_context
@@ -33,13 +33,13 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertNotIn("get_vault_context", exposed)
         self.assertNotIn("find_related_notes", exposed)
         self.assertIn("find_related_notes", METADATA_CONTEXT_TOOLS)
-        ctx = UserContext(7, "now", tz="UTC", locale="en")
+        ctx = build_context(7, "now", tz="UTC", locale="en")
         with patch.object(find_related_notes.embedings, "embed", return_value="vector"), \
                 patch.object(find_related_notes.db, "related_notes", return_value=[]) as related:
             result = execute_allowed_tool(
                 enricher_tools.TOOLS,
                 METADATA_CONTEXT_TOOLS,
-                context_to_dict(ctx),
+                ctx,
                 "find_related_notes",
                 {"text": "Garden", "exclude_note_id": None},
                 "enricher",
@@ -99,7 +99,7 @@ class EnrichMetadataTests(unittest.TestCase):
             create=Mock(side_effect=replies))))
         note = {"id": 4, "text": "Ship the app release", "title": None,
                 "path": None, "tags": [], "type": None, "priority": None}
-        ctx = UserContext(7, "2026-09-01T10:00:00+03:00", tz="Europe/Kiev", locale="en")
+        ctx = build_context(7, "2026-09-01T10:00:00+03:00", tz="Europe/Kiev", locale="en")
         context_results = {
             "get_note_context": note, "list_paths": [], "list_tags": [],
             "get_vault_context": {"root_folders": {"Projects": "projects"},
@@ -114,7 +114,7 @@ class EnrichMetadataTests(unittest.TestCase):
                 patch("tools.enricher.db.get_note_for_user", return_value=note):
             result = enrich_graph.ACTION_PLAN_GRAPH.invoke({
                 "messages": [{"role": "user", "content": "Enrich note 4"}],
-                "user_context": context_to_dict(ctx),
+                "user_context": ctx,
                 "tool_specs": [{"type": "function", "function": {
                     "name": "enrich_note", "parameters": {"type": "object"}}}],
                 "steps": 0, "tool_call": None, "action": None,
@@ -134,7 +134,7 @@ class EnrichMetadataTests(unittest.TestCase):
                 patch.object(find_related_notes.embedings, "embed",
                              side_effect=AssertionError("Embedding during confirmation")):
             result = enrich_note.invoke(
-                context_to_dict(UserContext(7, "now")),
+                build_context(7, "now"),
                 {"note_id": 4, **proposed},
             ).data
 
@@ -150,9 +150,9 @@ class LocaleTests(unittest.TestCase):
 
     def test_the_vault_roots_follow_the_callers_locale(self):
         english = get_vault_context.invoke(
-            context_to_dict(UserContext(7, "now", locale="en")), {}).data
+            build_context(7, "now", locale="en"), {}).data
         ukrainian = get_vault_context.invoke(
-            context_to_dict(UserContext(7, "now", locale="uk")), {}).data
+            build_context(7, "now", locale="uk"), {}).data
 
         self.assertEqual("Inbox", english["default_root"])
         self.assertEqual("Вхідні", ukrainian["default_root"])
@@ -168,7 +168,7 @@ class LocaleTests(unittest.TestCase):
         with patch.object(enrich_note.db, "get_note_for_user", return_value=note), \
                 patch.object(enrich_note.db, "set_metadata") as save:
             enrich_note.invoke(
-                context_to_dict(UserContext(7, "now", locale="uk")),
+                build_context(7, "now", locale="uk"),
                 {"note_id": 4, **proposed},
             )
 

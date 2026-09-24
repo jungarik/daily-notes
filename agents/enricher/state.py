@@ -1,16 +1,8 @@
 """State and context helpers for enrichment graphs."""
 
-from datetime import datetime
 from typing import Literal, TypedDict
-from zoneinfo import ZoneInfo
 
-
-class UserContext:
-    def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
-        self.user_id = user_id
-        self.now = now
-        self.tz = tz
-        self.locale = locale
+from agents.contracts import UserContext
 
 
 class EnrichState(TypedDict, total=False):
@@ -65,33 +57,14 @@ class MetadataState(TypedDict, total=False):
     context: dict
 
 
-def context_to_dict(ctx: UserContext) -> dict:
-    now = ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now
-
-    return {
-        "user_id": ctx.user_id,
-        "now": now,
-        "tz": str(ctx.tz) if ctx.tz is not None else None,
-        "locale": ctx.locale,
-    }
-
-
-def _restore(value, factory):
-    try:
-        return factory(value)
-    except Exception:
-        return value
-
-
 def context_from_state(state: EnrichState | ActionPlanState) -> UserContext:
-    data = state.get("user_context") or {}
+    """The context this graph's state carries, under this graph's key.
 
-    return UserContext(
-        data["user_id"],
-        _restore(data.get("now"), datetime.fromisoformat),
-        tz=_restore(data.get("tz"), ZoneInfo),
-        locale=data.get("locale") or "en",
-    )
+    It comes back as it went in — the plain contract. Anything that needs a
+    live clock calls `restore_clock` on it, which is the one place in the farm
+    that conversion happens.
+    """
+    return state.get("user_context") or {}
 
 
 def initial_state(ctx: UserContext, messages: list, pending: dict | None = None) -> EnrichState:
@@ -105,7 +78,7 @@ def initial_state(ctx: UserContext, messages: list, pending: dict | None = None)
         }
 
     return {
-        "user_context": context_to_dict(ctx),
+        "user_context": ctx,
         "messages": list(messages),
         "steps": 0,
         "tool_call": None,

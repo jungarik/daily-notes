@@ -116,7 +116,11 @@ class AgentStructureTests(unittest.TestCase):
         This is the property the whole farm rests on: four agents, the loop, the
         router and the store agree on shapes without importing each other,
         because the shapes depend on none of them. One import of an agent, a
-        tool, or the loop from here would make that a cycle."""
+        tool, or the loop from here would make that a cycle.
+
+        The standard library is fine: `restore_clock` lives here because it only
+        ever reads a `UserContext`, and turning its strings back into a
+        `datetime` and a `ZoneInfo` is the whole of what it does."""
         root = Path(__file__).parents[1] / "agents" / "contracts"
         reaching = []
 
@@ -136,7 +140,12 @@ class AgentStructureTests(unittest.TestCase):
 
     def test_every_contract_module_holds_one_type(self):
         """The package is one type per file, so a reader finds `AgentSpec` in
-        `agent_spec.py` without opening anything else."""
+        `agent_spec.py` without opening anything else.
+
+        *Types*, not names: a module may also hold the functions that read and
+        build its own type — `user_context.py` carries `build_context` and
+        `restore_clock` — so `def` lines are skipped. They would otherwise trip
+        the assignment branch through a defaulted keyword argument."""
         root = Path(__file__).parents[1] / "agents" / "contracts"
 
         for path in root.glob("*.py"):
@@ -147,7 +156,7 @@ class AgentStructureTests(unittest.TestCase):
                 line for line in path.read_text(encoding="utf-8").splitlines()
                 if line.startswith("class ") or (
                     line and not line[0].isspace() and " = " in line
-                    and not line.startswith(("from ", "import ")))
+                    and not line.startswith(("from ", "import ", "def ")))
             ]
 
             with self.subTest(module=path.name):

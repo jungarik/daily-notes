@@ -4,49 +4,18 @@ Trimmed from the conversation controller's state: the farm owns the approval
 pause, so there is no `pending`, no staged `action`, and no
 `completed_action_id` here. What is left is one read-and-answer turn — the
 clock, the citations it gathered, and the trace.
+
+The clock is `UserContext`, the one contract every agent uses; this module adds
+only what is finder's own. Citations and the trace are **state channels**, not fields on that
+context: they accumulate, and a node that accumulates by mutating an object it
+was handed is using mutation as an output channel. The helpers below take the
+current value and return the next one, so `act.py` can put them in its patch
+like every other field.
 """
 
-from datetime import datetime
 from typing import TypedDict
-from zoneinfo import ZoneInfo
 
-from agents.contracts import ToolResult
-
-
-class FinderContext:
-    """User-scoped clock, citations, and trace for one finder hop."""
-
-    def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
-        self.user_id = user_id
-        self.now = now
-        self.tz = tz
-        self.locale = locale
-        self.citations: list[dict] = []
-        self._cited: set[int] = set()
-        self.trace: dict = {"tools": [], "retrieved_chunks": [], "routes": []}
-
-    def cite(self, note_id: int, title: str, path=None, date=None) -> None:
-        if note_id not in self._cited:
-            self._cited.add(note_id)
-            self.citations.append({
-                "note_id": note_id,
-                "title": title or "note",
-                "path": path,
-                "date": date,
-            })
-
-    def record_tool(self, name: str, args: dict, result=None) -> None:
-        self.trace["tools"].append({
-            "name": name,
-            "args": args or {},
-            "result": str(result)[:1000] if result is not None else None,
-        })
-
-    def record_route(self, route: str) -> None:
-        self.trace["routes"].append(route)
-
-
-Ctx = FinderContext
+from agents.contracts import ToolResult, UserContext, restore_clock
 
 
 class FinderState(TypedDict, total=False):
@@ -60,66 +29,104 @@ class FinderState(TypedDict, total=False):
     reply: str
 
 
-def _context_to_dict(ctx: Ctx) -> dict:
+def context_from_state(state: FinderState) -> UserContext:
+    """The context this graph's state carries, under this graph's key."""
+    return state.get("context") or {}
+
+
+def tool_context(context: UserContext) -> dict:
+    """What a finder tool is scoped by: the owner, and the clock `list_agenda`
+    resolves a range against.
+
+    The timezone is restored to a live `ZoneInfo` here because that is what the
+    tool needs; the rest of the context is not passed on. Narrower than the
+    context on purpose — a read tool has no use for the locale, and handing it
+    one invites it to localise something the responder owns.
+    """
+    _, tz, _ = restore_clock(context)
+
     return {
-        "user_id": ctx.user_id,
-        "now": ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now,
-        "tz": str(ctx.tz),
-        "locale": ctx.locale,
+        "user_id": context["user_id"],
+        "tz": tz,
     }
 
 
-def tool_context(ctx: Ctx) -> dict:
+def merge_citations(existing: list[dict], fresh: list[dict]) -> list[dict]:
+    """`existing` plus the citations it does not already hold, first one wins.
+
+    A turn cites the same note from two tools often — a search hit that is then
+    read, or a neighbour that also matched. The first citation is kept because
+    it is the one whose title and path the answer was written against.
+    """
+    seen = {item["note_id"] for item in existing}
+    merged = list(existing)
+
+    for citation in fresh:
+        note_id = citation.get("note_id")
+
+        if note_id is None or note_id in seen:
+            continue
+
+        seen.add(note_id)
+        merged.append({
+            "note_id": note_id,
+            "title": citation.get("title") or "note",
+            "path": citation.get("path"),
+            "date": citation.get("date"),
+        })
+
+    return merged
+
+
+def record_tool(trace: dict, name: str, args: dict, result=None) -> dict:
+    """`trace` with one tool call appended.
+
+    The result is clipped: a trace is for reading back what happened, and a
+    tool that returns a whole note would otherwise make the record larger than
+    the answer it explains.
+    """
+    tools = [*(trace.get("tools") or []), {
+        "name": name,
+        "args": args or {},
+        "result": str(result)[:1000] if result is not None else None,
+    }]
+
+    return {**trace, "tools": tools}
+
+
+def record_route(trace: dict, route: str) -> dict:
+    """`trace` with one route appended."""
+    return {**trace, "routes": [*(trace.get("routes") or []), route]}
+
+
+def record_chunks(trace: dict, chunks: list) -> dict:
+    """`trace` with a tool's retrieved chunks appended, or unchanged."""
+    if not chunks:
+        return trace
+
     return {
-        "user_id": ctx.user_id,
-        "tz": ctx.tz,
+        **trace,
+        "retrieved_chunks": [*(trace.get("retrieved_chunks") or []), *chunks],
     }
 
 
-def apply_tool_result(ctx: Ctx, result: ToolResult) -> None:
-    for citation in result.citations:
-        ctx.cite(
-            citation["note_id"],
-            citation.get("title") or "note",
-            citation.get("path"),
-            citation.get("date"),
-        )
+def apply_tool_result(citations: list[dict], trace: dict,
+                      result: ToolResult) -> tuple[list[dict], dict]:
+    """What one tool's result adds to the turn's citations and trace.
 
-    if result.retrieved_chunks:
-        ctx.trace.setdefault("retrieved_chunks", []).extend(result.retrieved_chunks)
-
-
-def _restore(value, factory):
-    try:
-        return factory(value)
-    except Exception:
-        return value
-
-
-def context_from_state(state: FinderState) -> Ctx:
-    data = state.get("context") or {}
-    ctx = Ctx(
-        data["user_id"],
-        _restore(data.get("now"), datetime.fromisoformat),
-        tz=_restore(data.get("tz"), ZoneInfo),
-        locale=data.get("locale") or "en",
-    )
-    ctx.citations = list(state.get("citations") or [])
-    ctx._cited = {item["note_id"] for item in ctx.citations}
-
-    return ctx
-
-
-def context_update(ctx: Ctx) -> dict:
-    return {"citations": ctx.citations, "trace": ctx.trace}
+    Returns both because a `ToolResult` carries both, and splitting it into two
+    calls would make the caller re-derive which of them this result touched.
+    """
+    return merge_citations(citations, result.citations), record_chunks(
+        trace, result.retrieved_chunks)
 
 
 def initial_state(
-        ctx: Ctx,
+        context: UserContext,
         messages: list,
         reference_notes: list[dict] | None = None) -> FinderState:
     return {
-        "context": _context_to_dict(ctx),
+        "context": context,
         "messages": list(messages),
         "steps": 0,
         "tool_call": None,

@@ -146,7 +146,7 @@ def run(state: EnrichState) -> dict:
 
         args, summary, kind = proposal["args"], proposal["summary"], "select"
     else:
-        locale = context_from_state(state).locale
+        locale = context_from_state(state).get("locale") or "en"
         args = tool_call["args"]
         summary = _summarize_write(tool_call["name"], args, locale)
         kind = None

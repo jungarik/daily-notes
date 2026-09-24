@@ -12,16 +12,6 @@ from typing import Annotated, TypedDict
 from agents.runtime.events import append
 
 
-class Ctx:
-    """User-scoped clock and locale for one reminder turn."""
-
-    def __init__(self, user_id: int, now, tz=None, locale: str = "en"):
-        self.user_id = user_id
-        self.now = now
-        self.tz = tz
-        self.locale = locale
-
-
 class ReminderPlanUpdate(TypedDict, total=False):
     locale: str | None
     extracted_time: dict
@@ -42,10 +32,3 @@ class ReminderPlanOutput(TypedDict):
     events: list[dict]
 
 
-def context_to_dict(ctx: Ctx) -> dict:
-    return {
-        "user_id": ctx.user_id,
-        "now": ctx.now.isoformat() if hasattr(ctx.now, "isoformat") else ctx.now,
-        "tz": str(ctx.tz) if ctx.tz is not None else None,
-        "locale": ctx.locale,
-    }

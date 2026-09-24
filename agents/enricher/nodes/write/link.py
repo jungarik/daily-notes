@@ -11,7 +11,7 @@ import config
 import i18n
 from agents.contracts import ToolResult
 from agents.enricher.nodes.write import _rank
-from agents.enricher.state import EnrichState, context_from_state, context_to_dict
+from agents.enricher.state import EnrichState, context_from_state
 from agents.runtime.execute_tool import execute_allowed_tool
 from tools import enricher as tools
 
@@ -137,8 +137,8 @@ def _context_tool(context: dict, name: str, args: dict) -> dict:
 
 
 def run(state: EnrichState) -> dict:
-    ctx = context_from_state(state)
-    context = context_to_dict(ctx)
+    context = context_from_state(state)
+    locale = context.get("locale") or "en"
     args = dict((state.get("tool_call") or {}).get("args") or {})
     note_id = _target_note_id(args)
     note = (_context_tool(context, "get_note_context", {"note_id": note_id})
@@ -154,7 +154,7 @@ def run(state: EnrichState) -> dict:
         "exclude_note_id": note_id,
         "limit": config.LINK_RECALL_LIMIT,
     }).get("notes") or [] if text else []
-    ranked = _rank.rank(note, rows, ctx.locale)[:config.ENRICH_SIMILAR_LIMIT]
+    ranked = _rank.rank(note, rows, locale)[:config.ENRICH_SIMILAR_LIMIT]
     owned_preselect = _context_tool(context, "filter_owned_notes", {
         "note_ids": preselect_ids,
     }).get("note_ids") or [] if preselect_ids else []
@@ -176,6 +176,6 @@ def run(state: EnrichState) -> dict:
             args,
             candidates,
             _preselected(ranked, candidates, owned_preselect),
-            ctx.locale,
+            locale,
         ),
     }

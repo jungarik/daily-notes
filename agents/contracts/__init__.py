@@ -31,7 +31,11 @@ from agents.contracts.ref import Ref
 from agents.contracts.status import Status
 from agents.contracts.tool_result import ToolResult
 from agents.contracts.turn_outcome import TurnOutcome
-from agents.contracts.user_context import UserContext
+from agents.contracts.user_context import (
+    UserContext,
+    build_context,
+    restore_clock,
+)
 
 __all__ = [
     "AGENT_KIND",
@@ -45,4 +49,6 @@ __all__ = [
     "ToolResult",
     "TurnOutcome",
     "UserContext",
+    "build_context",
+    "restore_clock",
 ]

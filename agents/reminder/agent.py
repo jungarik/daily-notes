@@ -28,9 +28,10 @@ from agents.contracts import (
     Ref,
     ToolResult,
     UserContext,
+    build_context,
+    restore_clock,
 )
 from agents.reminder.graph import PLAN_GRAPH
-from agents.reminder.state import Ctx, context_to_dict
 from agents.runtime.execute_tool import execute_allowed_tool, execute_tool
 from tools import reminder as tools
 
@@ -42,16 +43,6 @@ DESCRIPTION = (
     "Schedules a reminder for a time the user described in words. Use when the "
     "request is about being reminded, alerted, or nudged at some point in the "
     "future. Does not create or edit note content.")
-
-
-def _restore_clock(context: UserContext) -> tuple:
-    """The caller's clock and locale, restored from the envelope's plain JSON."""
-    raw_now = context.get("now")
-    now = datetime.fromisoformat(raw_now) if isinstance(raw_now, str) else raw_now
-    raw_tz = context.get("tz")
-    tz = ZoneInfo(raw_tz) if isinstance(raw_tz, str) and raw_tz else None
-
-    return now, tz, context.get("locale") or "en"
 
 
 def _read_note_ids(references: dict) -> list[int]:
@@ -176,10 +167,10 @@ def _plan_action(user_id: int, plan_request: PlanRequest, now, locale: str) -> d
 def start(request: AgentRequest) -> AgentResult:
     """Plan the reminder the message implies and pause for confirmation."""
     user_id = request.context["user_id"]
-    now, tz, locale = _restore_clock(request.context)
+    now, tz, locale = restore_clock(request.context)
     plan_request = _build_plan_request(request, now, tz, locale)
     plan_request["resolved_entities"]["referenced_notes"] = _read_referenced_notes(
-        context_to_dict(Ctx(user_id, now, tz=tz, locale=locale)),
+        build_context(user_id, now, tz=tz, locale=locale),
         plan_request["referenced_note_ids"])
     action = _plan_action(user_id, plan_request, now, locale)
 
@@ -202,10 +193,10 @@ def resume(token: str, decision: dict, context: UserContext) -> AgentResult:
     no decline branch and no idempotency check here.
     """
     action = json.loads(token)
-    now, tz, locale = _restore_clock(context)
+    now, tz, locale = restore_clock(context)
     result = execute_tool(
         tools.TOOLS,
-        context_to_dict(Ctx(context["user_id"], now, tz=tz, locale=locale)),
+        build_context(context["user_id"], now, tz=tz, locale=locale),
         action["name"],
         action.get("args") or {},
         NAME)

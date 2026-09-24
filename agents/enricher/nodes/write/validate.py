@@ -13,7 +13,7 @@ import i18n
 from agents.contracts import ToolResult
 from agents.runtime.execute_tool import execute_allowed_tool
 from tools import enricher as tools
-from agents.enricher.state import ActionPlanState, context_from_state, context_to_dict
+from agents.enricher.state import ActionPlanState, context_from_state
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
 _NOTE_TARGETED = {"set_note_path", "enrich_note", "add_note_tags"}
@@ -143,7 +143,7 @@ def _owns_note(context: dict, note_id: int) -> bool:
 def run(state: ActionPlanState) -> dict:
     tool_call = _guardrail_call(state.get("tool_call") or {})
     messages = state.get("messages") or []
-    locale = context_from_state(state).locale
+    locale = context_from_state(state).get("locale") or "en"
 
     if tool_call["name"] == "link_notes":
         proposal = state.get("link_proposal") or {"error": _NO_CANDIDATES}
@@ -156,7 +156,7 @@ def run(state: ActionPlanState) -> dict:
     if tool_call["name"] in _NOTE_TARGETED:
         note_id = _target_note_id(tool_call["args"])
         owned = note_id is not None and _owns_note(
-            context_to_dict(context_from_state(state)),
+            context_from_state(state),
             note_id,
         )
 

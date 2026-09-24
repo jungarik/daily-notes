@@ -12,22 +12,27 @@ import time
 from common import helper
 from agents.contracts import ToolResult
 from tools import enricher as tools
-from agents.enricher.state import UserContext, context_to_dict
+from agents.contracts import build_context
 from agents.runtime.execute_tool import execute_allowed_tool
 
 _EMPTY_NOTE = "note not found or empty"
 
 
 def _tool_context(state: dict) -> dict:
-    data = state.get("user_context") or state.get("context") or {}
-    user_id = int(state.get("user_id") or data["user_id"])
+    """The context these tools run under.
 
-    return context_to_dict(UserContext(
-        user_id,
+    Rebuilt rather than passed through because this graph is entered two ways —
+    with the turn's context under `user_context`, or with a bare `user_id` when
+    the metadata subgraph runs alone.
+    """
+    data = state.get("user_context") or state.get("context") or {}
+
+    return build_context(
+        int(state.get("user_id") or data["user_id"]),
         data.get("now"),
         tz=data.get("tz"),
         locale=data.get("locale") or "en",
-    ))
+    )
 
 
 def _tool_text(result) -> str:

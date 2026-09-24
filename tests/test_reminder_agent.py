@@ -80,7 +80,12 @@ def _record_plan_state(seen):
 
 PLAN_GRAPH.invoke = _plan_from_planned
 
-from agents.contracts import AgentRequest, Ref, ToolResult  # noqa: E402
+from agents.contracts import (  # noqa: E402
+    AgentRequest,
+    Ref,
+    ToolResult,
+    restore_clock,
+)
 from agents.reminder import agent  # noqa: E402
 
 CONTEXT = {
@@ -255,25 +260,25 @@ class ResumeTests(unittest.TestCase):
 
 class ClockTests(unittest.TestCase):
     def test_a_missing_timezone_stays_none(self):
-        now, tz, locale = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": None})
+        now, tz, locale = restore_clock({"now": "2026-09-18T09:00:00", "tz": None})
 
         self.assertEqual(datetime(2026, 9, 18, 9, 0), now)
         self.assertIsNone(tz)
         self.assertEqual("en", locale)
 
     def test_a_named_zone_is_restored_as_a_zone(self):
-        _, tz, _ = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": "Europe/Kyiv"})
+        _, tz, _ = restore_clock({"now": "2026-09-18T09:00:00", "tz": "Europe/Kyiv"})
 
         self.assertEqual(ZoneInfo("Europe/Kyiv"), tz)
 
     def test_an_empty_timezone_string_stays_none(self):
-        _, tz, _ = agent._restore_clock({"now": "2026-09-18T09:00:00", "tz": ""})
+        _, tz, _ = restore_clock({"now": "2026-09-18T09:00:00", "tz": ""})
 
         self.assertIsNone(tz)
 
     def test_a_datetime_passes_through_unparsed(self):
         moment = datetime(2026, 9, 18, 9, 0)
-        now, _, _ = agent._restore_clock({"now": moment, "tz": None})
+        now, _, _ = restore_clock({"now": moment, "tz": None})
 
         self.assertIs(moment, now)
 

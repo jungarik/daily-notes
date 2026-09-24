@@ -78,7 +78,12 @@ RUN = _install_stubs()
 GATEWAY = gateway_stub.install()
 
 import config  # noqa: E402
-from agents.contracts import AgentRequest, Ref, ToolResult  # noqa: E402
+from agents.contracts import (  # noqa: E402
+    AgentRequest,
+    Ref,
+    ToolResult,
+    restore_clock,
+)
 from agents.finder import agent  # noqa: E402
 
 CONTEXT = {
@@ -233,12 +238,12 @@ class MessageTests(unittest.TestCase):
 
 class ClockTests(unittest.TestCase):
     def test_a_named_zone_is_restored_as_a_zone(self):
-        _, tz, _ = agent._restore_clock({"now": "2026-09-23T09:00:00", "tz": "Europe/Kyiv"})
+        _, tz, _ = restore_clock({"now": "2026-09-23T09:00:00", "tz": "Europe/Kyiv"})
 
         self.assertEqual(ZoneInfo("Europe/Kyiv"), tz)
 
     def test_a_missing_timezone_stays_none(self):
-        now, tz, locale = agent._restore_clock({"now": "2026-09-23T09:00:00", "tz": None})
+        now, tz, locale = restore_clock({"now": "2026-09-23T09:00:00", "tz": None})
 
         self.assertEqual(datetime(2026, 9, 23, 9, 0), now)
         self.assertIsNone(tz)
@@ -246,7 +251,7 @@ class ClockTests(unittest.TestCase):
 
     def test_a_datetime_passes_through_unparsed(self):
         moment = datetime(2026, 9, 23, 9, 0)
-        now, _, _ = agent._restore_clock({"now": moment, "tz": None})
+        now, _, _ = restore_clock({"now": moment, "tz": None})
 
         self.assertIs(moment, now)
 
@@ -270,6 +275,18 @@ class PromptTests(unittest.TestCase):
 
         self.assertIn("neighbors", SYSTEM_PROMPT)
         self.assertIn("get_note", SYSTEM_PROMPT)
+
+    def test_a_missing_timezone_survives_the_round_trip(self):
+        """The three agents each had their own copy of this and finder's had
+        drifted: it wrote `str(None)`, so a context with no timezone reached
+        `list_agenda` as the literal string "None" instead of a tzinfo."""
+        from agents.contracts import build_context
+        from agents.finder.state import tool_context
+
+        context = build_context(7, None, tz=None)
+
+        self.assertIsNone(context["tz"])
+        self.assertIsNone(tool_context(context)["tz"])
 
     def test_an_existing_system_message_is_replaced_not_stacked(self):
         from agents.finder.prompts import with_system

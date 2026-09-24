@@ -33,6 +33,7 @@ from agents.contracts import (
     Ref,
     ToolResult,
     UserContext,
+    restore_clock,
 )
 from agents.enricher.graph import ACTION_PLAN_GRAPH
 from agents.enricher.prompts import planning_messages
@@ -51,16 +52,6 @@ DESCRIPTION = (
     "content. Does not schedule anything.")
 
 SELECT_ACTION = "link_notes"
-
-
-def _restore_clock(context: UserContext) -> tuple:
-    """The caller's clock and locale, restored from the envelope's plain JSON."""
-    raw_now = context.get("now")
-    now = datetime.fromisoformat(raw_now) if isinstance(raw_now, str) else raw_now
-    raw_tz = context.get("tz")
-    tz = ZoneInfo(raw_tz) if isinstance(raw_tz, str) and raw_tz else None
-
-    return now, tz, context.get("locale") or "en"
 
 
 def _build_tool_context(user_id: int, now, tz, locale: str) -> dict:
@@ -197,7 +188,7 @@ def _collect_refs(action: dict, data: dict) -> tuple[Ref, ...]:
 def start(request: AgentRequest) -> AgentResult:
     """Plan the write the message implies and pause for confirmation."""
     user_id = request.context["user_id"]
-    now, tz, locale = _restore_clock(request.context)
+    now, tz, locale = restore_clock(request.context)
     action = _plan_action(
         user_id,
         _build_plan_request(request, now, tz, locale),
@@ -226,7 +217,7 @@ def resume(token: str, decision: dict, context: UserContext) -> AgentResult:
     no decline branch and no idempotency check here.
     """
     action = _with_selection(json.loads(token), decision)
-    now, tz, locale = _restore_clock(context)
+    now, tz, locale = restore_clock(context)
     result = execute_tool(
         tools.TOOLS,
         _build_tool_context(context["user_id"], now, tz, locale),

@@ -9,7 +9,7 @@ from langgraph.types import interrupt
 
 from common import helper
 from agents.contracts import ToolResult
-from agents.enricher.state import EnrichState, context_from_state, context_to_dict
+from agents.enricher.state import EnrichState, context_from_state
 from tools import enricher as tools
 from agents.runtime.execute_tool import execute_tool
 from agents.runtime import execution_ledger
@@ -63,16 +63,15 @@ def run(state: EnrichState) -> dict:
         raise ValueError("No pending action to approve")
 
     approved = bool(interrupt(_interrupt_payload(pending, state.get("action"))))
-    ctx = context_from_state(state)
+    context = context_from_state(state)
     action = _action(pending)
 
     if not approved:
         return _completed(state.get("messages") or [], pending, DECLINED)
 
-    context = context_to_dict(ctx)
     result = execution_ledger.execute_once(
         pending["action_id"],
-        ctx.user_id,
+        context["user_id"],
         "enricher",
         action,
         lambda: _result_text(execute_tool(

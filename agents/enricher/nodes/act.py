@@ -6,7 +6,7 @@ execution). Single public `run`.
 
 from common import helper
 from agents.contracts import ToolResult
-from agents.enricher.state import EnrichState, context_from_state, context_to_dict
+from agents.enricher.state import EnrichState, context_from_state
 from tools import enricher as tools
 from agents.runtime.execute_tool import execute_tool
 
@@ -22,7 +22,7 @@ def run(state: EnrichState) -> dict:
     tool_call = state["tool_call"]
     result = _result_text(execute_tool(
         tools.TOOLS,
-        context_to_dict(context_from_state(state)),
+        context_from_state(state),
         tool_call["name"],
         tool_call["args"],
         "enricher",

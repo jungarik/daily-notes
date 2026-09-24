@@ -515,6 +515,13 @@ delivery, and does not use the farm.
 **Contracts.** Every shape the farm exchanges lives in `agents/contracts/`, one
 type per module (`agent_spec.py`, `agent_request.py`, `ref.py`, …), imported
 from the package rather than the leaf: `from agents.contracts import AgentSpec`.
+`UserContext` is the turn's clock and owner, and there is exactly one of it:
+plain JSON so it survives `agent_states` and a later confirm, carried unchanged
+into each agent's graph state. `build_context` makes one, `restore_clock` turns
+its strings back into a `datetime` and a `ZoneInfo` at the point a tool needs
+them. Each agent used to keep a parallel class of its own and they had drifted —
+one serialised a missing timezone as the string `"None"` — so the type and the
+two functions are shared, which is safe because they are pure.
 The package imports nothing — not an agent, not a tool, not the loop, not
 `db` or `config` — and that is load-bearing: it is why four agents plus the
 loop, the router and the store can agree on shapes without importing each

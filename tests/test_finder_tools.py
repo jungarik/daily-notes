@@ -13,7 +13,8 @@ from unittest.mock import patch
 from common import helper
 from agents.contracts import ToolResult
 from agents.finder import prompts
-from agents.finder.state import FinderContext, apply_tool_result, tool_context
+from agents.contracts import UserContext
+from agents.finder.state import apply_tool_result, tool_context
 from tools import finder as tools
 from tools.finder import get_note, list_agenda, list_paths, neighbors, search_notes
 from tools.finder.specs import READ_TOOL_SPECS
@@ -35,7 +36,7 @@ class FinderToolTests(unittest.TestCase):
                          spec["function"]["parameters"]["required"])
 
     def test_agenda_queries_range_and_cites_its_notes(self):
-        ctx = FinderContext(
+        ctx = UserContext(
             7, datetime(2026, 9, 1, 10, tzinfo=timezone.utc), timezone.utc, "en")
         rows = [{"reminder_id": 3, "note_id": 9,
                  "remind_at": datetime(2026, 9, 2, 9, tzinfo=timezone.utc),
@@ -50,7 +51,7 @@ class FinderToolTests(unittest.TestCase):
                 args,
                 "finder",
             )
-            apply_tool_result(ctx, result)
+            citations, _ = apply_tool_result([], {}, result)
             result = tool_text(result)
 
         self.assertEqual(3, json.loads(result)["reminders"][0]["reminder_id"])
@@ -59,12 +60,12 @@ class FinderToolTests(unittest.TestCase):
             datetime(2026, 9, 3, tzinfo=timezone.utc))
         self.assertEqual(
             [{"note_id": 9, "title": "Call Alex", "path": None, "date": None}],
-            ctx.citations)
+            citations)
 
     def test_semantic_search_no_longer_parses_agenda_dates(self):
         with patch.object(search_notes.embedings, "embed", return_value="vector"), \
                 patch.object(search_notes.db, "search_chunks", return_value=[]) as search:
-            ctx = FinderContext(7, datetime.now(timezone.utc), timezone.utc, "en")
+            ctx = UserContext(7, datetime.now(timezone.utc), timezone.utc, "en")
             result = execute_tool(
                 tools.TOOLS,
                 tool_context(ctx),
@@ -72,14 +73,14 @@ class FinderToolTests(unittest.TestCase):
                 {"query": "garden"},
                 "finder",
             )
-            apply_tool_result(ctx, result)
+            citations, _ = apply_tool_result([], {}, result)
             result = tool_text(result)
 
         self.assertEqual("No relevant notes found.", json.loads(result)["message"])
         search.assert_called_once_with(7, "vector")
 
     def test_search_returns_evidence_without_a_nested_chat_completion(self):
-        ctx = FinderContext(7, datetime.now(timezone.utc), timezone.utc, "en")
+        ctx = UserContext(7, datetime.now(timezone.utc), timezone.utc, "en")
         hits = [{"chunk_id": 2, "note_id": 9, "content": "Grow basil",
                  "rank": 1, "similarity": 0.91,
                  "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
@@ -98,7 +99,7 @@ class FinderToolTests(unittest.TestCase):
                 {"query": "garden"},
                 "finder",
             )
-            apply_tool_result(ctx, result)
+            citations, _ = apply_tool_result([], {}, result)
             result = json.loads(tool_text(result))
 
         self.assertEqual("Grow basil", result["evidence"][0]["content"])
@@ -106,7 +107,7 @@ class FinderToolTests(unittest.TestCase):
         self.assertEqual(
             [{"note_id": 9, "title": "Balcony garden",
               "path": "Areas/Garden", "date": "2026-08-01T00:00:00+00:00"}],
-            ctx.citations)
+            citations)
 
     def test_read_tools_validate_context_and_args_values(self):
         context = {
