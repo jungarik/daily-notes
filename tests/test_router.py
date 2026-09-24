@@ -194,10 +194,10 @@ class StartTests(unittest.TestCase):
 
 
 class SpecTests(unittest.TestCase):
-    def test_it_claims_no_entry_tool(self):
-        """It is reached by name, never addressed by a tool — an entry tool
-        would make it routable, and something has to choose first."""
-        self.assertEqual((), routing.SPEC.entry_tools)
+    def test_the_spec_declares_its_name(self):
+        """It is reached by that name rather than routed to — something has to
+        choose first, and that something cannot itself be chosen."""
+        self.assertEqual("router", routing.SPEC.name)
 
     def test_it_never_pauses_so_it_needs_no_resume(self):
         self.assertIsNone(routing.SPEC.resume)

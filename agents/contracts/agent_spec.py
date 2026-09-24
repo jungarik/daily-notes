@@ -12,10 +12,8 @@ from agents.contracts.user_context import UserContext
 class AgentSpec:
     """How one agent joins the farm.
 
-    `entry_tools` are the tool names that route here with no model call — the
-    agent declares what addresses it, and the loop owns the lookup. `may_read`
-    is the allowlist for this agent's `read_state` tool; `("*",)` means every
-    agent in the turn.
+    `may_read` is the allowlist for this agent's `read_state` tool; `("*",)`
+    means every agent in the turn.
 
     `resume(token, decision, context)` takes a fresh context because a
     confirmation arrives in a later request: the clock has moved on since the
@@ -26,5 +24,4 @@ class AgentSpec:
     description: str
     start: Callable[[AgentRequest], AgentResult]
     resume: Callable[[str, dict, UserContext], AgentResult] | None = None
-    entry_tools: tuple[str, ...] = ()
     may_read: tuple[str, ...] = ()

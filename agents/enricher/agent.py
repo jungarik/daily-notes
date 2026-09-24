@@ -257,5 +257,4 @@ SPEC = AgentSpec(
     description=DESCRIPTION,
     start=start,
     resume=resume,
-    entry_tools=("perform_action",),
 )

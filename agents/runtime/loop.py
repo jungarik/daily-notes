@@ -10,8 +10,8 @@ This module owns only the turn around it — pick, run, save, fold in, suspend
 or finish — plus the pure helpers that turn needs: the ledger codec, the
 action id,
 and the two rules that keep the turn history trustworthy (an entry is derived
-from a result rather than written by an agent, and one agent contributes exactly
-one entry however many times it ran).
+from a result rather than written by an agent, and each hop contributes its own
+entry — except a resumed one, which supersedes the pause it answers).
 """
 
 import json
@@ -152,10 +152,10 @@ class Loop:
 
     It runs the loop — pick, run, save, fold in, suspend or finish — and owns
     only the two routing cases that need no model: the responder takes the hop
-    when the turn is finishing, and an entry tool names its owner outright.
-    Both are this file's own state (`hops_left`, the unconsumed entry tool)
-    rather than routing policy. Everything else is the router agent's choice,
-    and it is an ordinary registered hop like any other.
+    when the turn is finishing, and a caller-supplied `entry_agent` names the
+    first one outright. Both are this file's own state (`hops_left`, the
+    unspent entry agent) rather than routing policy. Everything else is the
+    router agent's choice, and it is an ordinary registered hop like any other.
 
     The store, ledger and registry arrive at construction because this is the
     impure top of the call stack — everything below it takes data and returns
@@ -175,14 +175,15 @@ class Loop:
         self._always_route = always_route
 
     def start(self, message: str, context: UserContext, references: dict | None = None,
-              entry_tool: str | None = None) -> TurnOutcome:
+              entry_agent: str | None = None) -> TurnOutcome:
         """Run a fresh turn.
 
         The turn's owner travels in `context`, not beside it — one source of
         truth, so the row the store writes and the note an agent creates can
-        never disagree about whose they are. `entry_tool` is the case-2
-        shortcut: the tool name the previous model call already chose, if there
-        was one.
+        never disagree about whose they are. `entry_agent` is the case-2
+        shortcut: the agent a caller already knows should take the first hop,
+        naming it outright so the turn spends no model call deciding. A name
+        this farm does not have simply misses, and the router is asked.
         """
         return self._run_internal(
             correlation_id=str(uuid.uuid4()),
@@ -191,7 +192,7 @@ class Loop:
             references=references or {},
             history=(),
             causation_id=None,
-            entry_tool=entry_tool)
+            entry_agent=entry_agent)
 
     def resume(self, pending: dict, decision: dict, message: str, context: UserContext,
                references: dict | None = None) -> TurnOutcome:
@@ -244,7 +245,7 @@ class Loop:
             references=references or {},
             history=merged_history,
             causation_id=state_id,
-            entry_tool=None)
+            entry_agent=None)
 
     def _confirm(self, correlation_id: str, agent: AgentSpec, pending: dict,
                    decision: dict, context: UserContext) -> AgentResult:
@@ -263,19 +264,6 @@ class Loop:
             agent.name,
             action,
             lambda: encode(agent.resume(pending["token"], decision, context))))
-
-    def _resolve_entry_tool(self, entry_tool: str | None) -> AgentSpec | None:
-        """Case 2: the agent an unspent entry tool names, or None.
-
-        The only routing this file owns besides the finishing hop, and it reads
-        loop-local state rather than policy — whether a tool name from the
-        previous model call is still unspent. A tool nothing claims is not a
-        dead end: it returns None and the router is asked.
-        """
-        if entry_tool is None or self._always_route:
-            return None
-
-        return self._registry.find_by_entry_tool(entry_tool)
 
     def _read_choice(self, result: AgentResult) -> AgentSpec | None:
         """The agent the router named, or the responder when it declined.
@@ -297,7 +285,7 @@ class Loop:
                references: dict,
                history: tuple[HistoryEntry, ...],
                causation_id: str | None,
-               entry_tool: str | None) -> TurnOutcome:
+               entry_agent: str | None) -> TurnOutcome:
         # The router's own entries do not spend the budget: routing is free, so
         # a turn still gets `max_hops` agents that do work plus the reply.
         worked = sum(1 for entry in history if entry.agent != ROUTER)
@@ -317,7 +305,15 @@ class Loop:
                 if agent is None:
                     break
             else:
-                agent = self._resolve_entry_tool(entry_tool)
+                # Case 2. A caller that already knows who should act names
+                # them, and the hop costs no model call. Loop-local state, not
+                # routing policy: whether the shortcut is still unspent, and
+                # whether `always_route` is forcing every hop through the
+                # router. A name nothing answers to is not a dead end — it
+                # misses, and case 3 asks.
+                agent = (None if entry_agent is None or self._always_route
+                         else self._registry.find_by_name(entry_agent))
+                entry_agent = None
 
             if agent is None:
                 # Case 3. The router is an ordinary hop — it runs, it is saved,
@@ -397,7 +393,6 @@ class Loop:
             if agent is None:
                 break
 
-            entry_tool = None
             request = AgentRequest(
                 request_id=str(uuid.uuid4()),
                 correlation_id=correlation_id,

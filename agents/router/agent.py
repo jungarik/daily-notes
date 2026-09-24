@@ -6,9 +6,9 @@ the loop reaches it by name rather than by routing to it: something has to
 choose first, and that something cannot itself be chosen.
 
 **It runs only when a choice needs a model.** The loop resolves the two free
-cases itself — the responder when the turn is finishing, and an entry tool when
-the previous model call already named one — because both are loop-local state
-(`hops_left`, the not-yet-consumed entry tool) rather than routing policy. So a
+cases itself — the responder when the turn is finishing, and an `entry_agent`
+when the caller named one — because both are loop-local state (`hops_left`, the
+unspent entry agent) rather than routing policy. So a
 turn that never needs a model has no router hop and no router row, which is the
 honest record: the router appears exactly where a model made a decision.
 
@@ -153,5 +153,4 @@ SPEC = AgentSpec(
     name=NAME,
     description=DESCRIPTION,
     start=start,
-    entry_tools=(),
 )

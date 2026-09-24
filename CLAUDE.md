@@ -465,7 +465,8 @@ reply.
 **Routing** is `agents/router/agent.py`, a registered agent like any other —
 same `SPEC`, same `AgentRequest`, and its own row and `HistoryEntry` when it
 runs. Cheapest case first: the responder is taken unconditionally when the turn
-is finishing; otherwise an entry tool names the agent for free; otherwise the
+is finishing; otherwise a caller-supplied `entry_agent` names it for free
+(nothing supplies one today); otherwise the
 loop runs the router hop and `ROUTER_MODEL` picks from the whole roster. An
 agent that already ran is still a candidate — a turn often needs the same one
 twice (create a note, then link it), so what has run reaches the router as

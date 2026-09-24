@@ -105,5 +105,4 @@ SPEC = AgentSpec(
     name=NAME,
     description=DESCRIPTION,
     start=start,
-    entry_tools=(),
 )

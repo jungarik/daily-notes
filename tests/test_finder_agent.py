@@ -405,8 +405,8 @@ class RoutingTests(unittest.TestCase):
 
 
 class SpecTests(unittest.TestCase):
-    def test_it_claims_no_entry_tool_so_only_the_model_router_picks_it(self):
-        self.assertEqual((), agent.SPEC.entry_tools)
+    def test_the_spec_declares_its_name(self):
+        self.assertEqual("finder", agent.SPEC.name)
 
     def test_it_never_pauses_so_it_needs_no_resume(self):
         self.assertIsNone(agent.SPEC.resume)

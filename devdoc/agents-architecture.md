@@ -16,7 +16,7 @@ agents/
 ├── runtime/                   the machinery that runs a turn — none of it is
 │   │                           any one agent's work
 │   ├── loop.py              the turn loop
-│   ├── registry.py            the roster; rejects duplicate names/entry tools
+│   ├── registry.py            the roster; rejects a duplicate agent name
 │   ├── state_store.py         the turn tree (agent_states)
 │   ├── execution_ledger.py    at-most-once confirmed writes
 │   └── checkpoint, model_gateway, execute_tool
@@ -47,7 +47,7 @@ tools/
 `api/chat_v2` calls `loop.start(message, context, references)`. Each hop:
 
 1. **Route.** The responder is taken unconditionally when the turn is finishing;
-   otherwise an entry tool resolves the agent for free; otherwise the router
+   otherwise a caller-supplied `entry_agent` names it for free; otherwise the router
    runs as a hop of its own and a model picks from the whole roster — including
    agents that already ran, since a turn often needs the same one twice. It
    declines rather than guessing, and a decline falls through to the

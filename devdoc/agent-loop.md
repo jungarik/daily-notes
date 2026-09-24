@@ -34,7 +34,6 @@ importing each other:
 class AgentSpec:
     name: str
     description: str          # what the router reads when it has to choose
-    entry_tools: tuple[str]   # tool names that route here without a router call
     may_read: tuple[str]      # whose states this agent may fetch ("*" for all)
     start: Callable           # (AgentRequest) -> AgentResult
     resume: Callable | None   # (token, decision, context) -> AgentResult
@@ -201,10 +200,10 @@ Not a loop API that agents import — a **tool**, scoped by the registry:
 
 ```python
 AGENTS = {
-    "responder": AgentSpec(..., entry_tools=[],                  may_read=["*"]),
-    "finder":    AgentSpec(..., entry_tools=[],                  may_read=[]),
-    "reminder":  AgentSpec(..., entry_tools=["set_reminder"],    may_read=[]),
-    "enricher":  AgentSpec(..., entry_tools=["perform_action"],  may_read=[]),
+    "responder": AgentSpec(..., may_read=["*"]),
+    "finder":    AgentSpec(..., may_read=[]),
+    "reminder":  AgentSpec(..., may_read=[]),
+    "enricher":  AgentSpec(..., may_read=[]),
 }
 ```
 
@@ -240,10 +239,18 @@ has already been made.** Three cases, in order:
 
 1. **The responder hop is unconditional.** It always runs last, so there is
    nothing to decide. No router call, by construction.
-2. **A tool name resolves it.** When the previous model call already chose —
-   `set_reminder`, `perform_action` — the tool name *is* the route. The loop
-   looks it up in `entry_tools` across the registry. No router call. This is the
-   common path and covers every single-agent turn.
+2. **A caller names the agent.** `loop.start(..., entry_agent="enricher")` says
+   who takes the first hop, and the loop resolves it with
+   `registry.find_by_name`. No router call. A name this farm does not have is a
+   miss rather than an error — the shortcut is a hint, so the turn falls through
+   to case 3.
+
+   **No caller supplies one today.** `api/chat_v2` calls `start` without it, and
+   the loop clears it after the first hop, so every production turn routes
+   through case 3. It is kept as the seam for a client that already knows the
+   agent — an earlier design had the previous model call name a *tool* and the
+   registry resolve its owner, which was one indirection for a producer that no
+   longer exists.
 3. **Otherwise, ask.** When an agent finishes and more than one agent could
    plausibly follow, the loop runs the router as a hop: it gets the candidates
    (`name` + `description`) in `references` plus the history of the turn so far,
@@ -259,11 +266,14 @@ has already been made.** Three cases, in order:
    and `AGENT_MAX_HOPS` is the backstop, with the responder's slot reserved, so
    the worst case is a wasted hop rather than silence.
 
-So a typical turn spends **zero** router calls and a genuinely multi-agent turn
-spends one. `entry_tools` lives on the spec, meaning the agent declares what
-routes to it and the loop owns the lookup — this is `MODE_AGENTS` inverted, not
-`MODE_AGENTS` restored. No agent imports another, and adding an agent is still
-one registry entry.
+So a turn spends one router call per hop that needs a decision, plus one more to
+learn there is nothing left to do. A caller that fills in `entry_agent` saves the
+first of those. No agent imports another, and adding an agent is still one
+registry entry.
+
+Naming the agent rather than a tool does move one thing: a client that uses the
+shortcut now knows agent names. The `LEGACY_NAMES` alias in the registry is what
+keeps that from turning a rename into a broken client.
 
 A tool name claimed by two specs is a startup error, not a runtime tie-break.
 
@@ -301,7 +311,7 @@ the router reaches the OpenAI client, which is why `tests/test_loop.py` installs
 the shared gateway stub first (`tests/gateway_stub.py`).
 
 `Loop` takes `(store, ledger, registry)` and does its own lookups:
-`find_responder()` for case 1, `find_by_entry_tool()` for case 2,
+`find_responder()` for case 1, `find_by_name()` for case 2,
 `find_router()` and `list_agents()` for case 3, and `get(name)` to resolve a
 suspended turn's agent (it raises on an unknown name). The one value that
 crosses from routing to the loop is `AGENT_KIND` — the single reserved
@@ -476,8 +486,9 @@ knowing about another, stop before Phase 5.
   which weakens the one-place rule.
 - **`AGENT_ROUTER_ALWAYS` makes dev behave unlike production** by construction.
   That is the point, but it means a routing bug that only appears in the
-  `entry_tools` fast path will not show up locally. Case 1–2 need their own
-  (cheap, model-free) assertions.
+  `entry_agent` fast path will not show up locally. Case 1–2 need their own
+  (cheap, model-free) assertions — and case 2 has no production caller at all,
+  so its tests are the only thing exercising it.
 - **Two idempotency scopes now coexist**: the loop's `action_id` ledger for
   confirmed writes, and the checkpointer for graph resume. A turn that fails
   between them — write committed, checkpoint not advanced — is the case worth

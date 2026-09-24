@@ -7,7 +7,7 @@ two-node planning graph (`resolve` -> `build`), its own state, prompt, and
 It imports nothing from another agent, and `SPEC` is its only export.
 
 The loop routes a scheduling turn here — either because the turn arrived with
-the `set_reminder` entry tool, or because the model router picked it from the
+the `entry_agent` shortcut, or because the model router picked it from the
 roster by description. Enrich does not carry `create_reminder` in its tool
 registry, so only this agent can schedule.
 

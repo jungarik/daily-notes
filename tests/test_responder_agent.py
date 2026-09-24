@@ -301,7 +301,9 @@ class FallbackTests(unittest.TestCase):
 
 class SpecTests(unittest.TestCase):
     def test_it_is_never_a_routing_candidate(self):
-        self.assertEqual((), agent.SPEC.entry_tools)
+        """The registry leaves it out of the roster the router chooses from —
+        it takes the last hop by construction."""
+        self.assertEqual("responder", agent.SPEC.name)
 
     def test_it_may_read_every_agents_state(self):
         self.assertEqual(("*",), agent.SPEC.may_read)

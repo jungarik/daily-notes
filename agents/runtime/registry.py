@@ -1,8 +1,7 @@
 """The agent roster, and the lookups the loop routes by.
 
-Registration is where a conflicting farm is rejected: a duplicate agent name or a
-tool name claimed by two agents raises at startup, not on the turn that happens
-to hit it.
+Registration is where a conflicting farm is rejected: a duplicate agent name
+raises at startup, not on the turn that happens to hit it.
 """
 
 from agents.contracts import AgentSpec
@@ -21,24 +20,14 @@ LEGACY_NAMES = {"enrich": "enricher"}
 
 
 class AgentRegistry:
-    """Every agent in the farm, indexed by name and by entry tool."""
+    """Every agent in the farm, indexed by name."""
 
     def __init__(self):
         self._agents: dict[str, AgentSpec] = {}
-        self._entry_tools: dict[str, str] = {}
 
     def register(self, agent: AgentSpec) -> None:
         if agent.name in self._agents:
             raise ValueError(f"Agent already registered: {agent.name}")
-
-        for tool_name in agent.entry_tools:
-            owner = self._entry_tools.get(tool_name)
-
-            if owner is not None:
-                raise ValueError(
-                    f"Entry tool {tool_name!r} is claimed by {owner!r} and {agent.name!r}")
-
-            self._entry_tools[tool_name] = agent.name
 
         self._agents[agent.name] = agent
 
@@ -49,18 +38,26 @@ class AgentRegistry:
         the rename invisible: the loop asks for whatever name the stored row
         carries and gets a live agent back.
         """
-        agent = self._agents.get(name) or self._agents.get(LEGACY_NAMES.get(name))
+        agent = self.find_by_name(name)
 
         if agent is None:
             raise LookupError(f"Unknown agent: {name}")
 
         return agent
 
-    def find_by_entry_tool(self, tool_name: str) -> AgentSpec | None:
-        """The agent a tool name addresses, or None when nothing claims it."""
-        owner = self._entry_tools.get(tool_name)
+    def find_by_name(self, name: str) -> AgentSpec | None:
+        """The agent registered under this name, or None.
 
-        return None if owner is None else self._agents[owner]
+        The non-raising twin of `get`, and the difference is who supplied the
+        name. `get` reads a name the loop itself stored, so an unknown one is a
+        bug and raises. This reads a name a *caller* offered as a routing
+        shortcut: a name this farm does not have is not an error, it just means
+        the shortcut misses and the router is asked instead.
+
+        The rename alias applies here too — a client that still says "enrich"
+        gets the enricher.
+        """
+        return self._agents.get(name) or self._agents.get(LEGACY_NAMES.get(name))
 
     def find_responder(self) -> AgentSpec | None:
         """The reply-only agent."""

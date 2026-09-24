@@ -232,5 +232,4 @@ SPEC = AgentSpec(
     description=DESCRIPTION,
     start=start,
     resume=resume,
-    entry_tools=("set_reminder",),
 )
