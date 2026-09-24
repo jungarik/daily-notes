@@ -43,21 +43,39 @@ def list_paths(user_id: int, limit: int = 30) -> list[tuple[str, int]]:
         return [(row[0], row[1]) for row in cur.fetchall()]
 
 
-def links_of_for_user(user_id: int, note_id: int, limit: int = 100):
+def links_of_for_user(user_id: int, note_id: int, limit: int = 25):
+    """One row per note linked to this one: id, title, text, path, created_at,
+    direction, and how many notes that neighbour is itself linked to.
+
+    The link count is what tells a reader which neighbour is a hub worth
+    following next, so it is counted here rather than inferred from a second
+    round of calls.
+
+    The CTE settles *who* the neighbours are — and does the owner check, so the
+    notes the outer query joins are already this user's. Counting then costs one
+    subquery per neighbour rather than an aggregate over the whole vault.
+    """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT n.id, n.title, n.text, n.path, n.created_at, 'out' AS direction
-            FROM note_links l JOIN notes n ON n.id = l.to_note_id
-            WHERE l.from_note_id = %s AND n.user_id = %s
-            UNION
-            SELECT n.id, n.title, n.text, n.path, n.created_at, 'in' AS direction
-            FROM note_links l JOIN notes n ON n.id = l.from_note_id
-            WHERE l.to_note_id = %s AND n.user_id = %s
-            ORDER BY direction LIMIT %s;
+            WITH neighbour AS (
+                SELECT l.to_note_id AS id, 'out' AS direction
+                FROM note_links l JOIN notes n ON n.id = l.to_note_id
+                WHERE l.from_note_id = %s AND n.user_id = %s
+                UNION
+                SELECT l.from_note_id AS id, 'in' AS direction
+                FROM note_links l JOIN notes n ON n.id = l.from_note_id
+                WHERE l.to_note_id = %s AND n.user_id = %s
+            )
+            SELECT n.id, n.title, n.text, n.path, n.created_at, b.direction,
+                   (SELECT count(*) FROM note_links x
+                    WHERE x.from_note_id = n.id OR x.to_note_id = n.id) AS links
+            FROM neighbour b JOIN notes n ON n.id = b.id
+            ORDER BY b.direction LIMIT %s;
             """,
             (note_id, user_id, note_id, user_id, limit),
         )
+
         return cur.fetchall()
 
 

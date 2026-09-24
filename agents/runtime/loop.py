@@ -219,6 +219,10 @@ class Loop:
                 state=result.state,
                 error=f"invalid produced: {'; '.join(found)}")
 
+        # Read the earlier hops *before* saving this one. The store returns every
+        # row now, so reading afterwards would hand back the row this method is
+        # about to fold in explicitly and the confirmed hop would appear twice.
+        prior_history = self._store.read_history(correlation_id)
         state_id = self._store.save(
             correlation_id=correlation_id,
             causation_id=pending.get("state_id"),
@@ -228,10 +232,7 @@ class Loop:
             produced=tuple(result.produced),
             state=result.state)
 
-        # Read the earlier hops *before* saving this one. The store returns every
-        # row now, so reading afterwards would hand back the row this method is
-        # about to fold in explicitly and the confirmed hop would appear twice.
-        merged_history = merge_history(self._store.read_history(correlation_id), HistoryEntry(
+        merged_history = merge_history(prior_history, HistoryEntry(
             agent=agent.name,
             status=result.status,
             produced=tuple(result.produced),

@@ -90,7 +90,7 @@ class AgentRequest:
 
 Three things this shape is deliberate about:
 
-- **The owner lives in `context` and nowhere else.** `loop.start` does not take
+- **The owner lives in `context` and nowhere else.** `loop.run` does not take
   a `user_id` beside it. Two copies of the same fact drift, and the failure mode
   is ugly: the store writes a row for one user while an agent writes a note for
   another.
@@ -239,7 +239,7 @@ has already been made.** Three cases, in order:
 
 1. **The responder hop is unconditional.** It always runs last, so there is
    nothing to decide. No router call, by construction.
-2. **A caller names the agent.** `loop.start(..., entry_agent="enricher")` says
+2. **A caller names the agent.** `loop.run(..., entry_agent="enricher")` says
    who takes the first hop, and the loop resolves it with
    `registry.find_by_name`. No router call. A name this farm does not have is a
    miss rather than an error — the shortcut is a hint, so the turn falls through

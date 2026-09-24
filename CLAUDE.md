@@ -453,7 +453,7 @@ The chat tab is served by a **farm of peer agents behind a loop**
 (client-agnostic, in `agents/`) — see `devdoc/agent-loop.md` for the design and
 `devdoc/agents-architecture.md` for the map. No agent knows another exists.
 
-**The turn.** `api/chat_v2` calls `loop.start(message, context, references)`.
+**The turn.** `api/chat_v2` calls `loop.run(message, context, references)`.
 The turn loop asks the router who runs next, hands that agent an `AgentRequest`,
 saves the `AgentResult` as a row in `agent_states` (the turn tree, migration
 0022), folds it into the turn history, and repeats until an agent needs the user

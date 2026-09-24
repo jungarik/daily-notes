@@ -44,7 +44,7 @@ tools/
 
 ## How a turn runs
 
-`api/chat_v2` calls `loop.start(message, context, references)`. Each hop:
+`api/chat_v2` calls `loop.run(message, context, references)`. Each hop:
 
 1. **Route.** The responder is taken unconditionally when the turn is finishing;
    otherwise a caller-supplied `entry_agent` names it for free; otherwise the router

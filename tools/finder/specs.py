@@ -38,7 +38,10 @@ READ_TOOL_SPECS = [
     ),
     _fn(
         "neighbors",
-        "List notes directly linked to a note.",
+        "Notes directly linked to a note, each with its full text, title, path, "
+        "date, link direction and its own link count. Read a linked note from "
+        "here rather than calling `get_note` on it. Capped at 25; `truncated` "
+        "says the note has more links than were returned.",
         {"note_id": {"type": "integer"}},
         ["note_id"],
     ),

@@ -15,7 +15,7 @@ from agents.contracts import ToolResult
 from agents.finder import prompts
 from agents.finder.state import FinderContext, apply_tool_result, tool_context
 from tools import finder as tools
-from tools.finder import get_note, list_agenda, list_paths, search_notes
+from tools.finder import get_note, list_agenda, list_paths, neighbors, search_notes
 from tools.finder.specs import READ_TOOL_SPECS
 from agents.runtime.execute_tool import execute_tool
 
@@ -132,6 +132,50 @@ class FinderToolTests(unittest.TestCase):
         note.assert_not_called()
         embed.assert_not_called()
         paths.assert_not_called()
+
+    def test_neighbors_returns_each_linked_note_whole(self):
+        """A Zettelkasten answer usually sits one link away, and the step budget
+        does not stretch to a `get_note` per neighbour — so the text has to come
+        back with the link."""
+        created = datetime(2026, 9, 1, 9, tzinfo=timezone.utc)
+        rows = [(9, "Postgres tuning", "shared_buffers to 25%",
+                 "Tech/Databases", created, "out", 4)]
+
+        with patch.object(neighbors.db, "links_of_for_user", return_value=rows):
+            result = neighbors.invoke({"user_id": 7}, {"note_id": 3})
+
+        note = result.data["notes"][0]
+        self.assertEqual("shared_buffers to 25%", note["text"])
+        self.assertEqual("Tech/Databases", note["path"])
+        self.assertEqual("2026-09-01T09:00:00+00:00", note["date"])
+        self.assertEqual(4, note["links"], "the hub hint the prompt sorts on")
+        self.assertEqual("out", note["direction"])
+        self.assertFalse(result.data["truncated"])
+        self.assertEqual([9], [item["note_id"] for item in result.citations])
+
+    def test_neighbors_caps_the_list_and_says_so(self):
+        """Full text is unbounded per note, so the cap is what keeps one tool
+        result a predictable size. A reader that cannot tell a full page from an
+        exact fit would report a hub's links as complete."""
+        created = datetime(2026, 9, 1, 9, tzinfo=timezone.utc)
+        rows = [(i, f"n{i}", "text", "Tech", created, "out", 1)
+                for i in range(neighbors.LIMIT + 1)]
+
+        with patch.object(neighbors.db, "links_of_for_user",
+                          return_value=rows) as query:
+            result = neighbors.invoke({"user_id": 7}, {"note_id": 3})
+
+        self.assertEqual(neighbors.LIMIT + 1, query.call_args[0][2],
+                         "asks for one more than the cap to detect a full page")
+        self.assertEqual(neighbors.LIMIT, len(result.data["notes"]))
+        self.assertTrue(result.data["truncated"])
+
+    def test_neighbors_reports_an_unlinked_note_as_such(self):
+        with patch.object(neighbors.db, "links_of_for_user", return_value=[]):
+            result = neighbors.invoke({"user_id": 7}, {"note_id": 3})
+
+        self.assertEqual("No linked notes.", result.data["message"])
+        self.assertEqual([], list(result.citations))
 
     def test_the_prompt_exposes_current_local_time(self):
         now = datetime(2026, 9, 1, 12, 30, tzinfo=timezone.utc)

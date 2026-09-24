@@ -261,6 +261,16 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("perform_action", SYSTEM_PROMPT)
         self.assertNotIn("set_reminder", SYSTEM_PROMPT)
 
+    def test_it_is_told_to_follow_a_notes_links(self):
+        """The vault is a Zettelkasten: the note that matches the request is
+        usually the general one, and the detail asked about lives in a note
+        linked to it. Answering from the search hit alone reads as "not in my
+        notes" for something the user did write down."""
+        from agents.finder.prompts import SYSTEM_PROMPT
+
+        self.assertIn("neighbors", SYSTEM_PROMPT)
+        self.assertIn("get_note", SYSTEM_PROMPT)
+
     def test_an_existing_system_message_is_replaced_not_stacked(self):
         from agents.finder.prompts import with_system
 
