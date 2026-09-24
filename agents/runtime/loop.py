@@ -174,7 +174,7 @@ class Loop:
         self._max_hops = max_hops
         self._always_route = always_route
 
-    def start(self, message: str, context: UserContext, references: dict | None = None,
+    def run(self, message: str, context: UserContext, references: dict | None = None,
               entry_agent: str | None = None) -> TurnOutcome:
         """Run a fresh turn.
 
@@ -328,34 +328,32 @@ class Loop:
                 # What has run is context for the decision, not a constraint on
                 # it, so it reaches the router in the history instead.
                 candidates = self._registry.list_agents()
-                router = self._registry.find_router()
+                router_agent = self._registry.find_router()
 
-                if not candidates or router is None:
+                if not candidates or router_agent is None:
                     # Nothing to choose between, so there is nothing to ask:
                     # the responder takes the hop and the turn ends with a
                     # reply. Skipping the call also skips the row — a router
                     # hop on the record should mean a decision was made.
                     agent = self._registry.find_responder()
                 else:
-                    router_request = AgentRequest(
-                        request_id=str(uuid.uuid4()),
-                        correlation_id=correlation_id,
-                        causation_id=causation_id,
-                        agent=router.name,
-                        message=message,
-                        context=context,
-                        references={**references, "candidates": candidates},
-                        history=history,
-                        hops_left=hops_left)
-
                     # Only the agent's own call is guarded: a crash inside it is
                     # a failed state in the tree, while a loop bug building the
                     # request above is not an agent failure and must not be
                     # disguised as one.
                     try:
-                        router_result = router.start(router_request)
+                        router_result = router_agent.start(AgentRequest(
+                              request_id=str(uuid.uuid4()),
+                              correlation_id=correlation_id,
+                              causation_id=causation_id,
+                              agent=router_agent.name,
+                              message=message,
+                              context=context,
+                              references={**references, "candidates": candidates},
+                              history=history,
+                              hops_left=hops_left))
                     except Exception as exc:
-                        logger.exception("agent %s failed on turn %s", router.name,
+                        logger.exception("agent %s failed on turn %s", router_agent.name,
                                          correlation_id)
                         router_result = AgentResult(status="failed", error=str(exc))
 
@@ -363,7 +361,7 @@ class Loop:
 
                     if found:
                         logger.error("agent %s reported invalid refs: %s",
-                                     router.name, found)
+                                     router_agent.name, found)
                         router_result = AgentResult(
                             status="failed",
                             state=router_result.state,
@@ -376,13 +374,13 @@ class Loop:
                         correlation_id=correlation_id,
                         causation_id=causation_id,
                         user_id=context["user_id"],
-                        agent=router.name,
+                        agent=router_agent.name,
                         status=router_result.status,
                         produced=tuple(router_result.produced),
                         state=router_result.state)
 
                     history = merge_history(history, HistoryEntry(
-                        agent=router.name,
+                        agent=router_agent.name,
                         status=router_result.status,
                         produced=tuple(router_result.produced),
                         error=router_result.error,
@@ -393,22 +391,20 @@ class Loop:
             if agent is None:
                 break
 
-            request = AgentRequest(
-                request_id=str(uuid.uuid4()),
-                correlation_id=correlation_id,
-                causation_id=causation_id,
-                agent=agent.name,
-                message=message,
-                context=context,
-                references=references,
-                history=history,
-                hops_left=hops_left)
-
             # Guarded, validated and saved exactly as the router hop above —
             # the router is an ordinary agent, so it gets no shortcut and no
             # special handling.
             try:
-                result = agent.start(request)
+                result = agent.start(AgentRequest(
+                  request_id=str(uuid.uuid4()),
+                  correlation_id=correlation_id,
+                  causation_id=causation_id,
+                  agent=agent.name,
+                  message=message,
+                  context=context,
+                  references=references,
+                  history=history,
+                  hops_left=hops_left))
             except Exception as exc:
                 logger.exception("agent %s failed on turn %s", agent.name, correlation_id)
                 result = AgentResult(status="failed", error=str(exc))

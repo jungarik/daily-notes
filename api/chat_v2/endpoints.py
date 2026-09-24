@@ -39,7 +39,7 @@ def chat(req: ChatRequest, user_id: int = Depends(current_user)) -> ChatResponse
     else:
         thread_id, messages = thread["id"], list(thread["messages"])
 
-    outcome = loop.start(
+    outcome = loop.run(
         req.message,
         helper.build_context(user_id, datetime.now(tz), tz, locale),
         references={"messages": messages})
