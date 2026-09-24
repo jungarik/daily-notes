@@ -44,9 +44,10 @@ def invoke(context: dict, args: dict) -> ToolResult:
     if not note or not (note.get("text") or "").strip():
         return ToolResult({"error": "Error: note not found or empty."})
 
-    root_folders, default_root = helper.localized_root_folders(
-        db.get_language(context["user_id"])
-    )
+    # Same locale the proposal was built from (`get_vault_context` reads it from
+    # this same context). Resolving it separately here would let the write
+    # normalise a correctly-localised path back to another language's root.
+    root_folders, default_root = helper.localized_root_folders(context.get("locale"))
     metadata = helper.normalize(
         args,
         note["text"],

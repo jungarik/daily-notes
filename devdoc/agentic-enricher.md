@@ -55,6 +55,15 @@ locale, timezone and request time — so it can resolve phrases such as “that
 note” without guessing from an isolated sentence. The loop passes these as
 `AgentRequest.references`; `agent.py` maps them into the planning request.
 
+That locale also decides the **vault's root folder names**, which are i18n keys
+(`folder_inbox` → “Inbox” / “Вхідні”) resolved per request. Both the tool that
+offers the roster (`get_vault_context`) and the tool that writes the path
+(`enrich_note`) read it from the tool context rather than re-querying
+`users.language`: a root name ends up inside the note's stored path, so if those
+two resolved the locale separately, a proposal of “Вхідні” could be normalised
+back to “Inbox” on the way to the database. The caller decides the locale once —
+`api/chat_v2` from `users.language`, falling back to `BOT_DEFAULT_LOCALE`.
+
 ## Layers and public API
 
 - `tools/`: schemas, handlers, and human confirmation summaries.

@@ -12,7 +12,7 @@ from agents.enricher.nodes.classify import propose as classify_propose
 from agents.enricher.state import UserContext, context_to_dict
 from tools.enricher import METADATA_CONTEXT_TOOLS, TOOL_SPECS
 from tools import enricher as enricher_tools
-from tools.enricher import enrich_note, find_related_notes
+from tools.enricher import enrich_note, find_related_notes, get_vault_context
 from agents.runtime.execute_tool import execute_allowed_tool
 
 
@@ -130,7 +130,6 @@ class EnrichMetadataTests(unittest.TestCase):
                     "tags": ["release"], "priority": "high"}
         note = {"id": 4, "text": "Ship the app release"}
         with patch.object(enrich_note.db, "get_note_for_user", return_value=note), \
-                patch.object(enrich_note.db, "get_language", return_value="en"), \
                 patch.object(enrich_note.db, "set_metadata") as save, \
                 patch.object(find_related_notes.embedings, "embed",
                              side_effect=AssertionError("Embedding during confirmation")):
@@ -142,6 +141,38 @@ class EnrichMetadataTests(unittest.TestCase):
         self.assertEqual("Ship release", result["title"])
         save.assert_called_once_with(
             4, "task", "Ship release", "high", ["release"], "Projects/App")
+
+
+class LocaleTests(unittest.TestCase):
+    """Folder names are localised and then written into the note's path, so the
+    locale that builds the roster and the locale that normalises the write have
+    to be the same one — the caller's."""
+
+    def test_the_vault_roots_follow_the_callers_locale(self):
+        english = get_vault_context.invoke(
+            context_to_dict(UserContext(7, "now", locale="en")), {}).data
+        ukrainian = get_vault_context.invoke(
+            context_to_dict(UserContext(7, "now", locale="uk")), {}).data
+
+        self.assertEqual("Inbox", english["default_root"])
+        self.assertEqual("Вхідні", ukrainian["default_root"])
+        self.assertIn("Вхідні", ukrainian["root_folders"])
+
+    def test_the_write_normalises_against_the_same_locale(self):
+        """The bug this guards: the proposal said Вхідні, the write resolved its
+        own locale, did not recognise it as a root, and replaced it with Inbox."""
+        note = {"id": 4, "text": "a thought"}
+        proposed = {"type": "note", "title": "A thought", "path": "Вхідні",
+                    "tags": [], "priority": "normal"}
+
+        with patch.object(enrich_note.db, "get_note_for_user", return_value=note), \
+                patch.object(enrich_note.db, "set_metadata") as save:
+            enrich_note.invoke(
+                context_to_dict(UserContext(7, "now", locale="uk")),
+                {"note_id": 4, **proposed},
+            )
+
+        self.assertEqual("Вхідні", save.call_args[0][5])
 
 
 if __name__ == "__main__":

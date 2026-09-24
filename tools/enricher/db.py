@@ -144,13 +144,6 @@ def create_links(from_note_id: int, to_note_ids: list[int]) -> list[int]:
     return linked
 
 
-def get_language(user_id: int) -> str | None:
-    with cursor() as cur:
-        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
-        row = cur.fetchone()
-        return row[0] if row else None
-
-
 def get_note_for_user(user_id: int, note_id: int) -> dict | None:
     with cursor() as cur:
         cur.execute(

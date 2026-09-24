@@ -16,9 +16,11 @@ def invoke(context: dict, _args: dict) -> ToolResult:
     if error:
         return ToolResult({"error": error})
 
-    roots, default_root = helper.localized_root_folders(
-        db.get_language(context["user_id"])
-    )
+    # The caller already resolved the locale and put it in the tool context —
+    # reaching back to `users.language` here would let the request's locale and
+    # the folder names disagree, and folder names are written into the note's
+    # path, so that disagreement is durable.
+    roots, default_root = helper.localized_root_folders(context.get("locale"))
 
     return ToolResult({
         "root_folders": roots,
