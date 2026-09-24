@@ -466,8 +466,13 @@ reply.
 same `SPEC`, same `AgentRequest`, and its own row and `HistoryEntry` when it
 runs. Cheapest case first: the responder is taken unconditionally when the turn
 is finishing; otherwise an entry tool names the agent for free; otherwise the
-loop runs the router hop and `ROUTER_MODEL` picks from the agents that have not
-yet run. The router reports its choice the way every agent reports its work — a
+loop runs the router hop and `ROUTER_MODEL` picks from the whole roster. An
+agent that already ran is still a candidate — a turn often needs the same one
+twice (create a note, then link it), so what has run reaches the router as
+history rather than as a filter, and the prompt asks for `null` once the request
+is carried out. Each hop is its own `HistoryEntry`; the one entry that is
+replaced rather than appended is a `needs_input` the same agent is resuming.
+The router reports its choice the way every agent reports its work — a
 `Ref(AGENT_KIND, name)` in `produced` — and declines rather than guessing (a
 decline produces nothing and the responder takes the hop). Two agents are never
 candidates for that choice: the responder, which takes the last hop by

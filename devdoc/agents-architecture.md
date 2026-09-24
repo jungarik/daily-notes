@@ -48,14 +48,16 @@ tools/
 
 1. **Route.** The responder is taken unconditionally when the turn is finishing;
    otherwise an entry tool resolves the agent for free; otherwise the router
-   runs as a hop of its own and a model picks from the agents that have not yet
-   run. It declines rather than guessing, and a decline falls through to the
+   runs as a hop of its own and a model picks from the whole roster — including
+   agents that already ran, since a turn often needs the same one twice. It
+   declines rather than guessing, and a decline falls through to the
    responder. A router hop is saved and lands in the history like any other, but
    does not spend the hop budget — routing is free.
 2. **Run.** The agent gets an `AgentRequest` and returns an `AgentResult` —
    `done`, `needs_input` (it wants the user to confirm a write), or `failed`.
 3. **Record.** One row in `agent_states`, and one entry in the turn history.
-   One agent, one entry: a resumed hop replaces its own `needs_input`.
+   One entry per hop, so an agent that runs twice is recorded twice; the
+   one exception is a resumed hop, which replaces its own `needs_input`.
 
 The loop ends when an agent produced a reply, or asked for the user, or the hop
 budget ran out. `AGENT_MAX_HOPS` counts the reply.

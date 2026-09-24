@@ -53,9 +53,12 @@ def save(correlation_id: str,
 def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
     """Rebuild the turn's routing view from its saved rows.
 
-    One agent, one entry: a later row for the same agent replaces its earlier
-    one, so a confirmed hop supersedes the `needs_input` that preceded it. Both
-    rows stay in the table — that is the audit record.
+    Every hop, in the order it ran — an agent that ran twice contributes two
+    entries, because the second run did not undo the first and the reply has to
+    report both. Superseding the `needs_input` a confirm resumes is
+    `merge_history`'s job, not this query's: that rule is about one hop
+    finishing, and it belongs with the hop being folded in rather than with the
+    rows being read back.
 
     A rebuilt entry carries no `error`: the table does not store one, so there is
     nothing here to report. Within a single turn the live history holds the real
@@ -66,10 +69,10 @@ def read_history(correlation_id: str) -> tuple[HistoryEntry, ...]:
     with cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT ON (agent) agent, status, produced, state_id
+            SELECT agent, status, produced, state_id
             FROM agent_states
             WHERE correlation_id = %s
-            ORDER BY agent, created_at DESC;
+            ORDER BY created_at, state_id;
             """,
             (correlation_id,),
         )

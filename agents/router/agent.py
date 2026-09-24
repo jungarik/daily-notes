@@ -30,7 +30,7 @@ import logging
 
 import config
 from agents.contracts import AgentRequest, AgentResult, AgentSpec, HistoryEntry, Ref
-from agents.router.prompts import SYSTEM, selection_request
+from agents.router.prompts import SYSTEM, selection_prompt
 from agents.runtime import model_gateway
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,14 @@ def start(request: AgentRequest) -> AgentResult:
     """Choose the agent for this hop from the candidates the loop resolved.
 
     The candidates arrive in `references` because the roster is the registry's
-    and this agent holds no handle on it — the loop, which does, subtracts the
-    agents that already ran and passes on what is left.
+    and this agent holds no handle on it — the loop, which does, passes it in.
+    It is the whole roster every hop, including agents that already ran: a turn
+    often needs the same one twice, and what has happened reaches this agent as
+    history, to inform the choice rather than to narrow it.
 
     Never fails: a model that is down must not take the turn with it. A decline
-    is `done` with nothing produced, and the loop reads that as "no one left".
+    is `done` with nothing produced, and the loop reads that as "nothing left
+    to do".
     """
     candidates = list(request.references.get("candidates") or [])
 
@@ -95,7 +98,7 @@ def build_request(candidates: list[dict], message: str, history) -> dict:
             "content": SYSTEM,
         }, {
             "role": "user",
-            "content": selection_request(candidates, message, render_hops(history)),
+            "content": selection_prompt(candidates, message, render_hops(history)),
         }],
     }
 

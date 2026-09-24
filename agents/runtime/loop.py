@@ -128,14 +128,21 @@ def find_problems(produced: object) -> list[str]:
 
 def merge_history(history: tuple[HistoryEntry, ...],
                   fresh: HistoryEntry) -> tuple[HistoryEntry, ...]:
-    """`history` with this hop folded in — one agent, one entry.
+    """`history` with this hop folded in — one entry per hop.
 
-    A paused agent's `needs_input` entry is replaced by its outcome when it
-    resumes, so the router's "do not route to an agent that already ran" rule
-    needs no special case for confirmation. `agent_states` still keeps both rows;
-    that is the audit record, and this is the routing view.
+    An agent may run more than once in a turn (create a note, then link it), and
+    each run is its own entry: collapsing them to one would hide the first from
+    the router deciding what is left to do and from the responder writing the
+    reply, which is the whole record they work from.
+
+    The one entry that is replaced rather than appended is a `needs_input` from
+    this same agent — the pause it is resuming. That is not a second hop, it is
+    the same hop finishing, and leaving both would report a turn as still
+    waiting on a user who already answered. `agent_states` keeps both rows
+    either way; that is the audit record, and this is the routing view.
     """
-    kept = tuple(item for item in history if item.agent != fresh.agent)
+    kept = tuple(item for item in history
+                 if not (item.agent == fresh.agent and item.status == "needs_input"))
 
     return (*kept, fresh)
 
@@ -177,7 +184,7 @@ class Loop:
         shortcut: the tool name the previous model call already chose, if there
         was one.
         """
-        return self._run(
+        return self._run_internal(
             correlation_id=str(uuid.uuid4()),
             message=message,
             context=context,
@@ -220,6 +227,9 @@ class Loop:
             produced=tuple(result.produced),
             state=result.state)
 
+        # Read the earlier hops *before* saving this one. The store returns every
+        # row now, so reading afterwards would hand back the row this method is
+        # about to fold in explicitly and the confirmed hop would appear twice.
         merged_history = merge_history(self._store.read_history(correlation_id), HistoryEntry(
             agent=agent.name,
             status=result.status,
@@ -227,7 +237,7 @@ class Loop:
             error=result.error,
             state_id=state_id))
 
-        return self._run(
+        return self._run_internal(
             correlation_id=correlation_id,
             message=message,
             context=context,
@@ -267,18 +277,6 @@ class Loop:
 
         return self._registry.find_by_entry_tool(entry_tool)
 
-    def _find_candidates(self, history: tuple[HistoryEntry, ...]) -> list[dict]:
-        """The agents that have not run yet, for the router to choose among.
-
-        "One agent, one entry" is enforced by this list rather than by asking
-        the prompt nicely — and because an empty list short-circuits, a turn
-        with nothing left to do never spends a model call finding that out.
-        """
-        ran_agent = {entry.agent for entry in history}
-
-        return [agent for agent in self._registry.list_agents()
-                if agent["name"] not in ran_agent]
-
     def _read_choice(self, result: AgentResult) -> AgentSpec | None:
         """The agent the router named, or the responder when it declined.
 
@@ -293,7 +291,7 @@ class Loop:
 
         return self._registry.find_responder()
 
-    def _run(self, correlation_id: str,
+    def _run_internal(self, correlation_id: str,
                message: str,
                context: UserContext,
                references: dict,
@@ -326,7 +324,14 @@ class Loop:
                 # and it lands in the history — and then its `produced` names
                 # whoever runs next. Two agents per iteration, and only this
                 # one costs a model call.
-                candidates = self._find_candidates(history)
+                # The whole roster, every hop — an agent that already ran is
+                # still a candidate. A turn often needs the same agent twice
+                # (create a note, then link it), and filtering by what had run
+                # made that impossible: it left the router choosing between
+                # whoever happened to be untouched rather than whoever fits.
+                # What has run is context for the decision, not a constraint on
+                # it, so it reaches the router in the history instead.
+                candidates = self._registry.list_agents()
                 router = self._registry.find_router()
 
                 if not candidates or router is None:

@@ -54,17 +54,16 @@ class FakeStore:
         return state_id
 
     def read_history(self, correlation_id):
-        latest = {}
-
-        for row in self.rows:
-            if row["correlation_id"] == correlation_id:
-                latest[row["agent"]] = HistoryEntry(
-                    agent=row["agent"],
-                    status=row["status"],
-                    produced=row["produced"],
-                    state_id=row["state_id"])
-
-        return tuple(latest.values())
+        """Every hop in order, as the real store now returns them — collapsing
+        per agent here would hide the repeat hops these tests exist to cover."""
+        return tuple(
+            HistoryEntry(
+                agent=row["agent"],
+                status=row["status"],
+                produced=row["produced"],
+                state_id=row["state_id"])
+            for row in self.rows
+            if row["correlation_id"] == correlation_id)
 
 
 class FakeLedger:
@@ -208,13 +207,26 @@ class HistoryTests(unittest.TestCase):
     def test_a_non_ref_is_rejected(self):
         self.assertTrue(find_problems([{"kind": "note", "id": "1"}]))
 
-    def test_one_agent_keeps_one_entry(self):
+    def test_a_resumed_hop_supersedes_the_pause_it_answers(self):
+        """The confirmed outcome is the same hop finishing, not a second one —
+        leaving both would report a turn as still waiting on a user who already
+        answered."""
         paused = HistoryEntry("reminder", "needs_input")
         finished = HistoryEntry("reminder", "done", produced=(Ref("reminder", "9"),))
         merged = merge_history((HistoryEntry("enricher", "done"), paused), finished)
 
         self.assertEqual(["enricher", "reminder"], [item.agent for item in merged])
         self.assertEqual(finished, merged[-1])
+
+    def test_an_agent_that_runs_twice_keeps_both_entries(self):
+        """Creating a note and then linking it is one agent, two hops. Collapsing
+        them would hide the first from the router deciding what is left and from
+        the responder writing the reply."""
+        created = HistoryEntry("enricher", "done", produced=(Ref("note", "9"),))
+        linked = HistoryEntry("enricher", "done", produced=(Ref("link", "3"),))
+        merged = merge_history((created,), linked)
+
+        self.assertEqual([created, linked], list(merged))
 
 
 class RouterHopTests(unittest.TestCase):
@@ -240,11 +252,12 @@ class RouterHopTests(unittest.TestCase):
         """Cases 1 and 2 need no model, so the router neither runs nor records.
         The history says where a decision actually cost something.
 
-        The farm here holds only the entry tool's owner, so once it has run
-        there is nothing left to choose and no second hop asks."""
+        A budget of two makes both hops free ones: the entry tool names the
+        first, and the second is the reply's reserved slot."""
         loop, _ = _loop(
             [_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
-             _responder()])
+             _responder()],
+            max_hops=2)
 
         outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -315,7 +328,7 @@ class ResponderHopTests(unittest.TestCase):
         loop, _ = _loop([
             _agent("reminder", AgentResult("done"), entry_tools=("set_reminder",)),
             _responder("Set your reminder."),
-        ])
+        ], max_hops=2)
 
         outcome = loop.start("remind me", CONTEXT, entry_tool="set_reminder")
 
@@ -409,7 +422,9 @@ class ResponderHopTests(unittest.TestCase):
 
         loop.start("go", CONTEXT)
 
-        self.assertEqual([["enricher"]], seen, "picked by the rule, not by the model")
+        self.assertTrue(seen, "the router did run, so the roster was built")
+        for roster in seen:
+            self.assertNotIn("responder", roster, "picked by the rule, not by the model")
 
     def test_it_replies_even_when_no_work_agent_ran(self):
         loop, _ = _loop([_responder("I could not do anything with that.")])
@@ -463,7 +478,8 @@ class RoutingTests(unittest.TestCase):
         called = []
         loop, _ = _loop(
             [_agent("reminder", AgentResult("done"), entry_tools=("set_reminder",))],
-            router=lambda roster, message, history: called.append(1))
+            router=lambda roster, message, history: called.append(1),
+            max_hops=2)
 
         outcome = loop.start("remind me tomorrow", CONTEXT, entry_tool="set_reminder")
 
@@ -496,21 +512,29 @@ class RoutingTests(unittest.TestCase):
 
         self.assertEqual([], _worked(outcome), "nothing it names, nothing it runs")
 
-    def test_the_router_never_sees_an_agent_that_already_ran(self):
+    def test_the_router_sees_every_agent_on_every_hop(self):
+        """A spent agent is still a candidate. A turn often needs the same one
+        twice — create a note, then link it — and filtering the roster by what
+        had already run made that impossible: it left the router choosing among
+        whoever happened to be untouched rather than whoever fits."""
         seen = []
 
         def router(candidates, message, history):
             seen.append([item["name"] for item in candidates])
 
-            return candidates[0]["name"]
+            return "a"
 
         loop, _ = _loop(
-            [_agent("a", AgentResult("done")), _agent("b", AgentResult("done"))],
-            router=router)
+            [_agent("a", AgentResult("done")), _agent("b", AgentResult("done")),
+             _responder()],
+            router=router,
+            max_hops=3)
 
-        loop.start("go", CONTEXT)
+        outcome = loop.start("go", CONTEXT)
 
-        self.assertEqual([["a", "b"], ["b"]], seen, "a spent agent is not a candidate")
+        self.assertEqual([["a", "b"], ["a", "b"]], seen)
+        self.assertEqual(["a", "a", "responder"], _worked(outcome),
+                         "the same agent ran twice, and both hops are recorded")
 
     def test_the_hop_bound_reserves_its_last_slot_for_the_reply(self):
         """`AGENT_MAX_HOPS` counts the reply, so a budget of 2 buys one work hop

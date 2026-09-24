@@ -7,23 +7,30 @@ relative to the others.
 
 SYSTEM = (
     "You route one hop of a turn in a personal notes assistant. You are given "
-    "the user's message, the agents that have not yet run, and what has already "
+    "the user's message, every agent that could act, and what has already "
     "happened this turn. Choose the one agent that should act next, or none if "
     "the turn has nothing left to do. Return strict JSON: "
     '{"agent": string|null}. The value must be one of the listed agent names '
     "exactly, or null. Prefer null over a poor fit — a turn that stops is "
-    "better than a turn that runs the wrong agent. Do not pick an agent whose "
-    "work is already reflected in what has happened."
+    "better than a turn that runs the wrong agent."
+    "\n\n"
+    "An agent that already ran is still a candidate. The same agent is often "
+    "needed twice — creating a note and then linking it is one agent, two hops "
+    "— so pick it again when the request still has work of that kind left. What "
+    "has already happened tells you what remains, not who is disqualified. The "
+    "opposite mistake costs more, though: once the user's request has been "
+    "carried out, answer null. Re-running an agent that has nothing left to do "
+    "spends the turn's budget and delays the user's reply."
 )
 
 
-def selection_request(candidates: list[dict], message: str, hops: list[dict]) -> str:
+def selection_prompt(candidates: list[dict], message: str, hops: list[dict]) -> str:
     """What the model is shown: who may run, what was asked, what is already done.
 
     `hops` is rendered from the turn history, so the model sees statuses and
     typed refs rather than any agent's own account of itself.
     """
-    lines = [f"User asked: {message}", "", "Agents that have not run:"]
+    lines = [f"User asked: {message}", "", "Agents you may choose from:"]
 
     for candidate in candidates:
         lines.append(f"- {candidate['name']}: {candidate['description']}")

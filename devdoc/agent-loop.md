@@ -153,10 +153,15 @@ Rules that keep it reliable:
   genuinely produced nothing, and the loop cannot tell that apart from an agent
   that forgot to report. So the guard is a per-agent test — "enricher, given this
   input, reports the note it wrote" — not a loop rule.
-- **One agent, one entry.** A `needs_input` entry is *replaced* by the outcome
-  when the agent resumes. `agent_states` keeps both rows — that is the audit
-  record — but the history shows the outcome, so the router's "do not re-route to
-  an agent that already ran" rule needs no special case for paused agents.
+- **One entry per hop.** An agent may run more than once in a turn — create a
+  note, then link it — and each run is its own entry. Collapsing them would hide
+  the first from the router deciding what is left and from the responder writing
+  the reply, which is the whole record those two work from.
+- **A resumed hop supersedes the pause it answers.** The one entry that is
+  replaced rather than appended is a `needs_input` from the same agent: that is
+  the same hop finishing, not a second one, and leaving both would report a turn
+  as still waiting on a user who already answered. `agent_states` keeps both
+  rows — that is the audit record.
 
 The case-3 router therefore sees the roster, the user's original message, and
 this list. The message carries the intent; the history says only what is already
@@ -241,11 +246,18 @@ has already been made.** Three cases, in order:
    common path and covers every single-agent turn.
 3. **Otherwise, ask.** When an agent finishes and more than one agent could
    plausibly follow, the loop runs the router as a hop: it gets the candidates
-   (`name` + `description`) in `references` plus the history of the turn so far
-   — so it will not re-route to an agent that already ran — and makes one model
-   call returning the next agent's name. The candidate list is the loop's, built
-   from the agents that have not yet run; an empty list short-circuits, so a
-   turn with nothing left to do never spends a call finding that out.
+   (`name` + `description`) in `references` plus the history of the turn so far,
+   and makes one model call returning the next agent's name.
+
+   The candidate list is the **whole roster, every hop** — an agent that already
+   ran is still a candidate. Filtering by what had run made a two-hop agent
+   impossible (the enricher creating a note and then linking it) and left the
+   router choosing among whoever happened to be untouched rather than whoever
+   fits. What has run reaches it as history: context for the decision, not a
+   constraint on it. The prompt carries the other half of that — repeat an agent
+   when work of its kind remains, answer `null` once the request is carried out —
+   and `AGENT_MAX_HOPS` is the backstop, with the responder's slot reserved, so
+   the worst case is a wasted hop rather than silence.
 
 So a typical turn spends **zero** router calls and a genuinely multi-agent turn
 spends one. `entry_tools` lives on the spec, meaning the agent declares what
