@@ -7,28 +7,38 @@ here routes to another agent.
 
 ## Persistence boundary
 
-Two different things are persisted, and keeping them apart is the point.
+**Nothing about a turn is persisted by LangGraph.** No graph in this repo
+compiles with a checkpointer, so no graph carries a `thread_id`, and the
+library is used for what it is good at here: sequencing steps *within* one
+agent hop, in memory, start to finish.
 
-`agent_states` (migration 0022) is the **turn tree**: one row per hop, written
-by the loop, joined by `correlation_id`. It is what survives a suspend, what
-`read_state` reads, and what the confirm path rebuilds the history from.
+`agent_states` (migration 0022) is the **turn tree** and the only durable
+record of a hop: one row per hop, written by the loop, joined by
+`correlation_id`. It is what survives a suspend, what `read_state` reads, and
+what the confirm path rebuilds the history from.
 
-`PostgresSaver` is **execution state inside a graph that pauses**. Only the
-agents that interrupt for approval need it — enricher and reminder — and they
-resume through `Command(resume=…)` so planning nodes are not rerun. Finder never
-pauses, so it **compiles with no checkpointer at all** and runs start to finish
-inside one hop; checkpointing it would duplicate the `agent_states` row. It did
-compile with an `InMemorySaver` for a while, against a fresh `thread_id` per
-turn — an entry added to an in-process store on every hop that nothing read and
-nothing evicted. Its run config now carries only a `recursion_limit`.
-
-> This section still describes `PostgresSaver` as the pause mechanism. That is
-> no longer true — the loop owns the pause, and nothing writes a checkpoint
-> today. Correcting it is the next step of the cleanup that removed the finder's
-> saver.
+A **pause is the loop's**, not a graph's. An agent that wants to write returns
+`needs_input` with the planned action serialised into a token; the section
+stores it as `TurnOutcome.pending`, and `resume` performs the write once,
+guarded by `action_executions`. No graph state is rehydrated, so no planning
+node is rerun — the plan travelled in the token.
 
 `chat_threads.messages` is an application projection owned by `api/chat_v2` — the
 conversation transcript, appended by the section, not by any agent.
+
+### What used to be here
+
+`agents/runtime/checkpoint.py` wrapped a `PostgresSaver` and was called once at
+API startup to create LangGraph's checkpoint tables. By the time it was deleted
+nothing wrote to them: the enricher's interrupt graph was unreachable, the
+reminder planned without a config, and the finder's `InMemorySaver` was handed a
+fresh `thread_id` per turn — an entry per hop that nothing read and nothing
+evicted. The tables were **left in the database** rather than dropped; they are
+idle, and an irreversible `DROP` is not worth the tidiness.
+
+Reintroducing durable checkpointing is a real option if an agent ever needs to
+pause *mid-graph* rather than between hops. It would replace the action token,
+not `agent_states`, and `git log` has the previous implementation.
 
 ## Finder graph
 

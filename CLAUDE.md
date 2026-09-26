@@ -247,7 +247,7 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   def has_interrupts(tasks) -> bool:
       return any(task.interrupts for task in tasks)
 
-  checkpoint.has_interrupts(state_snapshot.tasks)
+  has_interrupts(state_snapshot.tasks)
   ```
 
   Corollary: **name the function after the question it answers about its own

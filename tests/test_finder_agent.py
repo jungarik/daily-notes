@@ -41,7 +41,6 @@ def _install_stubs():
     """Stand in for the modules `agents.finder.agent` imports at module level."""
     run = {"state": None, "invoked": []}
 
-    _stub_if_absent("langgraph.types", Command=object)
     _stub_if_absent("langgraph.graph", END="__end__")
 
     # The graph is stubbed whole and unconditionally: this file tests the

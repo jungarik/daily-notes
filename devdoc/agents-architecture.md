@@ -19,7 +19,7 @@ agents/
 │   ├── registry.py            the roster; rejects a duplicate agent name
 │   ├── state_store.py         the turn tree (agent_states)
 │   ├── execution_ledger.py    at-most-once confirmed writes
-│   └── checkpoint, model_gateway, execute_tool
+│   └── model_gateway, execute_tool
 ├── router/                    who runs next — the farm's routing policy
 │   ├── agent.py               a registered agent like any other; its SPEC
 │   │                           runs case 3's model call and reports the

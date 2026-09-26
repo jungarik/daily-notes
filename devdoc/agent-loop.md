@@ -375,9 +375,10 @@ pending = {
 reloads the tree from `agent_states`, calls that agent's `resume(token, ...)`,
 and carries on to the responder.
 
-**The checkpointer is not involved in the tree.** It keeps doing exactly one
-job: pausing and resuming a single agent's own graph. Two mechanisms, two
-purposes.
+**No checkpointer is involved anywhere.** The plan travels in the token and
+the record is the tree; no graph state is rehydrated, so a resumed turn reruns
+no planning node. See the persistence boundary in
+`devdoc/agent-workflows-langgraph.md`.
 
 ## Idempotency
 
@@ -463,7 +464,8 @@ down to what the farm does not already own:
   no longer does.
 - **no checkpointer.** With no interrupt, a hop runs start to finish, so there
   is no `resume`, no thread-scoped `graph_config`, and no retry of an unfinished
-  run. The hop's durable record is its `agent_states` row.
+  run. The hop's durable record is its `agent_states` row. This is now true of
+  every agent, not just finder.
 - **no reply.** The answer goes into `AgentResult.state` as
   `{answer, citations, trace}`; the responder reaches it through `read_state`
   and does the speaking. Every cited note is reported as a `Ref("note", id)` —
@@ -489,7 +491,7 @@ knowing about another, stop before Phase 5.
   `entry_agent` fast path will not show up locally. Case 1–2 need their own
   (cheap, model-free) assertions — and case 2 has no production caller at all,
   so its tests are the only thing exercising it.
-- **Two idempotency scopes now coexist**: the loop's `action_id` ledger for
-  confirmed writes, and the checkpointer for graph resume. A turn that fails
-  between them — write committed, checkpoint not advanced — is the case worth
-  testing hardest before Phase 5.
+- **One idempotency scope, now that the checkpointer is gone**: the loop's
+  `action_id` ledger for confirmed writes. There is no second scope to fall
+  between, which removed the write-committed/checkpoint-not-advanced case this
+  section used to warn about.

@@ -48,7 +48,6 @@ class AgentStructureTests(unittest.TestCase):
             "router/__init__.py", "router/agent.py", "router/prompts.py",
             "runtime/loop.py", "runtime/registry.py",
             "runtime/state_store.py", "runtime/execution_ledger.py",
-            "runtime/checkpoint.py",
             "runtime/model_gateway.py", "runtime/execute_tool.py",
             "contracts/__init__.py", "contracts/status.py",
             "contracts/user_context.py", "contracts/ref.py",
@@ -101,7 +100,9 @@ class AgentStructureTests(unittest.TestCase):
         The enricher's `reason`/`approve`/`stage` nodes went for the same
         reason: they were the interactive capture graph, which nothing invoked
         once the loop took over the pause. A second, in-graph way to pause is
-        exactly the duplicate path this assertion exists to catch."""
+        exactly the duplicate path this assertion exists to catch — and
+        `runtime/checkpoint.py`, which existed to persist that pause, went with
+        them. No graph compiles with a checkpointer now."""
         root = Path(__file__).parents[1]
 
         for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
@@ -111,7 +112,8 @@ class AgentStructureTests(unittest.TestCase):
                      "agents/reminder/handoff_api.py",
                      "agents/enricher/nodes/reason.py",
                      "agents/enricher/nodes/approve.py",
-                     "agents/enricher/nodes/write/stage.py"):
+                     "agents/enricher/nodes/write/stage.py",
+                     "agents/runtime/checkpoint.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
 
