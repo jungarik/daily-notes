@@ -7,15 +7,15 @@ file is what the agent does once it has been routed to.
 
 ## Workflow
 
-`agents/enricher/graph.py` defines `ENRICH_GRAPH`, a bounded LangGraph workflow.
-Every node is a module with a single public `run`: the flat loop primitives
-`reason`/`act`/`plan`/`approve`, and the phase subpackages `classify/` and
-`write/`. Read tools (`get_note_context`, `list_paths`,
-`list_tags`) loop through `act` back to `reason`. `create_note`, `set_note_path`,
-and `add_note_tags` route to `stage`. `link_notes` is a *select* action and first
+`agents/enricher/graph.py` defines `ACTION_PLAN_GRAPH`, a bounded LangGraph
+workflow. Every node is a module with a single public `run`: the flat loop
+primitives `plan`/`act`, and the phase subpackages `classify/` and `write/`.
+Read tools (`get_note_context`, `list_paths`, `list_tags`) loop through `act`
+back to `plan`. `create_note`, `set_note_path`, and `add_note_tags` route to
+`validate_write`. `link_notes` is a *select* action and first
 runs a dedicated `link_context` node (mirroring `enrich_note`'s classify phase):
 retrieval — resolving the source note and computing its nearest neighbours —
-lives there, not in the stage/validate nodes, which stay plain checks.
+lives there, not in the validate node, which stays a plain check.
 Retrieval recalls `LINK_RECALL_LIMIT` neighbours, then `write/_rank.py` reorders
 them with one `LINK_RANK_LLM_MODEL` call by the *idea* each shares with the
 source note — a principle, mechanism or tension carrying across both — so
@@ -29,11 +29,15 @@ real connection, nothing is preselected. `LINK_RANK_ENABLED=false` skips the pas
 so Chat can render a checklist; the user's picked ids are merged into the action
 at approval time and inserted as directed `note_links` edges (read as
 bidirectional). `enrich_note` first runs the explicit `classify_gather ->
-classify_propose -> classify_normalize` nodes. The graph then presents the exact normalized action at the
-durable `approve` interrupt. Confirmation only persists those approved values; it
-does not call an LLM. The confirm endpoint resumes approval or decline, then
-returns to `reason` (which makes a tool-free answer once the step budget is spent
-— the former `final` node folded in).
+classify_propose -> classify_normalize` nodes. The graph then returns the exact
+normalized action as a proposal and ends — it never pauses and never writes.
+
+The pause is the farm's loop: the agent returns `needs_input` carrying that
+action, `POST /api/chat/v2/confirm` resumes the turn, and `resume` performs the
+write once. Confirmation only persists the approved values; it does not call an
+LLM. There used to be a durable `approve` interrupt inside a second graph
+(`ENRICH_GRAPH`); it has been deleted, because two ways to pause is one too
+many.
 
 `classify_gather` contains no database or embedding implementation. It
 deterministically invokes registered context tools: `get_note_context` when

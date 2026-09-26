@@ -88,9 +88,11 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   exposing exactly `run(state) -> dict`. Everything else in the module is private
   (`_`-prefixed). No module hosts two nodes.
 - **Name nodes for their role, not their implementation.** The loop primitives
-  are `reason` (model step), `act` (run a tool), `plan` (one-shot planning),
-  `approve` (human confirmation + execution). Routing *between* agents is not a
-  node — it is the loop's, and no graph has an edge to another agent.
+  are `reason` (model step), `act` (run a tool), `plan` (one-shot planning).
+  Routing *between* agents is not a node — it is the loop's, and no graph has an
+  edge to another agent. Neither is pausing: an agent returns `needs_input` and
+  the loop owns the confirmation, so no graph holds an `approve` node or a
+  LangGraph `interrupt`.
   Multi-step phases live in subpackages named for their goal — `classify/`,
   `schedule/`, `write/`. Graph node ids, module names, and trace labels match.
 - **Nodes are pure state transitions.** `run` takes state and returns a partial
@@ -368,9 +370,10 @@ else via `api_client.py` — it imports no domain code and no `db`. It captures 
 a single photo saves immediately; an album (updates sharing a `media_group_id`)
 is buffered with a short debounce and saved as one note. Bot capture stays
 **deferred** — the note saves fast and the user enriches on demand with the 🧠
-Enrich button (one-shot enrichment in `api/telegram_bot/helper.py`). The
-capture-time enrichment agent (`agents/enricher`) is reserved for the **web app** and
-is not wired into the bot's capture endpoints.
+Enrich button (one-shot enrichment in `api/telegram_bot/helper.py`). There is no
+capture-time enrichment agent: `agents/enricher` plans one write per chat turn
+and has no capture loop — the interactive graph that would have served one was
+deleted unused.
 
 The `api/` service (FastAPI) hosts the section verticals; it is the
 backend gateway and **owns schema migrations** — it runs `migrate.run_migrations`

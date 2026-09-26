@@ -34,12 +34,10 @@ class AgentStructureTests(unittest.TestCase):
             "enricher/graph.py", "enricher/routing.py",
             "enricher/agent.py",
             "enricher/prompts.py",
-            "enricher/nodes/reason.py", "enricher/nodes/plan.py",
-            "enricher/nodes/act.py", "enricher/nodes/approve.py",
+            "enricher/nodes/plan.py", "enricher/nodes/act.py",
             "enricher/nodes/classify/gather.py", "enricher/nodes/classify/propose.py",
             "enricher/nodes/classify/normalize.py",
-            "enricher/nodes/write/link.py", "enricher/nodes/write/stage.py",
-            "enricher/nodes/write/validate.py",
+            "enricher/nodes/write/link.py", "enricher/nodes/write/validate.py",
             "reminder/graph.py", "reminder/state.py",
             "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
@@ -98,14 +96,22 @@ class AgentStructureTests(unittest.TestCase):
         """The loop replaced it. Left behind, the old dispatch would be a
         second way to reach a specialist — and the one that let an agent name a
         peer. The `handoff_api` modules went the same way: with no handoff left
-        to serve, planning belongs in the agent that pauses on it."""
+        to serve, planning belongs in the agent that pauses on it.
+
+        The enricher's `reason`/`approve`/`stage` nodes went for the same
+        reason: they were the interactive capture graph, which nothing invoked
+        once the loop took over the pause. A second, in-graph way to pause is
+        exactly the duplicate path this assertion exists to catch."""
         root = Path(__file__).parents[1]
 
         for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
                      "agents/runtime/specialist_registry.py", "api/chat",
                      "tools/conversation", "agents/enrich/handoff_api.py",
                      "agents/enricher/handoff_api.py",
-                     "agents/reminder/handoff_api.py"):
+                     "agents/reminder/handoff_api.py",
+                     "agents/enricher/nodes/reason.py",
+                     "agents/enricher/nodes/approve.py",
+                     "agents/enricher/nodes/write/stage.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
 

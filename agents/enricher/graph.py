@@ -1,26 +1,28 @@
 """Composition of the Enricher LangGraph workflows.
 
-Three graphs share the same nodes: the interactive `ENRICH_GRAPH` (capture loop),
-the stateless `ACTION_PLAN_GRAPH` (plan one write for a chat handoff), and the
-`CLASSIFY_GRAPH` sub-pipeline reused by both. Reminders are their own
-agent (`agents/reminder/`).
-Running a compiled graph is `agents.runtime.loop`; this module only builds.
+Two graphs share the same nodes: the stateless `ACTION_PLAN_GRAPH` (plan one
+write for a chat turn) and the `CLASSIFY_GRAPH` sub-pipeline it reuses.
+Reminders are their own agent (`agents/reminder/`).
+Running a compiled graph is the agent's `start`; this module only builds.
+
+There used to be a third, `ENRICH_GRAPH` — an interactive capture loop with an
+`approve` node that paused on a LangGraph `interrupt`. Nothing ever invoked it:
+the farm's loop owns the pause now, so this agent plans a write, returns
+`needs_input`, and performs it in `resume`. It was compiled at import for a
+long time after it stopped being reachable, which is a thing every reader had
+to rule out. `git log` has it if an in-graph pause is ever wanted back.
 """
 
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from agents.enricher import routing
-from agents.enricher.nodes import act, approve, plan, reason
+from agents.enricher.nodes import act, plan
 from agents.enricher.nodes.classify import gather as classify_gather
 from agents.enricher.nodes.classify import normalize as classify_normalize
 from agents.enricher.nodes.classify import propose as classify_propose
 from agents.enricher.nodes.write import link as write_link
-from agents.enricher.nodes.write import stage as write_stage
 from agents.enricher.nodes.write import validate as write_validate
-from agents.enricher.state import (
-    ActionPlanState, EnrichState, MetadataState, initial_state,
-)
+from agents.enricher.state import ActionPlanState, MetadataState
 
 
 def _add_classify(builder) -> None:
@@ -30,33 +32,6 @@ def _add_classify(builder) -> None:
     
     builder.add_edge("classify_gather", "classify_propose")
     builder.add_edge("classify_propose", "classify_normalize")
-
-
-def build_graph(checkpointer):
-    builder = StateGraph(EnrichState)
-    builder.add_node("reason", reason.run)
-    builder.add_node("act", act.run)
-    builder.add_node("link_context", write_link.run)
-    builder.add_node("stage", write_stage.run)
-    builder.add_node("approve", approve.run)
-    _add_classify(builder)
-
-    builder.add_conditional_edges(START, routing.entry,
-                                  {"reason": "reason", "approve": "approve"})
-    builder.add_conditional_edges("reason", routing.after_reason, {
-        "act": "act",
-        "classify_gather": "classify_gather",
-        "link_context": "link_context",
-        "stage": "stage",
-        END: END,
-    })
-    builder.add_edge("act", "reason")
-    builder.add_edge("classify_normalize", "stage")
-    builder.add_edge("link_context", "stage")
-    builder.add_edge("stage", "approve")
-    builder.add_edge("approve", "reason")
-
-    return builder.compile(checkpointer=checkpointer)
 
 
 def _build_action_plan_graph():
@@ -94,6 +69,5 @@ def build_classify_graph():
     return builder.compile()
 
 
-ENRICH_GRAPH = build_graph(InMemorySaver())
 ACTION_PLAN_GRAPH = _build_action_plan_graph()
 CLASSIFY_GRAPH = build_classify_graph()

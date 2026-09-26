@@ -11,7 +11,7 @@ import config
 import i18n
 from agents.contracts import ToolResult
 from agents.enricher.nodes.write import _rank
-from agents.enricher.state import EnrichState, context_from_state
+from agents.enricher.state import ActionPlanState, context_from_state
 from agents.runtime.execute_tool import execute_allowed_tool
 from tools import enricher as tools
 
@@ -136,7 +136,7 @@ def _context_tool(context: dict, name: str, args: dict) -> dict:
     ))
 
 
-def run(state: EnrichState) -> dict:
+def run(state: ActionPlanState) -> dict:
     context = context_from_state(state)
     locale = context.get("locale") or "en"
     args = dict((state.get("tool_call") or {}).get("args") or {})

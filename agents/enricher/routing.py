@@ -1,42 +1,25 @@
-"""Conditional edges for the enricher workflows.
+"""Conditional edges for the enricher workflow.
 
-Interactive graph (capture loop):
+Action-plan graph (stateless):
 
-    START ─entry──▶ reason | approve
-    reason ─after_reason─▶ act | classify_gather | link_context | stage | END
-    act ──────────────────▶ reason
-    classify_gather ▶ classify_propose ▶ classify_normalize ▶ stage
-    link_context ─────────▶ stage
-    stage ────────────────▶ approve ─▶ reason
+    START ────────────────▶ plan
+    plan ─after_plan──────▶ act | classify_gather | link_context |
+                            validate_write | END
+    act ─after_plan_read──▶ plan | END
+    classify_gather ▶ classify_propose ▶ classify_normalize ▶ validate_write
+    link_context ─────────▶ validate_write
+    validate_write ─after_validation─▶ plan | END
 
-Action-plan graph (stateless): plan ─▶ act | classify_* | link_context |
-validate_write, looping back to plan until an action is produced.
+It loops back to `plan` until an action is produced or the step budget runs
+out. There is no pause in here: the agent returns `needs_input` and the farm's
+loop owns the confirmation.
 """
 
 from langgraph.graph import END
 
 import config
-from agents.enricher.state import ActionPlanState, EnrichState
+from agents.enricher.state import ActionPlanState
 from tools.enricher import WRITE_TOOLS
-
-
-def entry(state: EnrichState):
-    return "approve" if state.get("pending") else "reason"
-
-
-def after_reason(state: EnrichState):
-    tool_call = state.get("tool_call")
-
-    if tool_call is None:
-        return END
-
-    if tool_call["name"] == "enrich_note":
-        return "classify_gather"
-
-    if tool_call["name"] == "link_notes":
-        return "link_context"
-
-    return "stage" if tool_call["name"] in WRITE_TOOLS else "act"
 
 
 def after_plan(state: ActionPlanState):

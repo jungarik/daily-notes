@@ -49,42 +49,41 @@ records citations onto the turn context. The answer leaves in
 
 ## Enricher graph
 
-`EnrichState` carries messages, context, step count, tool call, terminal state,
-pending write, and confirmation flags. Every node is a module under `nodes/`
-with a single public `run`: the loop primitives `reason`/`act`/`plan`/`approve`
-are flat; the multi-step phases live in subpackages `classify/` (gather →
-propose → normalize), `schedule/` (resolve → build), and `write/` (link, stage,
-validate). `reason` folds in the old `final` node (a tool-free call once the
-budget is spent).
+`ActionPlanState` carries messages, context, tool specs, step count, tool call
+and the write proposal. Every node is a module under `nodes/` with a single
+public `run`: `plan` and `act` are flat; the multi-step phases live in
+subpackages `classify/` (gather → propose → normalize) and `write/` (link,
+validate).
 
 ```mermaid
 flowchart TD
-    S((START)) -->|turn| M[reason]
-    S -->|pending| H[approve / interrupt]
-    M -->|no tool| E((END))
-    M -->|read| T[act]
-    M -->|metadata write| MC[classify_gather]
-    M -->|reminder write| RM[schedule_resolve]
-    M -->|simple write| P[stage]
-    T --> M
+    S((START)) --> P[plan]
+    P -->|no tool| E((END))
+    P -->|read| T[act]
+    P -->|metadata write| MC[classify_gather]
+    P -->|link write| L[link_context]
+    P -->|simple write| V[validate_write]
+    T -->|budget left| P
+    T -->|spent| E
     MC --> MM[classify_propose]
     MM --> MV[classify_normalize]
-    MV --> P
-    RM --> RV[schedule_build]
-    RV -->|resolved| P
-    RV -->|unresolved| M
-    P --> H
-    H -->|Command resume| M
+    MV --> V
+    L --> V
+    V -->|action| E
+    V -->|no action, budget left| P
 ```
 
-`link_notes` first runs `link_context` (candidate lookup) before `stage`.
+`agents/enricher/agent.py` invokes `ACTION_PLAN_GRAPH` directly. The graph reads
+note context, paths and tags and returns only a **validated write proposal** —
+it performs no write and it never pauses. The agent then suspends the *turn*
+with `needs_input`, and `resume` performs the write once the user approves.
 
-`agents/enricher/agent.py` drives `ACTION_PLAN_GRAPH`
-(`START -> plan -> act -> plan … -> validate_write -> END`) directly. That
-graph reads note context, paths and tags and returns only a validated write
-proposal; the agent then pauses the *turn* with `needs_input` and performs the
-write itself on approval. The graph's own approval boundary is not used on
-that path — the loop owns the pause.
+There was a second graph here, `ENRICH_GRAPH`: an interactive capture loop whose
+`approve` node paused on a LangGraph `interrupt`, resuming via
+`Command(resume=…)`. It stopped being reachable when the farm's loop took over
+the pause, stayed compiled at import for a while after, and has been deleted
+along with its `reason`, `approve` and `stage` nodes. Two ways to pause is one
+too many; `git log` has it.
 
 ## Reminder graph
 

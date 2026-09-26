@@ -29,13 +29,6 @@ SYSTEM_PROMPT = (
 )
 
 
-def with_system(messages: list[dict]) -> list[dict]:
-    if not messages or messages[0].get("role") != "system":
-        return [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-
-    return messages
-
-
 def planning_messages(contract: dict) -> list[dict]:
     prompt = (SYSTEM_PROMPT + " You are planning from a typed Chat handoff. Use "
               "get_note_context for referenced notes and list_paths/list_tags when "
