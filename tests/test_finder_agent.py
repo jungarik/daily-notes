@@ -43,11 +43,6 @@ def _install_stubs():
 
     _stub_if_absent("langgraph.types", Command=object)
     _stub_if_absent("langgraph.graph", END="__end__")
-    _stub_if_absent(
-        "agents.runtime.checkpoint",
-        graph_config=lambda namespace, thread_id, max_steps: {
-            "configurable": {"thread_id": f"{namespace}:{thread_id}"},
-        })
 
     # The graph is stubbed whole and unconditionally: this file tests the
     # adapter around it — what it starts the graph with, and what it makes of
@@ -233,7 +228,18 @@ class MessageTests(unittest.TestCase):
 
         invoked = RUN["invoked"][0]
         self.assertIn("messages", invoked["state"])
-        self.assertIn("finder:", invoked["graph_config"]["configurable"]["thread_id"])
+        self.assertEqual(agent.RECURSION_LIMIT,
+                         invoked["graph_config"]["recursion_limit"])
+
+    def test_a_run_names_no_thread_because_nothing_saves_one(self):
+        """The graph compiles without a checkpointer, so a `thread_id` would
+        name a thread nothing writes. It used to be a fresh uuid per turn,
+        which grew the in-process saver by one dead entry every hop."""
+        agent.start(_request())
+        agent.start(_request())
+
+        for invoked in RUN["invoked"]:
+            self.assertNotIn("configurable", invoked["graph_config"])
 
 
 class ClockTests(unittest.TestCase):

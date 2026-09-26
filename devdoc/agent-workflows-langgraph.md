@@ -16,8 +16,16 @@ by the loop, joined by `correlation_id`. It is what survives a suspend, what
 `PostgresSaver` is **execution state inside a graph that pauses**. Only the
 agents that interrupt for approval need it — enricher and reminder — and they
 resume through `Command(resume=…)` so planning nodes are not rerun. Finder never
-pauses, so it compiles with an `InMemorySaver` and runs start to finish inside
-one hop; checkpointing it would duplicate the `agent_states` row.
+pauses, so it **compiles with no checkpointer at all** and runs start to finish
+inside one hop; checkpointing it would duplicate the `agent_states` row. It did
+compile with an `InMemorySaver` for a while, against a fresh `thread_id` per
+turn — an entry added to an in-process store on every hop that nothing read and
+nothing evicted. Its run config now carries only a `recursion_limit`.
+
+> This section still describes `PostgresSaver` as the pause mechanism. That is
+> no longer true — the loop owns the pause, and nothing writes a checkpoint
+> today. Correcting it is the next step of the cleanup that removed the finder's
+> saver.
 
 `chat_threads.messages` is an application projection owned by `api/chat_v2` — the
 conversation transcript, appended by the section, not by any agent.

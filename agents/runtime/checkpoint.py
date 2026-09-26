@@ -43,18 +43,6 @@ def saver_session():
         yield _saver(conn)
 
 
-def graph_config(namespace: str, thread_id, max_steps: int) -> dict:
-    """The LangGraph config for one run: which thread it belongs to, and how far
-    it may travel. A step may take a tool or approve edge as well as its own, so
-    the budget is widened into graph hops."""
-    return {
-        "configurable": {
-            "thread_id": f"{namespace}:{thread_id}",
-        },
-        "recursion_limit": max(20, max_steps * 3 + 5),
-    }
-
-
 def has_interrupts(tasks) -> bool:
     """True when any pending task is parked on an interrupt (awaiting approval)."""
     return any(task.interrupts for task in tasks)

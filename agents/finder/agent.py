@@ -22,7 +22,6 @@ Nothing in this module imports another agent.
 """
 
 import logging
-import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -38,7 +37,6 @@ from agents.contracts import (
 from agents.finder.graph import FINDER_GRAPH
 from agents.finder.prompts import with_system
 from agents.finder.state import initial_state
-from agents.runtime import checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +47,14 @@ DESCRIPTION = (
     "notes, reading one, following its links, listing reminders or an agenda. "
     "Use for anything the user wants to know or find. Reads only; it never "
     "creates, edits or schedules anything.")
+
+# How far one run may travel. A read step takes an `act` edge as well as its
+# own `reason` edge, so the tool budget is widened into graph hops; the floor
+# keeps a small budget from tripping the limit on a turn that is behaving.
+# There is no `thread_id` beside it: the graph compiles without a checkpointer,
+# so there is no thread for one to name.
+RECURSION_LIMIT = max(20, config.AGENT_MAX_STEPS * 3 + 5)
+
 
 def _build_messages(request: AgentRequest, now, tz) -> list[dict]:
     """The conversation so far, plus this turn's message.
@@ -81,11 +87,10 @@ def start(request: AgentRequest) -> AgentResult:
     """Answer the user's question from their own notes."""
     # The locale is the responder's business, not finder's — it reads only.
     now, tz, _ = restore_clock(request.context)
-    graph_config = checkpoint.graph_config(NAME, uuid.uuid4(), config.AGENT_MAX_STEPS)
     state = FINDER_GRAPH.invoke(
         initial_state(request.context, _build_messages(request, now, tz),
                       request.references.get("reference_notes")),
-        graph_config)
+        {"recursion_limit": RECURSION_LIMIT})
     citations = state.get("citations") or []
 
     return AgentResult(
