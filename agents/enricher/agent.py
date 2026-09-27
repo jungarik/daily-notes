@@ -46,11 +46,17 @@ logger = logging.getLogger(__name__)
 
 NAME = "enricher"
 
+# Written against the classifier's: this one changes what a note *is* — its
+# text, one specific field, or what it connects to — while filing a note into
+# the vault is the classifier's single pass. The router picks between the two
+# on these sentences alone, so the last line is a boundary, not a flourish.
 DESCRIPTION = (
-    "Creates and edits notes: writing a new note, changing a note's folder "
-    "path, adding tags, filling in a note's metadata, and linking notes to each "
-    "other. Use when the request is about capturing or reorganising note "
-    "content. Does not schedule anything.")
+    "Creates and edits notes: writing a new note, moving one note to a folder "
+    "path, adding tags to a note, and linking notes to each other. Use when "
+    "the request is about capturing note content or changing one specific "
+    "thing about a note. Does not decide a note's full metadata in one pass "
+    "(type, title, path, tags and priority together) and does not schedule "
+    "anything.")
 
 # Every prior hop is readable: an agent plans better knowing what the
 # turn already found. The allowlist stays as the guard against a

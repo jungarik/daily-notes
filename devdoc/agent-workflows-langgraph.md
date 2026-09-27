@@ -61,23 +61,19 @@ records citations onto the turn context. The answer leaves in
 
 `ActionPlanState` carries messages, context, tool specs, step count, tool call
 and the write proposal. Every node is a module under `nodes/` with a single
-public `run`: `plan` and `act` are flat; the multi-step phases live in
-subpackages `classify/` (gather → propose → normalize) and `write/` (link,
-validate).
+public `run`: `plan` and `act` are flat; the one multi-step phase left lives in
+the `write/` subpackage (link, validate). `classify/` left with the nodes — see
+the classifier graph below.
 
 ```mermaid
 flowchart TD
     S((START)) --> P[plan]
     P -->|no tool| E((END))
     P -->|read| T[act]
-    P -->|metadata write| MC[classify_gather]
     P -->|link write| L[link_context]
     P -->|simple write| V[validate_write]
     T -->|budget left| P
     T -->|spent| E
-    MC --> MM[classify_propose]
-    MM --> MV[classify_normalize]
-    MV --> V
     L --> V
     V -->|action| E
     V -->|no action, budget left| P
@@ -94,6 +90,37 @@ There was a second graph here, `ENRICH_GRAPH`: an interactive capture loop whose
 the pause, stayed compiled at import for a while after, and has been deleted
 along with its `reason`, `approve` and `stage` nodes. Two ways to pause is one
 too many; `git log` has it.
+
+A second graph has left this file since, for a related reason. `CLASSIFY_GRAPH`
+offered the metadata pipeline as a standalone entry and was invoked by nothing
+but a test — compiled at import, unreachable in production, exactly the shape
+`ENRICH_GRAPH` had. It was not deleted: those three nodes are the classifier
+agent now, so the graph became live instead.
+
+## Classifier graph
+
+`ClassifyState` carries the turn context, the note, the gathered vault context,
+the raw proposal and the normalised metadata. Three nodes, no conditional
+edges — filing is a fixed pipeline, so there is no `routing.py`:
+
+```mermaid
+flowchart TD
+    S((START)) --> G[gather]
+    G --> P[propose]
+    P --> N[normalize]
+    N --> E((END))
+```
+
+`gather` reads the note and the vault vocabulary it is filed against; `propose`
+makes the one model call; `normalize` canonicalises the answer against the
+user's localised root folders. Same shape as the other two write agents: the
+graph plans, the loop pauses, `resume` writes on approval.
+
+Why it is not an enricher phase any more: those nodes ran mid-plan, entered from
+`after_plan` when the planner picked `enrich_note`, and had to thread their
+working values through the planner's own state. As its own agent the pipeline
+has one entry, one state and one subject, and the `metadata_` prefixes that kept
+its keys apart from the planner's are gone with it.
 
 ## Reminder graph
 

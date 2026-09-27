@@ -26,7 +26,9 @@ agents/
 │   │                           choice as Ref(AGENT_KIND, name)
 │   └── prompts.py
 ├── finder/                    reads and answers — the vault's reader
-├── enricher/                  note writes: create, move, tag, link, classify
+├── enricher/                  note writes: create, move, tag, link
+├── classifier/                filing one note: type, title, path, tags,
+│                               priority, in a single pass
 ├── reminder/                  scheduling
 │                               each: agent.py (start + resume), graph.py,
 │                               state.py, prompts.py, nodes/ — SPEC is the
@@ -37,10 +39,11 @@ agents/
 tools/
 ├── finder/                    owner-scoped reads
 ├── enricher/                  note writes
+├── classifier/                the metadata write
 ├── reminder/                  the reminder write
 └── responder/                 read_state — how the reply reads what the
-                                turn's earlier hops produced (enricher and
-                                reminder carry their own copy)
+                                turn's earlier hops produced (enricher,
+                                classifier and reminder carry their own copy)
 ```
 
 ## How a turn runs

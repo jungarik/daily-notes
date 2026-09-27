@@ -9,12 +9,16 @@ import unittest
 from pathlib import Path
 
 from agents import bootstrap
-from tools import enricher as enricher_tools, reminder as reminder_tools
+from tools import (
+    classifier as classifier_tools,
+    enricher as enricher_tools,
+    reminder as reminder_tools,
+)
 
 
 class AgentStructureTests(unittest.TestCase):
     def test_specialist_tool_specs_match_registered_handlers(self):
-        for specialist in (enricher_tools, reminder_tools):
+        for specialist in (enricher_tools, classifier_tools, reminder_tools):
             with self.subTest(specialist=specialist.__name__):
                 advertised = {
                     spec["function"]["name"] for spec in specialist.TOOL_SPECS
@@ -35,9 +39,11 @@ class AgentStructureTests(unittest.TestCase):
             "enricher/agent.py",
             "enricher/prompts.py",
             "enricher/nodes/plan.py", "enricher/nodes/act.py",
-            "enricher/nodes/classify/gather.py", "enricher/nodes/classify/propose.py",
-            "enricher/nodes/classify/normalize.py",
             "enricher/nodes/write/link.py", "enricher/nodes/write/validate.py",
+            "classifier/__init__.py", "classifier/agent.py", "classifier/graph.py",
+            "classifier/state.py", "classifier/prompts.py",
+            "classifier/nodes/gather.py", "classifier/nodes/propose.py",
+            "classifier/nodes/normalize.py",
             "reminder/graph.py", "reminder/state.py",
             "reminder/prompts.py", "reminder/agent.py",
             "reminder/nodes/resolve.py", "reminder/nodes/build.py",
@@ -79,8 +85,17 @@ class AgentStructureTests(unittest.TestCase):
             "../tools/enricher/create_note.py",
             "../tools/enricher/set_note_path.py",
             "../tools/enricher/add_note_tags.py",
-            "../tools/enricher/enrich_note.py",
             "../tools/enricher/read_state.py",
+            "../tools/classifier/__init__.py",
+            "../tools/classifier/db.py",
+            "../tools/classifier/specs.py",
+            "../tools/classifier/enrich_note.py",
+            "../tools/classifier/get_note_context.py",
+            "../tools/classifier/get_vault_context.py",
+            "../tools/classifier/find_related_notes.py",
+            "../tools/classifier/list_paths.py",
+            "../tools/classifier/list_tags.py",
+            "../tools/classifier/read_state.py",
             "../tools/reminder/create_reminder.py",
             "../tools/reminder/specs.py", "../tools/reminder/db.py",
             "../tools/reminder/get_note_context.py",
@@ -115,7 +130,9 @@ class AgentStructureTests(unittest.TestCase):
                      "agents/enricher/nodes/reason.py",
                      "agents/enricher/nodes/approve.py",
                      "agents/enricher/nodes/write/stage.py",
-                     "agents/runtime/checkpoint.py"):
+                     "agents/runtime/checkpoint.py",
+                     "agents/enricher/nodes/classify",
+                     "tools/enricher/enrich_note.py"):
             with self.subTest(gone=gone):
                 self.assertFalse((root / gone).exists())
 
@@ -213,7 +230,8 @@ class AgentStructureTests(unittest.TestCase):
         module that imports a sibling has re-introduced the coupling. Only
         `bootstrap.py` may name them, because naming them is its job."""
         root = Path(__file__).parents[1] / "agents"
-        peers = ("enricher", "reminder", "finder", "responder", "router")
+        peers = ("enricher", "classifier", "reminder", "finder", "responder",
+                 "router")
         offending = []
 
         for path in root.rglob("*.py"):
@@ -258,7 +276,8 @@ class AgentStructureTests(unittest.TestCase):
         self.assertEqual([], reaching)
 
     def test_every_agent_is_registered_with_the_farm(self):
-        for name in ("enricher", "reminder", "finder", "responder", "router"):
+        for name in ("enricher", "classifier", "reminder", "finder",
+                     "responder", "router"):
             with self.subTest(agent=name):
                 self.assertEqual(name, bootstrap.agents.get(name).name)
 

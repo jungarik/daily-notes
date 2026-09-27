@@ -2,7 +2,7 @@
 
 Retrieval (embeddings + nearest-neighbour lookup) and the idea-level ranking
 pass that reorders its results live here, out of the stage/validate nodes —
-mirroring how enrich_note gathers classify context first. `run` performs every
+gathering its candidates before the write is shaped. `run` performs every
 lookup and hands plain rows to the pure builders below; the proposal (or an
 error) is stashed for the downstream node. Single public `run`.
 """

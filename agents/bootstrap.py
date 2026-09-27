@@ -6,6 +6,7 @@ below it is an agent that knows nothing of its peers.
 """
 
 import config
+from agents.classifier import agent as classifier_agent
 from agents.enricher import agent as enricher_agent
 from agents.finder import agent as finder_agent
 from agents.reminder import agent as reminder_agent
@@ -21,6 +22,7 @@ from agents.runtime.registry import AgentRegistry
 agents = AgentRegistry()
 agents.register(reminder_agent.SPEC)
 agents.register(enricher_agent.SPEC)
+agents.register(classifier_agent.SPEC)
 agents.register(finder_agent.SPEC)
 agents.register(responder_agent.SPEC)
 agents.register(router_agent.SPEC)

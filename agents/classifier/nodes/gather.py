@@ -1,38 +1,36 @@
-"""classify_gather node: collect vault context + related notes for a note.
+"""gather node: collect the note and the vault vocabulary it is filed against.
 
-Runs the internal metadata-context tools (note text, existing paths/tags, vault
-roots, related notes) and stashes them for the proposal step. `run` makes every
-tool call and threads an immutable trace through the pure helpers below. Single
-public `run`.
+Runs the context tools — the note's text, the user's existing paths and tags,
+the localised root folders, and the notes nearest this one as classification
+precedent — and stashes them for `propose`. `run` makes every tool call and
+threads an immutable trace through the pure helpers below. Single public `run`.
 """
 
 import json
 import time
 
-from common import helper
-from agents.contracts import ToolResult
-from tools import enricher as tools
-from agents.contracts import build_context
+from agents.classifier.state import ClassifyState, context_from_state
+from agents.contracts import ToolResult, build_context, restore_clock
 from agents.runtime.execute_tool import execute_allowed_tool
+from common import helper
+from tools import classifier as tools
+
+NAME = "classifier"
 
 _EMPTY_NOTE = "note not found or empty"
 
 
-def _tool_context(state: dict) -> dict:
+def _tool_context(state: ClassifyState) -> dict:
     """The context these tools run under.
 
-    Rebuilt rather than passed through because this graph is entered two ways —
-    with the turn's context under `user_context`, or with a bare `user_id` when
-    the metadata subgraph runs alone.
+    One entry shape now. Inside the enricher this rebuilt a context from either
+    `user_context` or a bare `user_id`, because the metadata pipeline was
+    entered two ways; the agent has one `start`, so there is one shape.
     """
-    data = state.get("user_context") or state.get("context") or {}
+    context = context_from_state(state)
+    now, tz, locale = restore_clock(context)
 
-    return build_context(
-        int(state.get("user_id") or data["user_id"]),
-        data.get("now"),
-        tz=data.get("tz"),
-        locale=data.get("locale") or "en",
-    )
+    return build_context(context["user_id"], now, tz=tz, locale=locale)
 
 
 def _tool_text(result) -> str:
@@ -59,8 +57,8 @@ def _parsed(text: str):
         return text
 
 
-def _traced_tool(trace: list[dict], name: str, latency_ms: int,
-                 error: str | None) -> list[dict]:
+def _trace_tool(trace: list[dict], name: str, latency_ms: int,
+                error: str | None) -> list[dict]:
     if error:
         return [*trace, {"kind": "tool", "tool": name, "status": "error",
                          "latency_ms": latency_ms, "error": str(error)[:500]}]
@@ -70,7 +68,7 @@ def _traced_tool(trace: list[dict], name: str, latency_ms: int,
 
 
 def _context_calls(text: str, note_id) -> tuple:
-    """The metadata-context tools to run, in order, once the note text is known."""
+    """The context tools to run, in order, once the note text is known."""
     return (
         ("list_paths", {}),
         ("list_tags", {}),
@@ -93,7 +91,7 @@ def _counted(items, key: str) -> list[tuple]:
     return [(item[key], item["count"]) for item in items]
 
 
-def _classify_context(collected: dict) -> dict:
+def _build_context(collected: dict) -> dict:
     vault = collected["get_vault_context"]
     related = _unwrapped(collected["find_related_notes"], "notes")
 
@@ -108,13 +106,13 @@ def _classify_context(collected: dict) -> dict:
 
 def _failed(note_id, trace: list[dict], error: str) -> dict:
     return {
-        "metadata_text": "",
-        "metadata_note_id": note_id,
-        "metadata_context": {},
-        "metadata_error": error,
-        "metadata_trace": [*trace, {
+        "text": "",
+        "note_id": note_id,
+        "context": {},
+        "error": error,
+        "trace": [*trace, {
             "kind": "node",
-            "node": "classify_gather",
+            "node": "gather",
             "status": "error",
             "error": str(error)[:500],
         }],
@@ -123,13 +121,13 @@ def _failed(note_id, trace: list[dict], error: str) -> dict:
 
 def _gathered(text: str, note_id, context: dict, trace: list[dict]) -> dict:
     return {
-        "metadata_text": text,
-        "metadata_note_id": note_id,
-        "metadata_context": context,
-        "metadata_error": None,
-        "metadata_trace": [*trace, {
+        "text": text,
+        "note_id": note_id,
+        "context": context,
+        "error": None,
+        "trace": [*trace, {
             "kind": "node",
-            "node": "classify_gather",
+            "node": "gather",
             "status": "ok",
             "related_note_ids": [
                 item.get("note_id")
@@ -140,27 +138,26 @@ def _gathered(text: str, note_id, context: dict, trace: list[dict]) -> dict:
     }
 
 
-def run(state: dict) -> dict:
+def run(state: ClassifyState) -> dict:
     context = _tool_context(state)
-    args = (state.get("tool_call") or {}).get("args") or {}
-    note_id = state.get("metadata_note_id") or args.get("note_id")
-    text = (state.get("metadata_text") or "").strip()
-    trace = list(state.get("metadata_trace") or [])
+    note_id = state.get("note_id")
+    text = (state.get("text") or "").strip()
+    trace = list(state.get("trace") or [])
 
     if not text and note_id is not None:
         started = time.perf_counter()
         result = execute_allowed_tool(
             tools.TOOLS,
-            tools.METADATA_CONTEXT_TOOLS,
+            tools.CONTEXT_TOOLS,
             context,
             "get_note_context",
             {"note_id": int(note_id)},
-            "enricher",
+            NAME,
         )
         result_text = _tool_text(result)
         error = _tool_error(result, result_text)
-        trace = _traced_tool(trace, "get_note_context",
-                             round((time.perf_counter() - started) * 1000), error)
+        trace = _trace_tool(trace, "get_note_context",
+                            round((time.perf_counter() - started) * 1000), error)
 
         if error:
             return _failed(note_id, trace, error)
@@ -176,16 +173,16 @@ def run(state: dict) -> dict:
         started = time.perf_counter()
         result = execute_allowed_tool(
             tools.TOOLS,
-            tools.METADATA_CONTEXT_TOOLS,
+            tools.CONTEXT_TOOLS,
             context,
             name,
             tool_args,
-            "enricher",
+            NAME,
         )
         result_text = _tool_text(result)
         error = _tool_error(result, result_text)
-        trace = _traced_tool(trace, name,
-                             round((time.perf_counter() - started) * 1000), error)
+        trace = _trace_tool(trace, name,
+                            round((time.perf_counter() - started) * 1000), error)
 
         if error:
             return _failed(note_id, trace, error)
@@ -193,8 +190,8 @@ def run(state: dict) -> dict:
         collected[name] = _parsed(result_text)
 
     try:
-        context_data = _classify_context(collected)
+        gathered_context = _build_context(collected)
     except Exception as exc:
         return _failed(note_id, trace, str(exc))
 
-    return _gathered(text, note_id, context_data, trace)
+    return _gathered(text, note_id, gathered_context, trace)

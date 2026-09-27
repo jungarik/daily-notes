@@ -3,7 +3,6 @@
 WRITE_TOOLS = {
     "create_note",
     "set_note_path",
-    "enrich_note",
     "add_note_tags",
     "link_notes",
 }
@@ -21,9 +20,6 @@ CONTEXT_TOOLS = {
     "filter_owned_notes",
     "read_state",
 }
-
-# Back-compat alias for the classify phase's original name.
-METADATA_CONTEXT_TOOLS = CONTEXT_TOOLS
 
 
 def _fn(name, description, properties, required):
@@ -94,13 +90,6 @@ TOOL_SPECS = [
             },
         },
         ["note_id", "tags"],
-    ),
-    _fn(
-        "enrich_note",
-        "Analyze a note and propose exact metadata (type, title, vault "
-        "path, tags, priority). The proposed values require user confirmation before saving.",
-        {"note_id": {"type": "integer"}},
-        ["note_id"],
     ),
     _fn(
         "link_notes",

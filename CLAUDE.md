@@ -119,7 +119,7 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   turn loop or an agent's graph to add a capability.
 - **Deterministic work belongs in its own node, not inside a write node.**
   Retrieval, classification, and time resolution are separate, testable steps
-  (`classify_gather`, `schedule_resolve`, `link_context`); the write nodes stay
+  (`schedule_resolve`, `link_context`); the write nodes stay
   plain checks.
 - **No redundant nodes.** If a node is another node in a different mode, fold it
   in (as the tool-free budget exhaustion path folded into `reason`).
@@ -347,7 +347,7 @@ There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
 `api/telegram_bot` in its `helper.py`/`db.py`; each agent in the farm owns the
 domain it needs (`agents/finder` reads, `agents/enricher` writes notes,
-`agents/reminder` schedules). Only
+`agents/classifier` files them, `agents/reminder` schedules). Only
 true infra is shared, at the repo root — `config`, `db`, `openai_client`, `i18n`,
 `migrate`, and `file_store` (the S3 client) — plus `api/deps.py` (auth, incl. the
 identity resolve) and `api/media_token.py`. `capture/Telegram_Bot` (the bot) and
@@ -489,8 +489,12 @@ only module that names an agent — and never an edit to the loop.
 
 **The agents.** `finder` reads and answers (`tools/finder/`: `search_notes`,
 `get_note`, `neighbors`, `list_reminders`, `list_agenda`, `list_paths`,
-`detect_reminder`); `enricher` owns note writes; `reminder` owns scheduling;
-`responder` is the only one that writes prose to the user. A work agent puts its
+`detect_reminder`); `enricher` owns note writes — create, move, tag, link;
+`classifier` owns filing one note in a single pass (type, title, path, tags,
+priority) and is the only holder of `enrich_note`; `reminder` owns scheduling;
+`responder` is the only one that writes prose to the user. The enricher's and
+classifier's descriptions are written against each other, because the router
+tells them apart on those sentences alone. A work agent puts its
 output in `AgentResult.state` and reports what it touched as typed
 `Ref(kind, id)`.
 
@@ -582,6 +586,7 @@ when the code it describes is deleted, delete it.
   enricher, reminder), and why LangGraph persists nothing: `agent_states` is the
   only durable record of a hop.
 - `devdoc/agentic-enricher.md` — the note action/enrichment agent.
+- `devdoc/agentic-classifier.md` — the filing agent split out of it.
 - `devdoc/agentic-reminder.md` — the reminder agent.
 - `devdoc/action-idempotency.md` — how a confirmed write runs at most once.
 - `devdoc/plugin-capture-tokens.md` — **not yet built**: personal access tokens

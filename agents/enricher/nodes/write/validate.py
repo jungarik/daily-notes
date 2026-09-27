@@ -16,7 +16,7 @@ from tools import enricher as tools
 from agents.enricher.state import ActionPlanState, context_from_state
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。！？])\s+")
-_NOTE_TARGETED = {"set_note_path", "enrich_note", "add_note_tags"}
+_NOTE_TARGETED = {"set_note_path", "add_note_tags"}
 _NO_CANDIDATES = "Error: no related notes were found to link."
 _BAD_NOTE_ID = ("Error: choose a valid user-owned note id from "
                 "the handoff or read tools.")
@@ -71,15 +71,6 @@ def _summarize_write(name: str, args: dict, locale: str | None = None) -> str:
     if name == "add_note_tags":
         return i18n.t(locale, "action_add_note_tags",
                       tags=_tag_text(args.get("tags")), id=note_id)
-
-    if name == "enrich_note":
-        if args.get("title"):
-            return i18n.t(locale, "action_enrich_note",
-                          title=args.get("title"), type=args.get("type"),
-                          path=args.get("path"), tags=_tag_text(args.get("tags")),
-                          id=note_id)
-
-        return i18n.t(locale, "action_enrich_note_plain", id=note_id)
 
     if name == "create_reminder":
         when = args.get("remind_at")

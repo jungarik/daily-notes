@@ -3,10 +3,8 @@
 Action-plan graph (stateless):
 
     START ────────────────▶ plan
-    plan ─after_plan──────▶ act | classify_gather | link_context |
-                            validate_write | END
+    plan ─after_plan──────▶ act | link_context | validate_write | END
     act ─after_plan_read──▶ plan | END
-    classify_gather ▶ classify_propose ▶ classify_normalize ▶ validate_write
     link_context ─────────▶ validate_write
     validate_write ─after_validation─▶ plan | END
 
@@ -27,9 +25,6 @@ def after_plan(state: ActionPlanState):
 
     if call is None:
         return END
-
-    if call["name"] == "enrich_note":
-        return "classify_gather"
 
     if call["name"] == "link_notes":
         return "link_context"

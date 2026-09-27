@@ -1,4 +1,10 @@
-"""State and context helpers for enrichment graphs."""
+"""State and context helpers for the enrichment graph.
+
+The metadata channels are gone with the nodes that filled them. They lived here
+because the classify pipeline ran mid-plan and had to thread its working values
+through the planner's own state; that pipeline is the classifier agent now, and
+it carries them in a state of its own (`agents/classifier/state.py`).
+"""
 
 from typing import TypedDict
 
@@ -14,26 +20,6 @@ class ActionPlanState(TypedDict, total=False):
     model_error: str | None
     action: dict | None
     link_proposal: dict
-    metadata_text: str
-    metadata_note_id: int | None
-    metadata_context: dict
-    raw_metadata: dict
-    metadata: dict
-    metadata_error: str | None
-    metadata_trace: list[dict]
-
-
-class MetadataState(TypedDict, total=False):
-    user_id: int
-    metadata_text: str
-    metadata_note_id: int | None
-    metadata_context: dict
-    raw_metadata: dict
-    metadata: dict
-    metadata_error: str | None
-    metadata_trace: list[dict]
-    tool_call: dict | None
-    context: dict
 
 
 def context_from_state(state: ActionPlanState) -> UserContext:
@@ -44,5 +30,3 @@ def context_from_state(state: ActionPlanState) -> UserContext:
     that conversion happens.
     """
     return state.get("user_context") or {}
-
-

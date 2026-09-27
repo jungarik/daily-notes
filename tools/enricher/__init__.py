@@ -3,7 +3,6 @@
 from tools.enricher import (
     add_note_tags,
     create_note,
-    enrich_note,
     filter_owned_notes,
     find_link_candidates,
     find_related_notes,
@@ -15,9 +14,7 @@ from tools.enricher import (
     read_state,
     set_note_path,
 )
-from tools.enricher.specs import (
-    CONTEXT_TOOLS, METADATA_CONTEXT_TOOLS, TOOL_SPECS, WRITE_TOOLS,
-)
+from tools.enricher.specs import CONTEXT_TOOLS, TOOL_SPECS, WRITE_TOOLS
 
 TOOLS = {
     "list_paths": list_paths.invoke,
@@ -30,7 +27,6 @@ TOOLS = {
     "create_note": create_note.invoke,
     "set_note_path": set_note_path.invoke,
     "add_note_tags": add_note_tags.invoke,
-    "enrich_note": enrich_note.invoke,
     "link_notes": link_notes.invoke,
     "read_state": read_state.invoke,
 }
@@ -40,6 +36,5 @@ __all__ = [
     "TOOL_SPECS",
     "WRITE_TOOLS",
     "CONTEXT_TOOLS",
-    "METADATA_CONTEXT_TOOLS",
     "TOOLS",
 ]
