@@ -587,6 +587,47 @@ class TurnTreeTests(unittest.TestCase):
                          "every later hop names the row before it")
         self.assertEqual(1, len({row["correlation_id"] for row in store.rows}))
 
+    def test_a_confirmed_write_is_a_hop_the_turn_continues_from(self):
+        """The precondition `prior_states` rests on for a two-write turn.
+
+        "Note this and remind me about it" cannot resolve in one pass: the
+        enricher pauses before it has written anything, so its `result` does
+        not exist yet. It comes into being on the confirm — and only because
+        `resume` re-enters the loop with routing open does a second work agent
+        get a hop to read it in. End the turn at the reply instead and the
+        second half of that sentence is silently dropped."""
+        store = FakeStore()
+        seen = []
+        writer = AgentSpec(
+            name="enricher",
+            description="writes",
+            start=lambda request: AgentResult(
+                "needs_input",
+                state={"planned": {"name": "create_note"}},
+                ask={"kind": "confirm", "action": {"name": "create_note", "args": {}}},
+                token="t"),
+            resume=lambda token, decision, context: AgentResult(
+                "done", state={"result": {"note_id": 77}}, produced=(Ref("note", "77"),)))
+        reader = AgentSpec(
+            name="reminder",
+            description="schedules",
+            start=lambda request: seen.append(
+                [entry.agent for entry in request.history]) or AgentResult("done"))
+        order = iter(["enricher", "reminder", None])
+        loop, _ = _loop([writer, reader, _responder()],
+                        router=lambda *args: next(order, None),
+                        store=store,
+                        max_hops=6)
+
+        paused = loop.run("note this and remind me", CONTEXT)
+        loop.resume(paused.pending, {"approve": True}, "x", CONTEXT)
+
+        self.assertEqual([["enricher"]], [[a for a in names if a == "enricher"]
+                                          for names in seen],
+                         "the reminder ran with the write already in its history")
+        self.assertIn(("enricher", "done"),
+                      [(row["agent"], row["status"]) for row in store.rows])
+
     def test_the_router_hop_is_saved_like_any_other(self):
         """Its choice is state, and state lives in a row.
 

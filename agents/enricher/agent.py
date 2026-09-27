@@ -58,10 +58,21 @@ DESCRIPTION = (
 # and what actually reaches a prompt is the fields this agent picks.
 MAY_READ = ("*",)
 
-# What a planner takes out of a peer's state. `trace` is deliberately absent:
-# it says which nodes ran, which helps a human read a turn back and would
-# otherwise fill this agent's prompt with tool dumps.
-USABLE_STATE_FIELDS = ("answer", "citations", "retrieved_chunks")
+# What a planner takes out of a peer's state: what the turn *found* (a finder's
+# answer and the notes behind it) and what it *decided* (a peer's write, planned
+# or performed). Without the second group a turn like "remind me about this and
+# file it" plans the note blind to the reminder the peer just scheduled.
+#
+# `trace` is deliberately absent: it says which nodes ran, which helps a human
+# read a turn back and would otherwise fill this agent's prompt with tool dumps.
+USABLE_STATE_FIELDS = (
+    "answer",
+    "citations",
+    "retrieved_chunks",
+    "planned",
+    "action",
+    "result",
+)
 
 
 SELECT_ACTION = "link_notes"

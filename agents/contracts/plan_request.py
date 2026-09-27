@@ -7,11 +7,16 @@ resolved. It is a contract, not a mapper — each agent builds its own from the
 no-shared-domain rule.
 
 `prior_states` is what *earlier agents in this same turn* produced, keyed by
-agent name: the finder's answer and the notes it matched, say, so a write can
-be planned against a search that already happened instead of repeating it. The
-history carries only refs, so this is read through `read_state` and is bounded
-by the planner's own `may_read`. Each agent keeps only the fields it can use —
-a debug trace is not evidence, and would only fill the prompt.
+agent name: the finder's answer and the notes it matched, so a write can be
+planned against a search that already happened instead of repeating it — and a
+peer's own write, planned or performed, so the second half of "note this and
+remind me about it" knows which note "it" is. A turn reaches that second case
+after a confirm: the approved write finishes as an ordinary `done` hop and the
+loop keeps routing, so the next agent finds it in the history.
+
+The history carries only refs, so this is read through `read_state` and is
+bounded by the planner's own `may_read`. Each agent keeps only the fields it can
+use — a debug trace is not evidence, and would only fill the prompt.
 """
 
 from typing import TypedDict

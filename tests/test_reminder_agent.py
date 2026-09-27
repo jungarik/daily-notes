@@ -328,6 +328,43 @@ class PriorStateTests(unittest.TestCase):
 
         self.assertNotIn("trace", plan["prior_states"]["finder"])
 
+    def test_a_peer_write_reaches_the_planner(self):
+        """"Note this and remind me about it" is two hops, and the second one
+        needs the first. A confirmed write finishes as an ordinary `done` hop
+        and the loop keeps routing, so the enricher's result is sitting in this
+        agent's history by the time it plans."""
+        EXECUTED["result"] = ToolResult({"agent": "enricher", "status": "done", "state": {
+            "action": {"name": "create_note"},
+            "result": {"note_id": 77},
+        }})
+
+        plan = self._plan([HistoryEntry("enricher", "done", state_id="s4")])
+
+        self.assertEqual(["action", "result"], sorted(plan["prior_states"]["enricher"]))
+
+    def test_a_just_written_note_outranks_a_cited_one(self):
+        """After "note this and remind me about it", "it" is the note that was
+        just created — not one a search happened to surface on the way."""
+        EXECUTED["result"] = ToolResult({"agent": "enricher", "status": "done", "state": {
+            "result": {"note_id": 77},
+            "citations": [{"note_id": 9, "title": "Postgres tuning"}],
+        }})
+
+        plan = self._plan([HistoryEntry("enricher", "done", state_id="s4")])
+
+        self.assertEqual([77, 9], plan["referenced_note_ids"])
+
+    def test_a_write_that_made_no_note_is_skipped(self):
+        """A reminder's own result carries `reminder_id`, not `note_id`. Reading
+        one as the other would hang the reminder on a note that is not there."""
+        EXECUTED["result"] = ToolResult({"agent": "enricher", "status": "done", "state": {
+            "result": {"reminder_id": 3},
+        }})
+
+        plan = self._plan([HistoryEntry("enricher", "done", state_id="s4")])
+
+        self.assertEqual([], plan["referenced_note_ids"])
+
     def test_a_cited_note_resolves_remind_me_about_that(self):
         """The client named no note, so the only record of what "that" means is
         the citation an earlier hop left behind."""

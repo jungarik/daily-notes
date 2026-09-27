@@ -26,6 +26,7 @@ TABLE = "agent_states"
 # keeps this honest — a fifth copy fails there before it can fail in production.
 READERS = (
     "agents/runtime/state_store.py",
+    "tools/classifier/db.py",
     "tools/enricher/db.py",
     "tools/reminder/db.py",
     "tools/responder/db.py",

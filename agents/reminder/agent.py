@@ -51,10 +51,21 @@ DESCRIPTION = (
 # and what actually reaches a prompt is the fields this agent picks.
 MAY_READ = ("*",)
 
-# What a planner takes out of a peer's state. `trace` is deliberately absent:
-# it says which nodes ran, which helps a human read a turn back and would
-# otherwise fill this agent's prompt with tool dumps.
-USABLE_STATE_FIELDS = ("answer", "citations", "retrieved_chunks")
+# What a planner takes out of a peer's state: what the turn *found* (a finder's
+# answer and the notes behind it) and what it *decided* (a peer's write, planned
+# or performed). Without the second group a turn like "note this and remind me
+# tomorrow" plans the reminder blind to the note the enricher just wrote.
+#
+# `trace` is deliberately absent: it says which nodes ran, which helps a human
+# read a turn back and would otherwise fill this agent's prompt with tool dumps.
+USABLE_STATE_FIELDS = (
+    "answer",
+    "citations",
+    "retrieved_chunks",
+    "planned",
+    "action",
+    "result",
+)
 
 
 
@@ -127,24 +138,42 @@ def _read_prior_states(user_id: int,
     return prior
 
 
-def _cited_note_ids(prior_states: dict[str, dict]) -> list[int]:
-    """The notes earlier hops cited, in the order they were found.
+def _find_known_note_ids(prior_states: dict[str, dict]) -> list[int]:
+    """The notes earlier hops put on the table, best antecedent first.
 
     A reminder needs a note to hang on. When the client named one it is in
-    `references`; when the user said "remind me about that" after a search, the
-    only record of which note "that" is lives in the finder's citations.
+    `references`; when the user said "remind me about that", the only record of
+    which note "that" means is what the turn already did — a note a peer just
+    wrote, or one the finder cited.
+
+    A write is offered before a citation deliberately. After "note this and
+    remind me about it", "it" is the note that was just created, not one a
+    search happened to surface along the way — so both loops run over the same
+    states rather than one pass that would interleave them.
     """
-    note_ids = []
+    candidates = []
+
+    for state in prior_states.values():
+        written = state.get("result")
+
+        if isinstance(written, dict):
+            candidates.append(written.get("note_id"))
 
     for state in prior_states.values():
         for citation in state.get("citations") or []:
-            try:
-                note_id = int(citation["note_id"])
-            except (KeyError, TypeError, ValueError):
-                continue
+            if isinstance(citation, dict):
+                candidates.append(citation.get("note_id"))
 
-            if note_id not in note_ids:
-                note_ids.append(note_id)
+    note_ids = []
+
+    for candidate in candidates:
+        try:
+            note_id = int(candidate)
+        except (TypeError, ValueError):
+            continue
+
+        if note_id not in note_ids:
+            note_ids.append(note_id)
 
     return note_ids
 
@@ -163,9 +192,11 @@ def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequ
     return {
         "instruction": request.message.strip(),
         "conversation_summary": str(references.get("conversation_summary") or ""),
-        # What the client named wins; what an earlier hop found is the
-        # fallback, so "remind me about that" after a search resolves.
-        "referenced_note_ids": _read_note_ids(references) or _cited_note_ids(prior_states),
+        # What the client named wins; what an earlier hop wrote or found is the
+        # fallback, so "remind me about that" resolves after a search — and
+        # after a confirmed write, which is the hop that just created "that".
+        "referenced_note_ids": (_read_note_ids(references)
+                                or _find_known_note_ids(prior_states)),
         "citations": list(references.get("citations") or []),
         "resolved_entities": dict(references.get("resolved_entities") or {}),
         "prior_states": prior_states,

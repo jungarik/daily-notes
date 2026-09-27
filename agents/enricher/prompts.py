@@ -38,9 +38,12 @@ def planning_messages(contract: dict) -> list[dict]:
               "clarification. "
               "`prior_states` is what other agents already did on this same turn, "
               "keyed by agent — a search that has already run, the notes it "
-              "matched and the text behind them. Plan against it instead of "
-              "reading those notes again: if it names the note the user means, "
-              "that is your target. Handoff:\n" +
+              "matched and the text behind them, and any write a peer planned or "
+              "performed. Plan against it instead of reading those notes again: "
+              "if it names the note the user means, that is your target. A peer's "
+              "`result` holds what it just created, so a note it names already "
+              "exists — link or extend it rather than creating a second one. "
+              "Handoff:\n" +
               json.dumps(contract, ensure_ascii=False, default=str))
     return [{"role": "system", "content": prompt},
             {"role": "user", 
