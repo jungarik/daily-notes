@@ -35,7 +35,12 @@ def planning_messages(contract: dict) -> list[dict]:
               "those reads are needed. Do not execute writes. Finish by choosing "
               "exactly one write tool only when its target and arguments are "
               "resolved; otherwise answer without a tool so Chat can ask for "
-              "clarification. Handoff:\n" +
+              "clarification. "
+              "`prior_states` is what other agents already did on this same turn, "
+              "keyed by agent — a search that has already run, the notes it "
+              "matched and the text behind them. Plan against it instead of "
+              "reading those notes again: if it names the note the user means, "
+              "that is your target. Handoff:\n" +
               json.dumps(contract, ensure_ascii=False, default=str))
     return [{"role": "system", "content": prompt},
             {"role": "user", 

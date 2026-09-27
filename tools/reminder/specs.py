@@ -4,7 +4,7 @@ WRITE_TOOLS = {"create_reminder"}
 
 # Internal workflow tools a node invokes deterministically; never offered to the
 # model in TOOL_SPECS.
-CONTEXT_TOOLS = {"get_note_context"}
+CONTEXT_TOOLS = {"get_note_context", "read_state"}
 
 TOOL_SPECS = [{
     "type": "function",

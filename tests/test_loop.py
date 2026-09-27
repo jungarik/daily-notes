@@ -587,6 +587,49 @@ class TurnTreeTests(unittest.TestCase):
                          "every later hop names the row before it")
         self.assertEqual(1, len({row["correlation_id"] for row in store.rows}))
 
+    def test_the_router_hop_is_saved_like_any_other(self):
+        """Its choice is state, and state lives in a row.
+
+        The router is a registered agent, so a reader following the turn back
+        should find why each hop happened — and `read_state` has nothing to
+        resolve if the decision never reached the store."""
+        store = FakeStore()
+        order = iter(["a", None])
+        loop, _ = _loop(
+            [_agent("a", AgentResult("done")), _responder()],
+            router=lambda *args: next(order, None),
+            store=store,
+            max_hops=4)
+
+        loop.run("go", CONTEXT)
+
+        self.assertIn("router", [row["agent"] for row in store.rows])
+
+    def test_every_entry_with_a_state_id_has_a_row(self):
+        """The invariant `prior_states` rests on.
+
+        An agent reads a peer's work by handing `read_state` the `state_id` off
+        a `HistoryEntry`. A handle the store cannot resolve degrades every
+        planner downstream of it, silently and one hop late — so the history
+        and the tree are asserted against each other, not each on its own."""
+        store = FakeStore()
+        order = iter(["a", "b", None])
+        loop, _ = _loop(
+            [_agent("a", AgentResult("done")), _agent("b", AgentResult("done")),
+             _responder()],
+            router=lambda *args: next(order, None),
+            store=store,
+            max_hops=6)
+
+        outcome = loop.run("go", CONTEXT)
+
+        saved = {row["state_id"] for row in store.rows}
+        dangling = [entry.agent for entry in outcome.history
+                    if entry.state_id is not None and entry.state_id not in saved]
+        self.assertEqual([], dangling, "a history entry points at no row")
+        self.assertEqual([], [entry.agent for entry in outcome.history
+                              if entry.state_id is None], "a hop with no handle")
+
     def test_the_owner_comes_from_the_context_and_nowhere_else(self):
         """One source of truth: the row the store writes and the note an agent
         creates cannot disagree about whose turn this is."""

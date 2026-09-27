@@ -39,7 +39,8 @@ tools/
 ├── enricher/                  note writes
 ├── reminder/                  the reminder write
 └── responder/                 read_state — how the reply reads what the
-                                turn's earlier hops produced
+                                turn's earlier hops produced (enricher and
+                                reminder carry their own copy)
 ```
 
 ## How a turn runs
@@ -72,7 +73,7 @@ budget ran out. `AGENT_MAX_HOPS` counts the reply.
   result, so an agent cannot describe itself favourably.
 - **Only the responder speaks.** Work agents put their output in
   `AgentResult.state`; the responder reads it through `read_state` — the one
-  tool in `tools/responder/`, and the only caller of it — and phrases the
+  tool each reading vertical carries its own copy of — and phrases the
   reply. That is why voice and localisation exist in one place.
 - **Writes happen at most once.** A confirmed action is keyed by its own
   fingerprint, not by the hop, so a retried confirm replays the stored outcome.

@@ -51,7 +51,7 @@ class FinderToolTests(unittest.TestCase):
                 args,
                 "finder",
             )
-            citations, _ = apply_tool_result([], {}, result)
+            citations, _ = apply_tool_result([], [], result)
             result = tool_text(result)
 
         self.assertEqual(3, json.loads(result)["reminders"][0]["reminder_id"])
@@ -73,7 +73,7 @@ class FinderToolTests(unittest.TestCase):
                 {"query": "garden"},
                 "finder",
             )
-            citations, _ = apply_tool_result([], {}, result)
+            citations, _ = apply_tool_result([], [], result)
             result = tool_text(result)
 
         self.assertEqual("No relevant notes found.", json.loads(result)["message"])
@@ -99,7 +99,7 @@ class FinderToolTests(unittest.TestCase):
                 {"query": "garden"},
                 "finder",
             )
-            citations, _ = apply_tool_result([], {}, result)
+            citations, _ = apply_tool_result([], [], result)
             result = json.loads(tool_text(result))
 
         self.assertEqual("Grow basil", result["evidence"][0]["content"])

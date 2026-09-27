@@ -43,9 +43,9 @@ def _install_stubs():
     tools = types.ModuleType("tools.reminder")
     tools.TOOLS = {
         name: _record_call(name)
-        for name in ("create_reminder", "get_note_context")
+        for name in ("create_reminder", "get_note_context", "read_state")
     }
-    tools.CONTEXT_TOOLS = {"get_note_context"}
+    tools.CONTEXT_TOOLS = {"get_note_context", "read_state"}
     tools.TOOL_SPECS = []
     tools.WRITE_TOOLS = {"create_reminder"}
 
@@ -82,6 +82,7 @@ PLAN_GRAPH.invoke = _plan_from_planned
 
 from agents.contracts import (  # noqa: E402
     AgentRequest,
+    HistoryEntry,
     Ref,
     ToolResult,
     restore_clock,
@@ -283,11 +284,77 @@ class ClockTests(unittest.TestCase):
         self.assertIs(moment, now)
 
 
+class PriorStateTests(unittest.TestCase):
+    """What earlier agents did this turn reaches the planner as `prior_states`."""
+
+    def setUp(self):
+        EXECUTED["calls"].clear()
+        EXECUTED["result"] = ToolResult({"agent": "finder", "status": "done", "state": {
+            "answer": "Two on tuning.",
+            "citations": [{"note_id": 9, "title": "Postgres tuning"}],
+            "retrieved_chunks": [{"chunk_id": 2, "content": "shared_buffers"}],
+            "trace": {"tools": [{"name": "search_notes"}], "routes": ["rag"]},
+        }})
+
+    def tearDown(self):
+        EXECUTED["result"] = None
+        EXECUTED["calls"].clear()
+
+    def _plan(self, history):
+        request = _request()
+        request = AgentRequest(
+            request_id=request.request_id,
+            correlation_id=request.correlation_id,
+            causation_id=None,
+            agent="reminder",
+            message=request.message,
+            context=CONTEXT,
+            references={},
+            history=tuple(history),
+            hops_left=4)
+
+        return agent._build_plan_request(request, None, None, "uk")
+
+    def test_a_planner_sees_what_the_turn_already_found(self):
+        plan = self._plan([HistoryEntry("finder", "done", state_id="s1")])
+
+        self.assertEqual(["answer", "citations", "retrieved_chunks"],
+                         sorted(plan["prior_states"]["finder"]))
+
+    def test_the_debug_trace_never_reaches_the_planner(self):
+        """`trace` records which nodes ran. It is for reading a turn back, and
+        it would otherwise fill the planning prompt with tool dumps."""
+        plan = self._plan([HistoryEntry("finder", "done", state_id="s1")])
+
+        self.assertNotIn("trace", plan["prior_states"]["finder"])
+
+    def test_a_cited_note_resolves_remind_me_about_that(self):
+        """The client named no note, so the only record of what "that" means is
+        the citation an earlier hop left behind."""
+        plan = self._plan([HistoryEntry("finder", "done", state_id="s1")])
+
+        self.assertEqual([9], plan["referenced_note_ids"])
+
+    def test_a_turn_with_no_earlier_hop_is_unchanged(self):
+        plan = self._plan([])
+
+        self.assertEqual({}, plan["prior_states"])
+        self.assertEqual([], plan["referenced_note_ids"])
+        self.assertEqual([], EXECUTED["calls"], "nothing to read, nothing read")
+
+    def test_it_does_not_read_its_own_hop(self):
+        """A resumed turn has the reminder in its own history; reporting on
+        itself would feed the planner its own last plan."""
+        self._plan([HistoryEntry("reminder", "needs_input", state_id="s9")])
+
+        self.assertEqual([], EXECUTED["calls"])
+
+
 class SpecTests(unittest.TestCase):
     def test_the_spec_declares_its_name_and_read_scope(self):
         self.assertEqual("reminder", agent.SPEC.name)
-        self.assertEqual((), agent.SPEC.may_read,
-                         "it never calls read_state, so it grants itself nothing")
+        self.assertEqual(("*",), agent.SPEC.may_read,
+                         "it reads what earlier hops in the turn produced")
         self.assertTrue(agent.SPEC.description.strip())
         self.assertIsNotNone(agent.SPEC.resume)
 

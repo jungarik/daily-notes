@@ -22,6 +22,7 @@ class FinderState(TypedDict, total=False):
     messages: list[dict]
     context: dict
     citations: list[dict]
+    retrieved_chunks: list[dict]
     reference_notes: list[dict]
     trace: dict
     steps: int
@@ -99,26 +100,31 @@ def record_route(trace: dict, route: str) -> dict:
     return {**trace, "routes": [*(trace.get("routes") or []), route]}
 
 
-def record_chunks(trace: dict, chunks: list) -> dict:
-    """`trace` with a tool's retrieved chunks appended, or unchanged."""
-    if not chunks:
-        return trace
+def merge_chunks(existing: list[dict], fresh: list) -> list[dict]:
+    """`existing` plus the chunks this tool retrieved.
 
-    return {
-        **trace,
-        "retrieved_chunks": [*(trace.get("retrieved_chunks") or []), *chunks],
-    }
+    A channel of its own rather than a corner of `trace`: the matched text is
+    evidence a later agent plans and answers from, while `trace` is a record of
+    what ran. Burying one inside the other meant a reader had to take the debug
+    blob to reach the evidence.
+    """
+    if not fresh:
+        return existing
+
+    return [*existing, *fresh]
 
 
-def apply_tool_result(citations: list[dict], trace: dict,
-                      result: ToolResult) -> tuple[list[dict], dict]:
-    """What one tool's result adds to the turn's citations and trace.
+def apply_tool_result(citations: list[dict], chunks: list[dict],
+                      result: ToolResult) -> tuple[list[dict], list[dict]]:
+    """What one tool's result adds to the turn's citations and chunks.
 
     Returns both because a `ToolResult` carries both, and splitting it into two
     calls would make the caller re-derive which of them this result touched.
     """
-    return merge_citations(citations, result.citations), record_chunks(
-        trace, result.retrieved_chunks)
+    return (
+        merge_citations(citations, result.citations),
+        merge_chunks(chunks, result.retrieved_chunks),
+    )
 
 
 def initial_state(
@@ -131,10 +137,10 @@ def initial_state(
         "steps": 0,
         "tool_call": None,
         "citations": [],
+        "retrieved_chunks": [],
         "reference_notes": list(reference_notes or []),
         "trace": {
             "tools": [],
-            "retrieved_chunks": [],
             "routes": [],
         },
     }

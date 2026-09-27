@@ -29,6 +29,7 @@ from agents.contracts import (
     AgentRequest,
     AgentResult,
     AgentSpec,
+    HistoryEntry,
     PlanRequest,
     Ref,
     ToolResult,
@@ -37,7 +38,7 @@ from agents.contracts import (
 )
 from agents.enricher.graph import ACTION_PLAN_GRAPH
 from agents.enricher.prompts import planning_messages
-from agents.runtime.execute_tool import execute_tool
+from agents.runtime.execute_tool import execute_allowed_tool, execute_tool
 from tools import enricher as tools
 from tools.enricher import TOOL_SPECS
 
@@ -50,6 +51,18 @@ DESCRIPTION = (
     "path, adding tags, filling in a note's metadata, and linking notes to each "
     "other. Use when the request is about capturing or reorganising note "
     "content. Does not schedule anything.")
+
+# Every prior hop is readable: an agent plans better knowing what the
+# turn already found. The allowlist stays as the guard against a
+# mistake — a copied adapter reaching for a state it never meant to —
+# and what actually reaches a prompt is the fields this agent picks.
+MAY_READ = ("*",)
+
+# What a planner takes out of a peer's state. `trace` is deliberately absent:
+# it says which nodes ran, which helps a human read a turn back and would
+# otherwise fill this agent's prompt with tool dumps.
+USABLE_STATE_FIELDS = ("answer", "citations", "retrieved_chunks")
+
 
 SELECT_ACTION = "link_notes"
 
@@ -82,6 +95,57 @@ def _read_note_ids(references: dict) -> list[int]:
     return note_ids
 
 
+def _read_prior_states(user_id: int,
+                       history: tuple[HistoryEntry, ...],
+                       correlation_id: str) -> dict[str, dict]:
+    """What earlier hops in this turn produced, keyed by agent.
+
+    The history carries typed refs, not prose, so what another agent actually
+    found is only reachable through `read_state`. Read deterministically before
+    planning rather than as a tool the planner may call: the planner has a small
+    step budget and should spend it on resolving the write, not on deciding it
+    wants a record already sitting in the turn.
+
+    Only the fields a planner can use are kept. `trace` records which nodes ran
+    — useful for reading a turn back, not for planning — and taking it would put
+    the whole debug blob in the prompt.
+
+    A state that cannot be read is skipped, never fatal: planning with less
+    context is worse than planning with more, and far better than no plan.
+    """
+    context = {
+        "user_id": user_id,
+        "agent": NAME,
+        "may_read": MAY_READ,
+    }
+    prior = {}
+
+    for entry in history:
+        if entry.state_id is None or entry.agent == NAME:
+            continue
+
+        saved = execute_allowed_tool(
+            tools.TOOLS,
+            tools.CONTEXT_TOOLS,
+            context,
+            "read_state",
+            {"state_id": entry.state_id},
+            NAME)
+
+        if not isinstance(saved, ToolResult) or (saved.data or {}).get("error"):
+            logger.warning("enricher could not read %s state on turn %s",
+                           entry.agent, correlation_id)
+            continue
+
+        state = saved.data.get("state") or {}
+        kept = {key: state[key] for key in USABLE_STATE_FIELDS if key in state}
+
+        if kept:
+            prior[entry.agent] = kept
+
+    return prior
+
+
 def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequest:
     """The planning contract, from the envelope the loop handed over.
 
@@ -96,6 +160,8 @@ def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequ
         "referenced_note_ids": _read_note_ids(references),
         "citations": list(references.get("citations") or []),
         "resolved_entities": dict(references.get("resolved_entities") or {}),
+        "prior_states": _read_prior_states(
+            request.context["user_id"], request.history, request.correlation_id),
         "locale": locale,
         "timezone": str(tz) if tz is not None else None,
         "now": now.isoformat() if hasattr(now, "isoformat") else None,
@@ -248,4 +314,5 @@ SPEC = AgentSpec(
     description=DESCRIPTION,
     start=start,
     resume=resume,
+    may_read=MAY_READ,
 )

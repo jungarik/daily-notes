@@ -38,10 +38,11 @@ def run(state: FinderState) -> dict:
         "finder",
     )
     citations = state.get("citations") or []
+    chunks = state.get("retrieved_chunks") or []
     trace = state.get("trace") or {}
 
     if isinstance(result, ToolResult):
-        citations, trace = apply_tool_result(citations, trace, result)
+        citations, chunks = apply_tool_result(citations, chunks, result)
 
     text = _render_result(result)
     trace = record_tool(trace, tool_call["name"], tool_call["args"], text)
@@ -60,5 +61,6 @@ def run(state: FinderState) -> dict:
             citations,
         ),
         "citations": citations,
+        "retrieved_chunks": chunks,
         "trace": trace,
     }

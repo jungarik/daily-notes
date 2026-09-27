@@ -19,6 +19,7 @@ CONTEXT_TOOLS = {
     "find_related_notes",
     "find_link_candidates",
     "filter_owned_notes",
+    "read_state",
 }
 
 # Back-compat alias for the classify phase's original name.

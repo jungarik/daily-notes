@@ -443,12 +443,11 @@ class SpecTests(unittest.TestCase):
     def test_it_never_pauses_so_it_needs_no_resume(self):
         self.assertIsNone(agent.SPEC.resume)
 
-    def test_it_grants_itself_no_read_scope(self):
-        """`may_read` gates the `read_state` tool, which finder does not call.
-        An allowlist for a tool an agent never reaches is config nothing
-        exercises — and it goes stale silently, as it did when it still named
-        the deleted `conversation` agent."""
-        self.assertEqual((), agent.SPEC.may_read)
+    def test_it_may_read_the_turns_other_hops(self):
+        """`may_read` gates `read_state`. Every agent holds the wildcard now —
+        the allowlist catches a mistake, not a policy — and what separates the
+        agents is which fields each picks out of what it reads."""
+        self.assertEqual(("*",), agent.SPEC.may_read)
 
     def test_the_description_tells_the_router_it_only_reads(self):
         self.assertIn("read", agent.SPEC.description.lower())

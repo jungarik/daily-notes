@@ -34,7 +34,8 @@ importing each other:
 class AgentSpec:
     name: str
     description: str          # what the router reads when it has to choose
-    may_read: tuple[str]      # whose states this agent may fetch ("*" for all)
+    may_read: tuple[str]      # whose states this agent may fetch ("*" for all);
+                              # the reader then picks which fields it keeps
     start: Callable           # (AgentRequest) -> AgentResult
     resume: Callable | None   # (token, decision, context) -> AgentResult
 ```
@@ -167,9 +168,9 @@ this list. The message carries the intent; the history says only what is already
 done. The loop does **not** expand ids into titles — that would cost a read per
 hop to improve a prompt that is already sufficient.
 
-The responder is unaffected by any of this: it has `may_read=["*"]` and reads
-whole states, so removing prose from the history costs the user-facing reply
-nothing.
+No agent is starved by this: every one of them holds `may_read=["*"]` and reads
+the states behind the refs, so keeping prose out of the history costs nothing —
+it only stops an agent describing itself to the router.
 
 ## State, and the turn tree
 
@@ -201,26 +202,29 @@ Not a loop API that agents import — a **tool**, scoped by the registry:
 ```python
 AGENTS = {
     "responder": AgentSpec(..., may_read=["*"]),
-    "finder":    AgentSpec(..., may_read=[]),
-    "reminder":  AgentSpec(..., may_read=[]),
-    "enricher":  AgentSpec(..., may_read=[]),
+    "finder":    AgentSpec(..., may_read=["*"]),
+    "reminder":  AgentSpec(..., may_read=["*"]),
+    "enricher":  AgentSpec(..., may_read=["*"]),
+    "router":    AgentSpec(..., may_read=[]),   # no tool path at all
 }
 ```
 
-`read_state(state_id)` lives in `tools/responder/` — `TOOLS`, `CONTEXT_TOOLS`, `db`,
-the same shape as every other tool namespace — and an agent runs it through
-`execute_allowed_tool` with its own `may_read` in the context. It is a
-**context** tool, never advertised in `TOOL_SPECS`: a node calls it
-deterministically, the model never asks for it.
+`read_state(state_id)` is duplicated into each vertical that calls it —
+`tools/enricher/`, `tools/reminder/`, `tools/responder/`, each with its own
+`db.get_state` — the same trade every other tool and `db.py` makes. An agent
+runs it through `execute_allowed_tool` with its own `may_read` in the context.
+It is a **context** tool, never advertised in `TOOL_SPECS`: the agent calls it
+deterministically before its model call, and the model never asks for it.
 
-**Only the responder reads today**, which is why the namespace is named for
-it and why every other `may_read` is empty. An allowlist for a tool an agent
-never calls is config nothing exercises — it goes stale silently, as those
-three did while still naming the deleted `conversation` agent. A second
-reader grants itself a scope at the same time it starts reading.
+**What each reader keeps is the real limit.** The allowlist says *whose* state
+may be read; the reader decides *which fields* survive into its prompt. The
+enricher and reminder take `answer`, `citations` and `retrieved_chunks` into
+`PlanRequest.prior_states` and drop `trace`, which records which nodes ran rather
+than what was found. That is why a wildcard everywhere is not a free-for-all:
+nothing reaches a prompt that the reader did not name.
 
 Two independent checks, and only one of them is a security boundary.
-`tools/responder/db.get_state` scopes the row to the caller's `user_id` **in SQL**,
+Each vertical's `db.get_state` scopes the row to the caller's `user_id` **in SQL**,
 so no allowlist can cross an owner. `may_read` is the softer one: every agent is
 our own code, so it catches a wiring mistake rather than a lying caller. An agent
 asking for a state it may not read gets an error, not the row — and the error

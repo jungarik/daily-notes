@@ -492,10 +492,20 @@ only module that names an agent — and never an edit to the loop.
 `detect_reminder`); `enricher` owns note writes; `reminder` owns scheduling;
 `responder` is the only one that writes prose to the user. A work agent puts its
 output in `AgentResult.state` and reports what it touched as typed
-`Ref(kind, id)`; the responder reaches an earlier hop's state through the
-`read_state` tool, bounded by that agent's `may_read`. It is the only agent
-that reads a peer's state today, so it is the only one with a non-empty
-`may_read` — an allowlist for a tool an agent never calls goes stale unseen.
+`Ref(kind, id)`.
+
+**A hop reads what the turn already found.** The history carries refs, not
+prose, so an agent reaches an earlier hop's state through the `read_state`
+tool. Every agent but the router holds `may_read = ("*",)` and reads
+deterministically before its model call — the router has no tool path. What
+separates them is the *fields* each keeps: the enricher and reminder take
+`answer`, `citations` and `retrieved_chunks` into `PlanRequest.prior_states`, so
+a write is planned against a search that already ran instead of repeating it;
+`trace` is never taken, because it records which nodes ran rather than what was
+found. The allowlist catches a mistake — a copied adapter reaching for a state
+it never meant to — not a lying agent; the tenancy check in `db.get_state` is
+the guard that holds unconditionally. `read_state` is duplicated per vertical,
+like `db.py`, so one agent's tool surface cannot ripple into another's.
 
 **Writes always pause.** An agent that wants to write returns `needs_input` with
 an `ask`; the section stores `TurnOutcome.pending` and
@@ -535,8 +545,9 @@ one-type-per-file.
 
 **Agent tools.** Concrete tool implementations live in the root-level `tools/`
 package, not inside `agents/*/tools`: `tools/finder/` for reads, `tools/enricher/`
-and `tools/reminder/` for writes, and `tools/responder/` for `read_state` —
-the responder's own tool, and its only caller. Each tool file exposes `invoke(context: dict, args: dict)` and
+and `tools/reminder/` for writes. `read_state` lives in each vertical that
+calls it — enricher, reminder and responder — duplicated for the same reason
+`db.py` is. Each tool file exposes `invoke(context: dict, args: dict)` and
 returns `ToolResult` with typed `data: dict`; specs stay with their namespace as
 `tools/<agent>/specs.py`. Agents execute them through
 `agents/runtime/execute_tool.py`, and callers render `ToolResult.data` to JSON
@@ -568,7 +579,8 @@ when the code it describes is deleted, delete it.
 - `devdoc/agents-architecture.md` — the map: which folder is what, and the rules
   that keep it extendable.
 - `devdoc/agent-workflows-langgraph.md` — the graphs *inside* agents (finder,
-  enricher, reminder) and the two persistence boundaries.
+  enricher, reminder), and why LangGraph persists nothing: `agent_states` is the
+  only durable record of a hop.
 - `devdoc/agentic-enricher.md` — the note action/enrichment agent.
 - `devdoc/agentic-reminder.md` — the reminder agent.
 - `devdoc/action-idempotency.md` — how a confirmed write runs at most once.

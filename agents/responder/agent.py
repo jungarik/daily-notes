@@ -42,6 +42,8 @@ DESCRIPTION = (
     "the turn is finishing, and never as a candidate.")
 
 # It relays what every other agent did, so it reads every agent's state.
+# Every agent holds this now; what separates them is the fields each
+# picks out of what it reads.
 MAY_READ = ("*",)
 
 NOTHING_HAPPENED = "I could not do anything with that."
@@ -91,7 +93,9 @@ def write_fallback(history: tuple[HistoryEntry, ...]) -> str:
     return "; ".join(described).capitalize() + "." if described else NOTHING_HAPPENED
 
 
-def _read_states(request: AgentRequest) -> dict[str, dict]:
+def _read_states(user_id: int,
+                 history: tuple[HistoryEntry, ...],
+                 correlation_id: str) -> dict[str, dict]:
     """What each earlier hop actually did, keyed by agent.
 
     The history carries refs, not prose, so an answer another agent composed —
@@ -104,13 +108,13 @@ def _read_states(request: AgentRequest) -> dict[str, dict]:
     worse reply, and a missing reply is a worse turn.
     """
     context = {
-        "user_id": request.context["user_id"],
-        "agent": request.agent,
+        "user_id": user_id,
+        "agent": NAME,
         "may_read": MAY_READ,
     }
     states = {}
 
-    for entry in request.history:
+    for entry in history:
         if entry.state_id is None or entry.agent == NAME:
             continue
 
@@ -126,7 +130,7 @@ def _read_states(request: AgentRequest) -> dict[str, dict]:
             states[entry.agent] = saved.data.get("state") or {}
         else:
             logger.warning("responder could not read %s state on turn %s",
-                           entry.agent, request.correlation_id)
+                           entry.agent, correlation_id)
 
     return states
 
@@ -145,7 +149,9 @@ def _build_request(request: AgentRequest, awaiting: str | None) -> dict:
                 _render_hops(request.history),
                 request.context.get("locale") or "en",
                 awaiting,
-                _read_states(request)),
+                _read_states(request.context["user_id"],
+                             request.history,
+                             request.correlation_id)),
         }],
     }
 
@@ -196,5 +202,5 @@ SPEC = AgentSpec(
     name=NAME,
     description=DESCRIPTION,
     start=start,
-    may_read=("*",),
+    may_read=MAY_READ,
 )

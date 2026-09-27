@@ -233,8 +233,8 @@ class FailureTests(unittest.TestCase):
 class SpecTests(unittest.TestCase):
     def test_the_spec_declares_its_name_and_read_scope(self):
         self.assertEqual("enricher", agent.SPEC.name)
-        self.assertEqual((), agent.SPEC.may_read,
-                         "it never calls read_state, so it grants itself nothing")
+        self.assertEqual(("*",), agent.SPEC.may_read,
+                         "it reads what earlier hops in the turn produced")
         self.assertTrue(agent.SPEC.description.strip())
         self.assertIsNotNone(agent.SPEC.resume)
 

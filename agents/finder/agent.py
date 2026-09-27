@@ -48,6 +48,12 @@ DESCRIPTION = (
     "Use for anything the user wants to know or find. Reads only; it never "
     "creates, edits or schedules anything.")
 
+# Every prior hop is readable: an agent plans better knowing what the
+# turn already found. The allowlist stays as the guard against a
+# mistake — a copied adapter reaching for a state it never meant to —
+# and what actually reaches a prompt is the fields this agent picks.
+MAY_READ = ("*",)
+
 # How far one run may travel. A read step takes an `act` edge as well as its
 # own `reason` edge, so the tool budget is widened into graph hops; the floor
 # keeps a small budget from tripping the limit on a turn that is behaving.
@@ -98,6 +104,7 @@ def start(request: AgentRequest) -> AgentResult:
         state={
             "answer": state.get("reply") or "",
             "citations": citations,
+            "retrieved_chunks": state.get("retrieved_chunks") or [],
             "trace": state.get("trace") or {},
         },
         produced=_collect_refs(citations))
@@ -107,4 +114,5 @@ SPEC = AgentSpec(
     name=NAME,
     description=DESCRIPTION,
     start=start,
+    may_read=MAY_READ,
 )

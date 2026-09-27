@@ -24,6 +24,7 @@ from agents.contracts import (
     AgentRequest,
     AgentResult,
     AgentSpec,
+    HistoryEntry,
     PlanRequest,
     Ref,
     ToolResult,
@@ -44,6 +45,18 @@ DESCRIPTION = (
     "request is about being reminded, alerted, or nudged at some point in the "
     "future. Does not create or edit note content.")
 
+# Every prior hop is readable: an agent plans better knowing what the
+# turn already found. The allowlist stays as the guard against a
+# mistake — a copied adapter reaching for a state it never meant to —
+# and what actually reaches a prompt is the fields this agent picks.
+MAY_READ = ("*",)
+
+# What a planner takes out of a peer's state. `trace` is deliberately absent:
+# it says which nodes ran, which helps a human read a turn back and would
+# otherwise fill this agent's prompt with tool dumps.
+USABLE_STATE_FIELDS = ("answer", "citations", "retrieved_chunks")
+
+
 
 def _read_note_ids(references: dict) -> list[int]:
     """The note ids the turn referenced, as ints.
@@ -63,20 +76,99 @@ def _read_note_ids(references: dict) -> list[int]:
     return note_ids
 
 
+def _read_prior_states(user_id: int,
+                       history: tuple[HistoryEntry, ...],
+                       correlation_id: str) -> dict[str, dict]:
+    """What earlier hops in this turn produced, keyed by agent.
+
+    The history carries typed refs, not prose, so what another agent actually
+    found is only reachable through `read_state`. Read deterministically before
+    planning rather than as a tool the planner may call: the planner has a small
+    step budget and should spend it on resolving the write, not on deciding it
+    wants a record already sitting in the turn.
+
+    Only the fields a planner can use are kept. `trace` records which nodes ran
+    — useful for reading a turn back, not for planning — and taking it would put
+    the whole debug blob in the prompt.
+
+    A state that cannot be read is skipped, never fatal: planning with less
+    context is worse than planning with more, and far better than no plan.
+    """
+    context = {
+        "user_id": user_id,
+        "agent": NAME,
+        "may_read": MAY_READ,
+    }
+    prior = {}
+
+    for entry in history:
+        if entry.state_id is None or entry.agent == NAME:
+            continue
+
+        saved = execute_allowed_tool(
+            tools.TOOLS,
+            tools.CONTEXT_TOOLS,
+            context,
+            "read_state",
+            {"state_id": entry.state_id},
+            NAME)
+
+        if not isinstance(saved, ToolResult) or (saved.data or {}).get("error"):
+            logger.warning("reminder could not read %s state on turn %s",
+                           entry.agent, correlation_id)
+            continue
+
+        state = saved.data.get("state") or {}
+        kept = {key: state[key] for key in USABLE_STATE_FIELDS if key in state}
+
+        if kept:
+            prior[entry.agent] = kept
+
+    return prior
+
+
+def _cited_note_ids(prior_states: dict[str, dict]) -> list[int]:
+    """The notes earlier hops cited, in the order they were found.
+
+    A reminder needs a note to hang on. When the client named one it is in
+    `references`; when the user said "remind me about that" after a search, the
+    only record of which note "that" is lives in the finder's citations.
+    """
+    note_ids = []
+
+    for state in prior_states.values():
+        for citation in state.get("citations") or []:
+            try:
+                note_id = int(citation["note_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if note_id not in note_ids:
+                note_ids.append(note_id)
+
+    return note_ids
+
+
 def _build_plan_request(request: AgentRequest, now, tz, locale: str) -> PlanRequest:
     """The planning contract, from the envelope the loop handed over.
 
     The material the caller had already resolved arrives in `references`; the
-    clock and locale arrive in `context`.
+    clock and locale arrive in `context`; what earlier hops in this turn found
+    is read from their saved state.
     """
     references = request.references
+    prior_states = _read_prior_states(
+        request.context["user_id"], request.history, request.correlation_id)
 
     return {
         "instruction": request.message.strip(),
         "conversation_summary": str(references.get("conversation_summary") or ""),
-        "referenced_note_ids": _read_note_ids(references),
+        # What the client named wins; what an earlier hop found is the
+        # fallback, so "remind me about that" after a search resolves.
+        "referenced_note_ids": _read_note_ids(references) or _cited_note_ids(prior_states),
         "citations": list(references.get("citations") or []),
         "resolved_entities": dict(references.get("resolved_entities") or {}),
+        "prior_states": prior_states,
         "locale": locale,
         "timezone": str(tz) if tz is not None else None,
         "now": now.isoformat() if hasattr(now, "isoformat") else None,
@@ -223,4 +315,5 @@ SPEC = AgentSpec(
     description=DESCRIPTION,
     start=start,
     resume=resume,
+    may_read=MAY_READ,
 )

@@ -12,6 +12,7 @@ from tools.enricher import (
     link_notes,
     list_paths,
     list_tags,
+    read_state,
     set_note_path,
 )
 from tools.enricher.specs import (
@@ -31,6 +32,7 @@ TOOLS = {
     "add_note_tags": add_note_tags.invoke,
     "enrich_note": enrich_note.invoke,
     "link_notes": link_notes.invoke,
+    "read_state": read_state.invoke,
 }
 
 
