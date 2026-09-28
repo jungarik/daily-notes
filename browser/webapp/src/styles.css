@@ -27,14 +27,16 @@
   body { display: flex; flex-direction: column; }
 
   /* Instagram-style stats header (glass) */
+  /* No bar: the header is a transparent strip the feed scrolls under. The two
+     actions carry their own glass (see .hdr-add / .hdr-filter) and the numbers
+     carry a shadow instead, so nothing here paints a background. */
   header {
     position: sticky; top: 0; z-index: 5;
     display: flex; align-items: center;
     padding: 14px 0;
-    background: rgba(25,25,25,.72);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
-    backdrop-filter: blur(18px) saturate(160%);
+    pointer-events: none;
   }
+  header button { pointer-events: auto; }
   /* The stats keep their natural width in the middle; the two side columns
      split what is left, so each action centres in the gap between the numbers
      and its screen edge. An empty right column still holds its share, which is
@@ -42,8 +44,10 @@
   .hdr-stats { display: flex; gap: 30px; }
   .hdr-side { flex: 1; display: flex; align-items: center; justify-content: center; }
   .stat { text-align: center; min-width: 54px; }
-  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; }
-  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
+  /* With no bar behind them the stats can land on a note's photo, so they take
+     a shadow rather than a panel — the one legibility fix that adds no surface. */
+  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
 
   /* Floating liquid-glass bottom tab bar */
   /* Floating dock: chat circle (left) · tab pill (center) · search circle (right) */
@@ -312,39 +316,30 @@
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-  /* Both header actions span the stat block exactly: top edge on the numbers'
-     top, bottom edge on the labels' bottom. That span is
-     19px*1.15 + 11px*1.5 = 38.35px, and because the stat block is the tallest
-     thing in the header, an element that tall and vertically centred lands on
-     it with no offset — the earlier nudges are gone.
+  /* Two floating 54px circles, the size and lift of the dock's `.fab`, now that
+     the header itself paints nothing. Both carry the dock's shadow — a cast
+     shadow plus an inset top highlight — which is what makes a thing read as
+     floating above the feed rather than sitting on a bar.
 
-     Each `viewBox` is cropped to its own path (see Header.jsx), so these
-     heights are the height of the VISIBLE INK. Uncropped, the funnel filled
-     only 14 of 24 units and a 38px box drew a 24px funnel floating in the
-     middle, which is why it never reached either edge.
-
-     Stroke still converts: at rendered size S over a viewBox of H units, a
-     stroke-width of W paints W * S/H pixels. Both solve to 1.8px, the stem of
-     a 19px numeral at weight 600. */
+     At 54px each circle is taller than the 38.35px stat block, so the header
+     sizes to them and they are simply centred. The old nudges that put a glyph
+     on the numbers' line are gone: a circle that overhangs the block on both
+     sides has no meaningful edge to align. */
   .hdr-add, .hdr-filter {
+    flex: none; width: 54px; height: 54px;
     display: flex; align-items: center; justify-content: center;
     padding: 0;
-    background: transparent;
-    color: var(--text-muted);
+    border-radius: 50%;
     cursor: pointer;
+    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
   }
 
   /* Add note: the header's primary action, in the same #2f6feb the pill's send
-     button and `.confirm-btn.yes` use — this app's "commit" blue. `.ts-send` is
-     already a blue disc with a white glyph, so the plus reads as the same kind
-     of control rather than as a new one. (Violet is the accent for *state* —
-     an active filter, a note's path — which is a different job.)
-
-     54px around a 20px glyph, both from the dock's `.fab`, so the two ends of
-     the screen agree on what a round action looks like. That makes the disc the
-     tallest thing in the header — taller than the 38.35px stat block — so the
-     header grows to fit it and the disc is simply centred: top-aligning it to
-     the numbers stops being meaningful once it overhangs them on both sides.
+     button and `.confirm-btn.yes` use — this app's "commit" blue. (Violet is
+     the accent for *state* — an active filter, a note's path — a different
+     job.) It keeps the solid fill rather than going glass: a backdrop blur
+     does nothing under an opaque colour, and turning it translucent would make
+     it the third identical grey circle on screen.
 
      The border is `--border`, NOT the dock's white hairline: white at 14% over
      a saturated blue is invisible, and a mid grey would be worse still — at
@@ -352,23 +347,23 @@
      nearly the same luminance. Dark is the only grey that reads as an edge
      here (#333 gives 2.76:1). */
   .hdr-add {
-    width: 54px; height: 54px;
     border: 1.5px solid var(--border);
-    border-radius: 50%;
     background: #2f6feb;
     color: #fff;
   }
   .hdr-add svg { width: 20px; height: 20px; stroke-width: 1.64; }   /* -> 2.40px */
 
-  /* Filter: three dots in a row, no ring, spanning the same 19px as the plus
-     glyph beside it — so the two actions match on the glyph, not on the button.
-     Equal dots and gaps: 3.8px each. Filled, so there is no stroke to convert.
-     Horizontal, so 19px is now the width and the height follows the dot.
-
-     Centred on the NUMBERS row rather than on the block: the numbers' centre is
-     24.92px from the header top, the block's is 33.17px, hence -8.25px. */
-  .hdr-filter { border: none; transform: translateY(-8.25px); }
-  .hdr-filter svg { width: 19px; height: 3.8px; }
+  /* Filter: the dock's glass, so the dots get a real 54px tap target instead of
+     a 20x4px sliver. Three dots in a row, filled, equal dots and gaps — 4px
+     each at this size — matching the plus glyph's 20px span. */
+  .hdr-filter {
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(48,48,48,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    color: var(--text-muted);
+  }
+  .hdr-filter svg { width: 20px; height: 4px; }
   .hdr-filter.active { color: var(--accent); }
   .hdr-filter.hidden { display: none; }
 
