@@ -1,76 +1,294 @@
-"""Guard the simplified two-agent architecture."""
+"""Guard the farm's shape: four peer agents, one composition root, no back doors.
+
+The structure is the product here — a new capability is meant to be a file plus
+a registry entry — so these assertions are about layout and isolation rather
+than behaviour.
+"""
 
 import unittest
 from pathlib import Path
 
-from agents import bootstrap, conversation
-from agents.enrich import api as enrich
-from agents.enrich import handoff_api as enrich_handoff
+from agents import bootstrap
+from tools import (
+    classifier as classifier_tools,
+    enricher as enricher_tools,
+    reminder as reminder_tools,
+)
 
 
 class AgentStructureTests(unittest.TestCase):
-    def test_two_agent_structure(self):
+    def test_specialist_tool_specs_match_registered_handlers(self):
+        for specialist in (enricher_tools, classifier_tools, reminder_tools):
+            with self.subTest(specialist=specialist.__name__):
+                advertised = {
+                    spec["function"]["name"] for spec in specialist.TOOL_SPECS
+                }
+                self.assertLessEqual(advertised, set(specialist.TOOLS))
+                self.assertLessEqual(specialist.WRITE_TOOLS, advertised)
+
+        self.assertNotIn("create_reminder", enricher_tools.TOOLS)
+        self.assertNotIn("create_reminder", {
+            spec["function"]["name"] for spec in enricher_tools.TOOL_SPECS
+        })
+
+    def test_the_agent_layout(self):
         root = Path(__file__).parents[1] / "agents"
         expected = {
-            "conversation/api.py", "conversation/state.py", "conversation/graph.py",
-            "conversation/routing.py", "conversation/prompts.py",
-            "conversation/db.py",
-            "conversation/nodes/reason.py", "conversation/nodes/act.py",
-            "conversation/nodes/handoff.py", "conversation/nodes/approve.py",
-            "enrich/api.py", "enrich/state.py",
-            "enrich/graph.py", "enrich/routing.py",
-            "enrich/db.py",
-            "enrich/handoff_api.py",
-            "enrich/prompts.py",
-            "enrich/nodes/reason.py", "enrich/nodes/plan.py",
-            "enrich/nodes/act.py", "enrich/nodes/approve.py",
-            "enrich/nodes/classify/gather.py", "enrich/nodes/classify/propose.py",
-            "enrich/nodes/classify/normalize.py",
-            "enrich/nodes/schedule/resolve.py", "enrich/nodes/schedule/build.py",
-            "enrich/nodes/write/link.py", "enrich/nodes/write/stage.py",
-            "enrich/nodes/write/validate.py", "bootstrap.py",
-            "runtime/execute_tool.py",
+            "enricher/state.py",
+            "enricher/graph.py", "enricher/routing.py",
+            "enricher/agent.py",
+            "enricher/prompts.py",
+            "enricher/nodes/plan.py", "enricher/nodes/act.py",
+            "enricher/nodes/write/link.py", "enricher/nodes/write/validate.py",
+            "classifier/__init__.py", "classifier/agent.py", "classifier/graph.py",
+            "classifier/state.py", "classifier/prompts.py",
+            "classifier/nodes/gather.py", "classifier/nodes/propose.py",
+            "classifier/nodes/normalize.py",
+            "reminder/graph.py", "reminder/state.py",
+            "reminder/prompts.py", "reminder/agent.py",
+            "reminder/nodes/resolve.py", "reminder/nodes/build.py",
+            "finder/agent.py", "finder/graph.py", "finder/routing.py",
+            "finder/state.py", "finder/prompts.py",
+            "finder/nodes/reason.py", "finder/nodes/act.py",
+            "responder/agent.py", "responder/prompts.py",
+            "router/__init__.py", "router/agent.py", "router/prompts.py",
+            "runtime/loop.py", "runtime/registry.py",
+            "runtime/state_store.py", "runtime/execution_ledger.py",
+            "runtime/model_gateway.py", "runtime/execute_tool.py",
+            "contracts/__init__.py", "contracts/status.py",
+            "contracts/user_context.py", "contracts/ref.py",
+            "contracts/history_entry.py", "contracts/agent_request.py",
+            "contracts/agent_result.py", "contracts/agent_spec.py",
+            "contracts/turn_outcome.py", "contracts/plan_request.py",
+            "contracts/tool_result.py", "contracts/agent_kind.py",
+            "bootstrap.py",
             "../common/__init__.py", "../common/embedings.py", "../common/helper.py",
             "../tools/__init__.py",
-            "../tools/conversation/__init__.py",
-            "../tools/conversation/specs.py",
-            "../tools/conversation/db.py",
-            "../tools/conversation/search_notes.py",
-            "../tools/conversation/get_note.py",
-            "../tools/conversation/neighbors.py",
-            "../tools/conversation/list_reminders.py",
-            "../tools/conversation/list_agenda.py",
-            "../tools/conversation/list_paths.py",
-            "../tools/conversation/detect_reminder.py",
-            "../tools/enrich/__init__.py",
-            "../tools/enrich/db.py",
-            "../tools/enrich/specs.py",
-            "../tools/enrich/list_paths.py",
-            "../tools/enrich/list_tags.py",
-            "../tools/enrich/get_note_context.py",
-            "../tools/enrich/get_vault_context.py",
-            "../tools/enrich/find_related_notes.py",
-            "../tools/enrich/create_note.py",
-            "../tools/enrich/set_note_path.py",
-            "../tools/enrich/add_note_tags.py",
-            "../tools/enrich/enrich_note.py",
-            "../tools/enrich/create_reminder.py",
+            "../tools/finder/__init__.py",
+            "../tools/finder/specs.py",
+            "../tools/finder/db.py",
+            "../tools/finder/search_notes.py",
+            "../tools/finder/get_note.py",
+            "../tools/finder/neighbors.py",
+            "../tools/finder/list_reminders.py",
+            "../tools/finder/list_agenda.py",
+            "../tools/finder/list_paths.py",
+            "../tools/finder/detect_reminder.py",
+            "../tools/enricher/__init__.py",
+            "../tools/enricher/db.py",
+            "../tools/enricher/specs.py",
+            "../tools/enricher/list_paths.py",
+            "../tools/enricher/list_tags.py",
+            "../tools/enricher/get_note_context.py",
+            "../tools/enricher/get_vault_context.py",
+            "../tools/enricher/find_related_notes.py",
+            "../tools/enricher/create_note.py",
+            "../tools/enricher/set_note_path.py",
+            "../tools/enricher/add_note_tags.py",
+            "../tools/enricher/read_state.py",
+            "../tools/classifier/__init__.py",
+            "../tools/classifier/db.py",
+            "../tools/classifier/specs.py",
+            "../tools/classifier/enrich_note.py",
+            "../tools/classifier/get_note_context.py",
+            "../tools/classifier/get_vault_context.py",
+            "../tools/classifier/find_related_notes.py",
+            "../tools/classifier/list_paths.py",
+            "../tools/classifier/list_tags.py",
+            "../tools/classifier/read_state.py",
+            "../tools/reminder/create_reminder.py",
+            "../tools/reminder/specs.py", "../tools/reminder/db.py",
+            "../tools/reminder/get_note_context.py",
+            "../tools/reminder/read_state.py",
+            "../tools/responder/__init__.py",
+            "../tools/responder/db.py",
+            "../tools/responder/read_state.py",
         }
         self.assertEqual(set(), {path for path in expected if not (root / path).is_file()})
-        self.assertEqual([], list((root / "conversation" / "tools").rglob("*.py")))
-        self.assertEqual([], list((root / "enrich" / "tools").rglob("*.py")))
+        self.assertEqual([], list((root / "enricher" / "tools").rglob("*.py")))
         self.assertEqual([], list((root / "knowledge").rglob("*.py")))
-        self.assertEqual([], list((root / "reminder").rglob("*.py")))
 
-    def test_public_facades_and_registry(self):
-        self.assertTrue(callable(conversation.start_turn))
-        self.assertTrue(callable(conversation.confirm))
-        self.assertTrue(callable(conversation.evaluate_turn))
-        self.assertTrue(callable(enrich_handoff.plan_action))
-        self.assertTrue(callable(enrich_handoff.execute_action))
-        self.assertTrue(callable(enrich.propose_capture))
-        self.assertTrue(callable(enrich.confirm_capture))
-        self.assertIs(bootstrap.registry.get("enrich"), enrich_handoff)
+    def test_the_replaced_handoff_path_is_gone(self):
+        """The loop replaced it. Left behind, the old dispatch would be a
+        second way to reach a specialist — and the one that let an agent name a
+        peer. The `handoff_api` modules went the same way: with no handoff left
+        to serve, planning belongs in the agent that pauses on it.
+
+        The enricher's `reason`/`approve`/`stage` nodes went for the same
+        reason: they were the interactive capture graph, which nothing invoked
+        once the loop took over the pause. A second, in-graph way to pause is
+        exactly the duplicate path this assertion exists to catch — and
+        `runtime/checkpoint.py`, which existed to persist that pause, went with
+        them. No graph compiles with a checkpointer now."""
+        root = Path(__file__).parents[1]
+
+        for gone in ("agents/conversation", "agents/runtime/handoff_dispatch.py",
+                     "agents/runtime/specialist_registry.py", "api/chat",
+                     "tools/conversation", "agents/enrich/handoff_api.py",
+                     "agents/enricher/handoff_api.py",
+                     "agents/reminder/handoff_api.py",
+                     "agents/enricher/nodes/reason.py",
+                     "agents/enricher/nodes/approve.py",
+                     "agents/enricher/nodes/write/stage.py",
+                     "agents/runtime/checkpoint.py",
+                     "agents/enricher/nodes/classify",
+                     "tools/enricher/enrich_note.py"):
+            with self.subTest(gone=gone):
+                self.assertFalse((root / gone).exists())
+
+    def test_the_contracts_sit_at_the_bottom_of_the_graph(self):
+        """A contract may import its own package and the standard library, and
+        nothing else.
+
+        This is the property the whole farm rests on: four agents, the loop, the
+        router and the store agree on shapes without importing each other,
+        because the shapes depend on none of them. One import of an agent, a
+        tool, or the loop from here would make that a cycle.
+
+        The standard library is fine: `restore_clock` lives here because it only
+        ever reads a `UserContext`, and turning its strings back into a
+        `datetime` and a `ZoneInfo` is the whole of what it does."""
+        root = Path(__file__).parents[1] / "agents" / "contracts"
+        reaching = []
+
+        for path in root.glob("*.py"):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.startswith(("import ", "from ")):
+                    continue
+
+                if line.startswith("from agents.contracts"):
+                    continue
+
+                if "agents." in line or "tools." in line or line.startswith(
+                        ("import db", "from db ", "import config", "from config ")):
+                    reaching.append(f"{path.name}: {line.strip()}")
+
+        self.assertEqual([], reaching)
+
+    def test_every_contract_module_holds_one_type(self):
+        """The package is one type per file, so a reader finds `AgentSpec` in
+        `agent_spec.py` without opening anything else.
+
+        *Types*, not names: a module may also hold the functions that read and
+        build its own type — `user_context.py` carries `build_context` and
+        `restore_clock` — so `def` lines are skipped. They would otherwise trip
+        the assignment branch through a defaulted keyword argument."""
+        root = Path(__file__).parents[1] / "agents" / "contracts"
+
+        for path in root.glob("*.py"):
+            if path.name == "__init__.py":
+                continue
+
+            declared = [
+                line for line in path.read_text(encoding="utf-8").splitlines()
+                if line.startswith("class ") or (
+                    line and not line[0].isspace() and " = " in line
+                    and not line.startswith(("from ", "import ", "def ")))
+            ]
+
+            with self.subTest(module=path.name):
+                self.assertEqual(1, len(declared), declared)
+
+    def test_routing_and_the_loop_do_not_import_each_other(self):
+        """Neither half of the split may reach for the other.
+
+        `agents/router/` decides who runs next; `agents/runtime/loop.py` runs
+        them. They meet only in `bootstrap.py`, which registers the router in
+        the roster the loop is handed — that is what lets a routing rule change
+        without touching the loop, and the reverse. An import either way would
+        collapse the split back into one module with two reasons to change.
+
+        Only the loop machinery is off limits, not all of `runtime/`: the rest
+        of that package is shared infrastructure, and case 3 reaching
+        `model_gateway` is exactly what it is there for.
+
+        The router is a registered agent now, so the loop runs it — but by the
+        name the registry knows it by, never by importing the package. That is
+        what keeps the two sides swappable."""
+        root = Path(__file__).parents[1] / "agents"
+        loop_machinery = ("agents.runtime.loop", "agents.runtime.registry",
+                          "agents.runtime.state_store")
+        offending = []
+
+        for line in (root / "runtime" / "loop.py").read_text(
+                encoding="utf-8").splitlines():
+            if line.startswith(("import ", "from ")) and "agents.router" in line:
+                offending.append(f"runtime/loop.py: {line.strip()}")
+
+        for path in (root / "router").glob("*.py"):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.startswith(("import ", "from ")):
+                    continue
+
+                if any(module in line for module in loop_machinery):
+                    offending.append(f"router/{path.name}: {line.strip()}")
+
+        self.assertEqual([], offending)
+
+    def test_no_agent_names_another_agent(self):
+        """The whole point of the farm: routing is the loop's, so an agent
+        module that imports a sibling has re-introduced the coupling. Only
+        `bootstrap.py` may name them, because naming them is its job."""
+        root = Path(__file__).parents[1] / "agents"
+        peers = ("enricher", "classifier", "reminder", "finder", "responder",
+                 "router")
+        offending = []
+
+        for path in root.rglob("*.py"):
+            owner = path.relative_to(root).parts[0]
+
+            if owner not in peers:
+                continue
+
+            for line in path.read_text(encoding="utf-8").splitlines():
+                for peer in peers:
+                    if peer != owner and f"agents.{peer}" in line:
+                        offending.append(f"{path.relative_to(root)}: {line.strip()}")
+
+        self.assertEqual([], offending)
+
+    def test_agents_reach_persistence_only_through_tools(self):
+        """No agent owns SQL, and none reaches into a tool's database module.
+        Every read and write goes through `execute_tool`; thread state belongs
+        to the calling section (`api/chat_v2`).
+
+        Two modules are exempt, and both are infrastructure rather than an
+        agent's domain data: `runtime/execution_ledger.py` (at-most-once
+        bookkeeping) and `runtime/state_store.py` (the turn tree). Neither is
+        imported by an agent — the composition root hands them to the loop."""
+        root = Path(__file__).parents[1] / "agents"
+        self.assertEqual(
+            [],
+            [str(path.relative_to(root)) for path in root.rglob("db.py")],
+        )
+
+        reaching = []
+
+        for path in root.rglob("*.py"):
+            if path.name in {"execution_ledger.py", "state_store.py"}:
+                continue
+
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.startswith(("from db import", "import db")) or (
+                        line.startswith("from tools.") and line.endswith(" import db")):
+                    reaching.append(f"{path.relative_to(root)}: {line}")
+
+        self.assertEqual([], reaching)
+
+    def test_every_agent_is_registered_with_the_farm(self):
+        for name in ("enricher", "classifier", "reminder", "finder",
+                     "responder", "router"):
+            with self.subTest(agent=name):
+                self.assertEqual(name, bootstrap.agents.get(name).name)
+
+    def test_neither_singleton_is_ever_a_routing_candidate(self):
+        """The responder takes the last hop by construction; offering it as a
+        peer would let a turn answer without doing anything. The router is not
+        a choice either — offering it would let a decision pick itself."""
+        candidates = {agent["name"] for agent in bootstrap.agents.list_agents()}
+
+        self.assertNotIn("responder", candidates)
+        self.assertNotIn("router", candidates)
 
 
 if __name__ == "__main__":

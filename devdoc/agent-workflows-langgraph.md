@@ -1,112 +1,146 @@
 # Agent workflows on LangGraph
 
-Status: **implemented.** Conversation and Enrich use compiled LangGraph
-`StateGraph` workflows. Knowledge is a Conversation capability and Reminder is
-an Enrich capability; neither is a separately registered agent.
-Existing API response shapes remain unchanged.
+Status: **implemented.** Each agent that needs more than one model step compiles
+its own `StateGraph`. The graphs are *inside* agents — how one agent does its
+job. Who runs at all is the loop's (`devdoc/agent-loop.md`), and no graph
+here routes to another agent.
 
 ## Persistence boundary
 
-`PostgresSaver` is the execution-state source of truth. Each graph uses a scoped
-thread id (`chat:<id>` or `enrich:<id>`), checkpoints every node boundary, and
-resumes failures from the last successful node. The saver schema is installed
-by API startup.
+**Nothing about a turn is persisted by LangGraph.** No graph in this repo
+compiles with a checkpointer, so no graph carries a `thread_id`, and the
+library is used for what it is good at here: sequencing steps *within* one
+agent hop, in memory, start to finish.
 
-`chat_threads.messages` and `chat_threads.pending` remain an application
-projection for ownership checks, API/UI reads, and evaluation. They no longer
-decide which workflow node resumes. State contains only serializable data;
-runtime tool contexts are reconstructed inside nodes with strict checkpoint
-deserialization enabled.
+`agent_states` (migration 0022) is the **turn tree** and the only durable
+record of a hop: one row per hop, written by the loop, joined by
+`correlation_id`. It is what survives a suspend, what `read_state` reads, and
+what the confirm path rebuilds the history from.
 
-## Chat graph
+A **pause is the loop's**, not a graph's. An agent that wants to write returns
+`needs_input` with the planned action serialised into a token; the section
+stores it as `TurnOutcome.pending`, and `resume` performs the write once,
+guarded by `action_executions`. No graph state is rehydrated, so no planning
+node is rerun — the plan travelled in the token.
 
-`ChatState` carries provider messages, per-turn context, step count, current tool
-call, terminal response, pending action, specialist identity, and an ordered
-cross-turn `reference_notes` list. Response citations remain turn-local.
+`chat_threads.messages` is an application projection owned by `api/chat_v2` — the
+conversation transcript, appended by the section, not by any agent.
 
-The loop is four role-named nodes — `reason`, `act`, `handoff`, `approve` — each a
-module under `nodes/` with a single public `run`. A single `handoff` node routes
-every write/reminder request to its owning specialist: the tool name maps to a
-specialist mode via `HANDOFF_SPECIALIST` (`perform_action`→enrich,
-`set_reminder`→reminder), so a new capability is a map entry plus a tool spec, not
-a new node. The old `pre_route` fast path is gone: its regex now lives in a
-`detect_reminder` read tool the model can call to classify a message cheaply (no
-model turn) before choosing `set_reminder`. The former `final` node is folded into
-`reason`: once the read step budget is spent, `reason` makes one tool-free call so
-it must answer.
+### What used to be here
 
-```mermaid
-flowchart TD
-    S((START)) -->|turn| M[reason]
-    S -->|pending| H[approve / interrupt]
-    M -->|no tool| E((END))
-    M -->|read| T[act]
-    M -->|perform_action / set_reminder| A[handoff]
-    T --> M
-    A -->|pending| H
-    A -->|unresolved| M
-    H -->|Command resume| M
-```
+`agents/runtime/checkpoint.py` wrapped a `PostgresSaver` and was called once at
+API startup to create LangGraph's checkpoint tables. By the time it was deleted
+nothing wrote to them: the enricher's interrupt graph was unreachable, the
+reminder planned without a config, and the finder's `InMemorySaver` was handed a
+fresh `thread_id` per turn — an entry per hop that nothing read and nothing
+evicted. The tables were **left in the database** rather than dropped; they are
+idle, and an irreversible `DROP` is not worth the tidiness.
 
-`handoff` plans through Enrich for both modes; `reminder` names a mode, not a
-separately registered agent. `approve` interrupts with the stable action id and
-proposal. The confirm API uses `Command(resume=approve)`, so planning nodes are
-not rerun. After approval, the node executes through Enrich. Old projections also
-default to Enrich.
+Reintroducing durable checkpointing is a real option if an agent ever needs to
+pause *mid-graph* rather than between hops. It would replace the action token,
+not `agent_states`, and `git log` has the previous implementation.
 
-## Enrich graphs
+## Finder graph
 
-`EnrichState` carries messages, context, step count, tool call, terminal state,
-pending write, and confirmation flags. Every node is a module under `nodes/` with
-a single public `run`: the loop primitives `reason`/`act`/`plan`/`approve` are
-flat; the multi-step phases live in subpackages `classify/` (gather → propose →
-normalize), `schedule/` (resolve → build), and `write/` (link, stage, validate).
-`reason` folds in the old `final` node (a tool-free call once the budget is
-spent).
+A plain ReAct loop over read tools, with no pause and no handoff.
 
 ```mermaid
 flowchart TD
-    S((START)) -->|turn| M[reason]
-    S -->|pending| H[approve / interrupt]
+    S((START)) --> M[reason]
     M -->|no tool| E((END))
-    M -->|read| T[act]
-    M -->|metadata write| MC[classify_gather]
-    M -->|reminder write| RM[schedule_resolve]
-    M -->|simple write| P[stage]
+    M -->|read tool| T[act]
     T --> M
-    MC --> MM[classify_propose]
-    MM --> MV[classify_normalize]
-    MV --> P
-    RM --> RV[schedule_build]
-    RV -->|resolved| P
-    RV -->|unresolved| M
-    P --> H
-    H -->|Command resume| M
 ```
 
-`link_notes` first runs `link_context` (candidate lookup) before `stage`. The
-stateless Chat handoff uses `ACTION_PLAN_GRAPH`:
-`START -> plan -> act -> plan ... -> validate_write -> END`. It can read note
-context, paths, and tags, but only returns a validated write proposal. The
-handoff itself is typed and includes conversation and entities.
+`reason` makes one tool-free call once the read budget (`AGENT_MAX_STEPS`) is
+spent, so it must answer rather than loop. `act` runs one owner-scoped read and
+records citations onto the turn context. The answer leaves in
+`AgentResult.state` as `{answer, citations, trace}`; the responder relays it.
 
-## Reminder capability
+## Enricher graph
 
-The main Enrich graph and `REMINDER_PLAN_GRAPH` both use
-`schedule_resolve -> schedule_build`. The resolve node fixes the
-natural-language time; build uses deterministic domain logic to resolve
-referenced notes and return a frozen `create_reminder` proposal. The standalone
-plan graph is used for Chat handoff evaluation and has no loop, checkpoint, or
-independent approval boundary.
-Telegram keeps its previous local
-reminder detection, creation, delivery, claiming, list, cancel, and snooze logic.
+`ActionPlanState` carries messages, context, tool specs, step count, tool call
+and the write proposal. Every node is a module under `nodes/` with a single
+public `run`: `plan` and `act` are flat; the one multi-step phase left lives in
+the `write/` subpackage (link, validate). `classify/` left with the nodes — see
+the classifier graph below.
+
+```mermaid
+flowchart TD
+    S((START)) --> P[plan]
+    P -->|no tool| E((END))
+    P -->|read| T[act]
+    P -->|link write| L[link_context]
+    P -->|simple write| V[validate_write]
+    T -->|budget left| P
+    T -->|spent| E
+    L --> V
+    V -->|action| E
+    V -->|no action, budget left| P
+```
+
+`agents/enricher/agent.py` invokes `ACTION_PLAN_GRAPH` directly. The graph reads
+note context, paths and tags and returns only a **validated write proposal** —
+it performs no write and it never pauses. The agent then suspends the *turn*
+with `needs_input`, and `resume` performs the write once the user approves.
+
+There was a second graph here, `ENRICH_GRAPH`: an interactive capture loop whose
+`approve` node paused on a LangGraph `interrupt`, resuming via
+`Command(resume=…)`. It stopped being reachable when the farm's loop took over
+the pause, stayed compiled at import for a while after, and has been deleted
+along with its `reason`, `approve` and `stage` nodes. Two ways to pause is one
+too many; `git log` has it.
+
+A second graph has left this file since, for a related reason. `CLASSIFY_GRAPH`
+offered the metadata pipeline as a standalone entry and was invoked by nothing
+but a test — compiled at import, unreachable in production, exactly the shape
+`ENRICH_GRAPH` had. It was not deleted: those three nodes are the classifier
+agent now, so the graph became live instead.
+
+## Classifier graph
+
+`ClassifyState` carries the turn context, the note, the gathered vault context,
+the raw proposal and the normalised metadata. Three nodes, no conditional
+edges — filing is a fixed pipeline, so there is no `routing.py`:
+
+```mermaid
+flowchart TD
+    S((START)) --> G[gather]
+    G --> P[propose]
+    P --> N[normalize]
+    N --> E((END))
+```
+
+`gather` reads the note and the vault vocabulary it is filed against; `propose`
+makes the one model call; `normalize` canonicalises the answer against the
+user's localised root folders. Same shape as the other two write agents: the
+graph plans, the loop pauses, `resume` writes on approval.
+
+Why it is not an enricher phase any more: those nodes ran mid-plan, entered from
+`after_plan` when the planner picked `enrich_note`, and had to thread their
+working values through the planner's own state. As its own agent the pipeline
+has one entry, one state and one subject, and the `metadata_` prefixes that kept
+its keys apart from the planner's are gone with it.
+
+## Reminder graph
+
+`schedule_resolve -> schedule_build`. Resolve fixes the natural-language time;
+build resolves referenced notes deterministically and returns a frozen
+`create_reminder` proposal. Same shape as enricher's: plan here, pause in the
+loop, write on approval.
+
+Telegram keeps its own reminder detection, creation, delivery, claiming, list,
+cancel and snooze logic in `api/telegram_bot` and does not use this graph.
 
 ## Invariants
 
-- Chat has no direct write handler.
-- Every Chat write requires explicit confirmation.
-- Enrich owns all confirmed writes, including reminders.
+- No graph routes to another agent; the loop does that.
+- Every write requires explicit confirmation, and runs at most once
+  (`execution_ledger`, keyed by the action's own fingerprint).
+- Only the responder writes prose to the user.
 - Agent chat-completion calls go through `agents/runtime/model_gateway.py`.
 - Tool selection is single-call and loops are bounded.
 - Reminder attachment is scoped by both note id and user id.
-- Existing `/api/chat` and `/api/chat/confirm` contracts are unchanged.
+- `graph.py` only builds; the agent's `start`/`resume` enters the run with
+  `GRAPH.invoke(state, graph_config)`. There is no wrapper around that call —
+  one caller per graph made the indirection cost a name to read past.

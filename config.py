@@ -165,6 +165,30 @@ AGENT_MODEL = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
 
 AGENT_MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "6"))
 
+# Model that writes the loop turn's single user-facing reply.
+
+RESPONDER_MODEL = os.environ.get("RESPONDER_MODEL", "gpt-4o-mini")
+
+# Model the loop asks which agent runs next, when no entry tool resolves it.
+
+ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "gpt-4o-mini")
+
+# Max agent hops the loop will drive in one turn, the reply included: the
+
+# responder takes the last slot, so this is (work hops + 1). See
+
+# devdoc/agent-loop.md.
+
+AGENT_MAX_HOPS = int(os.environ.get("AGENT_MAX_HOPS", "5"))
+
+# Force every loop hop through the case-3 model router, skipping the entry-tool
+
+# shortcut. On in dev and in the eval harness so the path production rarely takes
+
+# is the path a local turn always takes.
+
+AGENT_ROUTER_ALWAYS = os.environ.get("AGENT_ROUTER_ALWAYS", "0") == "1"
+
 # Shared OpenAI chat-completion gateway retry budget for agent nodes.
 
 OPENAI_GATEWAY_MAX_ATTEMPTS = int(os.environ.get("OPENAI_GATEWAY_MAX_ATTEMPTS", "2"))
@@ -191,33 +215,6 @@ ENRICH_AGENT_MAX_STEPS = int(os.environ.get("ENRICH_AGENT_MAX_STEPS", "4"))
 ATOMIC_NOTE_MAX_CHARS = int(os.environ.get("ATOMIC_NOTE_MAX_CHARS", "700"))
 
 ATOMIC_NOTE_MAX_SENTENCES = int(os.environ.get("ATOMIC_NOTE_MAX_SENTENCES", "3"))
-
-
-# --- Agent evaluation / observability ---
-
-# Automatic qualitative grading can be disabled to run trace/latency collection
-
-# without paying for an additional judge call per evaluated turn.
-
-AGENT_EVAL_JUDGE_ENABLED = os.environ.get(
-
-    "AGENT_EVAL_JUDGE_ENABLED", "true").lower() == "true"
-
-AGENT_EVAL_JUDGE_MODEL = os.environ.get("AGENT_EVAL_JUDGE_MODEL", "gpt-4o-mini")
-
-AGENT_EVAL_API_TIMEOUT_SECONDS = float(
-
-    os.environ.get("AGENT_EVAL_API_TIMEOUT_SECONDS", "300"))
-
-# Telegram chat IDs are resolved against users.chat_id by the evaluation API.
-
-EVAL_ADMIN_USER_IDS = {
-    int(value.strip())
-    for value in os.environ.get("EVAL_ADMIN_TELEGRAM_IDS", "1").split(",")
-    if value.strip()
-
-}
-
 # How many units an indefinite quantity ("кілька"/"a few") means, e.g. "через
 
 # кілька хвилин" → in REMINDER_FEW_COUNT minutes.

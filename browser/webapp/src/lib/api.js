@@ -41,7 +41,8 @@ export function mediaUrl(u) {
 // --- domain helpers (each degrades to a sensible default) ---
 // Each web-app section calls its own /api/<section> surface (the endpoints.py in
 // the matching api/<section>/ folder). Attachment proxy lives in the notecard
-// section; chat stays at /api/chat.
+// section. Chat is on /api/chat/v2 — the agent-farm surface; /api/chat (v1) is
+// still mounted on the API while v2 is proven, so a revert is a URL change.
 export const fetchNotes = () => apiGet("/api/explorer").catch(() => []);
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
@@ -50,6 +51,6 @@ export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ notes
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
-export const chatSend = (message, thread_id) => apiPost("/api/chat", { message, thread_id });
+export const chatSend = (message, thread_id) => apiPost("/api/chat/v2", { message, thread_id });
 export const chatConfirm = (thread_id, approve, selection) =>
-  apiPost("/api/chat/confirm", { thread_id, approve, selection: selection ?? null });
+  apiPost("/api/chat/v2/confirm", { thread_id, approve, selection: selection ?? null });

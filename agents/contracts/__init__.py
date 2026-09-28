@@ -1,12 +1,54 @@
-"""Stable data contracts shared by agent boundaries."""
+"""Every shape the agents and the loop exchange, one type per module.
 
-from agents.contracts.execution import ExecutionResult
-from agents.contracts.handoff import HandoffContract
-from agents.contracts.proposal import ActionProposal, CaptureProposal, RelatedNote
+Nothing here does I/O, holds module state, or imports an agent, a tool, or the
+loop. That is what makes it the bottom of the dependency graph: the loop, the
+router, the store and four agents can agree on shapes without importing each
+other, which is what lets the loop route a turn with no agent naming another.
+
+Three groups:
+
+  - **what an agent implements and exchanges** — `AgentSpec`, `AgentRequest`,
+    `AgentResult`;
+  - **what a turn is made of** — `UserContext`, `Ref`, `HistoryEntry`, `Status`,
+    and `AGENT_KIND`, the one ref kind the loop reads for itself;
+  - **what a turn hands back** — `TurnOutcome`.
+
+Plus two that belong to an agent's own working, not to the loop's: `ToolResult`
+(what every tool returns) and `PlanRequest` (what the enricher and reminder plan from).
+
+Import from this package rather than the leaf module — the split is an
+implementation detail, so `from agents.contracts import AgentSpec` keeps working
+if a type moves. See `devdoc/agent-loop.md`.
+"""
+
+from agents.contracts.agent_kind import AGENT_KIND
+from agents.contracts.agent_request import AgentRequest
+from agents.contracts.agent_result import AgentResult
+from agents.contracts.agent_spec import AgentSpec
+from agents.contracts.history_entry import HistoryEntry
+from agents.contracts.plan_request import PlanRequest
+from agents.contracts.ref import Ref
+from agents.contracts.status import Status
 from agents.contracts.tool_result import ToolResult
-from agents.contracts.trace import TraceEvent
+from agents.contracts.turn_outcome import TurnOutcome
+from agents.contracts.user_context import (
+    UserContext,
+    build_context,
+    restore_clock,
+)
 
 __all__ = [
-    "ActionProposal", "CaptureProposal", "RelatedNote", "ExecutionResult",
-    "HandoffContract", "ToolResult", "TraceEvent",
+    "AGENT_KIND",
+    "AgentRequest",
+    "AgentResult",
+    "AgentSpec",
+    "HistoryEntry",
+    "PlanRequest",
+    "Ref",
+    "Status",
+    "ToolResult",
+    "TurnOutcome",
+    "UserContext",
+    "build_context",
+    "restore_clock",
 ]

@@ -1,0 +1,118 @@
+"""The finder's seat in the farm.
+
+Adapts the read-and-answer vertical to the loop's `start` contract. It is the
+agent that knows the vault: it searches, reads notes and neighbours, and
+composes an answer.
+
+Two things it deliberately does not do, both of which the farm now owns:
+
+  - **it never writes, and never names who does.** The conversation controller
+    it was copied from could call `perform_action` / `set_reminder` to hand a
+    write off; finder has no such tools. The loop's router picks the agent
+    that owns a write, so finder stays a peer that knows nothing about its
+    peers.
+  - **it never pauses.** With no approval interrupt, a hop runs start to finish,
+    so there is no `resume` and no checkpoint of its own.
+
+The answer goes into `AgentResult.state`, not into a reply: the responder is
+the one agent that speaks to the user, and it is what turns this state into
+prose.
+
+Nothing in this module imports another agent.
+"""
+
+import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import config
+from agents.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentSpec,
+    Ref,
+    UserContext,
+    restore_clock,
+)
+from agents.finder.graph import FINDER_GRAPH
+from agents.finder.prompts import with_system
+from agents.finder.state import initial_state
+
+logger = logging.getLogger(__name__)
+
+NAME = "finder"
+
+DESCRIPTION = (
+    "Answers questions about what the user has captured — searching their "
+    "notes, reading one, following its links, listing reminders or an agenda. "
+    "Use for anything the user wants to know or find. Reads only; it never "
+    "creates, edits or schedules anything.")
+
+# Every prior hop is readable: an agent plans better knowing what the
+# turn already found. The allowlist stays as the guard against a
+# mistake — a copied adapter reaching for a state it never meant to —
+# and what actually reaches a prompt is the fields this agent picks.
+MAY_READ = ("*",)
+
+# How far one run may travel. A read step takes an `act` edge as well as its
+# own `reason` edge, so the tool budget is widened into graph hops; the floor
+# keeps a small budget from tripping the limit on a turn that is behaving.
+# There is no `thread_id` beside it: the graph compiles without a checkpointer,
+# so there is no thread for one to name.
+RECURSION_LIMIT = max(20, config.AGENT_MAX_STEPS * 3 + 5)
+
+
+def _build_messages(request: AgentRequest, now, tz) -> list[dict]:
+    """The conversation so far, plus this turn's message.
+
+    Prior turns arrive as a reference rather than as loop state: they belong
+    to the calling section's thread, which the farm knows nothing about.
+    """
+    history = request.references.get("messages") or []
+
+    return [
+        *with_system(list(history), now, tz),
+        {"role": "user", "content": request.message},
+    ]
+
+
+def _collect_refs(citations: list[dict]) -> tuple[Ref, ...]:
+    """One typed ref per note the answer drew on.
+
+    Reading is not producing, so these say which notes the turn touched rather
+    than claiming anything was changed — enough for the responder to count, and
+    for the turn tree to show what the answer rested on.
+    """
+    return tuple(
+        Ref("note", str(citation["note_id"]))
+        for citation in citations
+        if citation.get("note_id") is not None)
+
+
+def start(request: AgentRequest) -> AgentResult:
+    """Answer the user's question from their own notes."""
+    # The locale is the responder's business, not finder's — it reads only.
+    now, tz, _ = restore_clock(request.context)
+    state = FINDER_GRAPH.invoke(
+        initial_state(request.context, _build_messages(request, now, tz),
+                      request.references.get("reference_notes")),
+        {"recursion_limit": RECURSION_LIMIT})
+    citations = state.get("citations") or []
+
+    return AgentResult(
+        status="done",
+        state={
+            "answer": state.get("reply") or "",
+            "citations": citations,
+            "retrieved_chunks": state.get("retrieved_chunks") or [],
+            "trace": state.get("trace") or {},
+        },
+        produced=_collect_refs(citations))
+
+
+SPEC = AgentSpec(
+    name=NAME,
+    description=DESCRIPTION,
+    start=start,
+    may_read=MAY_READ,
+)
