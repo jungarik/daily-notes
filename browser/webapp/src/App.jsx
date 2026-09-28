@@ -9,6 +9,7 @@ import Chat from "./components/Chat.jsx";
 import NoteSheet from "./components/NoteSheet.jsx";
 import ContextMenu from "./components/ContextMenu.jsx";
 import FolderFilter from "./components/FolderFilter.jsx";
+import AddNote from "./components/AddNote.jsx";
 
 export default function App() {
   const { state } = useApp();
@@ -27,6 +28,7 @@ export default function App() {
       <NoteSheet />
       <ContextMenu />
       <FolderFilter />
+      <AddNote />
     </>
   );
 }

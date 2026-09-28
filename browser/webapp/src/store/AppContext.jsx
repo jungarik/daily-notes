@@ -29,6 +29,7 @@ const initial = {
   stats: { notes: 0, links: 0, reminders: 0 },   // header stats (/api/header/stats)
   sheetNoteId: null,        // open note preview (null = closed)
   filterOpen: false,
+  addNoteOpen: false,       // the Add note page (a full-screen overlay)
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
   searchQuery: "",
@@ -101,6 +102,12 @@ export function AppProvider({ children }) {
   // ----- filter -----
   const openFilter = useCallback(() => patch({ filterOpen: true }), [patch]);
   const closeFilter = useCallback(() => patch({ filterOpen: false }), [patch]);
+
+  // The Add note page covers the whole screen rather than taking a slot in
+  // `view`, so closing it needs no `prevView` dance — whatever tab was behind
+  // it is still the current one.
+  const openAddNote = useCallback(() => patch({ addNoteOpen: true }), [patch]);
+  const closeAddNote = useCallback(() => patch({ addNoteOpen: false }), [patch]);
   const setFilter = useCallback((sel) => { saveFilter(sel); patch({ filterSel: sel }); }, [patch]);
 
   const setSearchQuery = useCallback((q) => patch({ searchQuery: q }), [patch]);
@@ -138,9 +145,11 @@ export function AppProvider({ children }) {
     state, patch, setView, closeMode, toggleMode, reload, refreshStats,
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
     openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped, feedReq,
+    openAddNote, closeAddNote,
   }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
-      openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped]);
+      openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped,
+      openAddNote, closeAddNote]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
