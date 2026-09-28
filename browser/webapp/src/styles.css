@@ -402,7 +402,23 @@
      checkbox. */
   .addnote-btn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; border: none; background: none; color: var(--text); cursor: pointer; }
   .addnote-btn svg { width: 24px; height: 24px; }
-  .addnote-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  /* The page IS the input: one textarea filling everything under the bar, so
+     there is no field to aim at — the caret is already at the top left and the
+     whole screen is the writing surface.
+
+     16px is not a style choice: iOS zooms the viewport on focus for anything
+     smaller, which would jolt the page the moment the keyboard opens. */
+  .addnote-body {
+    flex: 1; min-height: 0; width: 100%;
+    padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border: none; outline: none; resize: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit; font-size: 16px; line-height: 1.55;
+    caret-color: #2f6feb;
+    overflow-y: auto;
+  }
+  .addnote-body::placeholder { color: var(--text-faint); }
 
   /* Filter sheet: indented folder tree with tri-state checkboxes */
   #filterSheet .filter-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

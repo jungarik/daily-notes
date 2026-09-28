@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 
 // The Add note page.
@@ -9,6 +10,21 @@ import { useApp } from "../store/AppContext.jsx";
 // cross simply close. The tick is where the save call goes once there is one.
 export default function AddNote() {
   const { state, closeAddNote } = useApp();
+  const [text, setText] = useState("");
+  const inputRef = useRef(null);
+
+  // Open empty every time, with the caret already in the field: this is a
+  // capture screen, and a tap on the plus should be the only thing between a
+  // thought and typing it. The delay lets the overlay mount before the
+  // keyboard animates in, which is what the dock's input does too.
+  useEffect(() => {
+    if (!state.addNoteOpen) return;
+
+    setText("");
+    const timer = setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
+
+    return () => clearTimeout(timer);
+  }, [state.addNoteOpen]);
 
   if (!state.addNoteOpen) return null;
 
@@ -26,7 +42,16 @@ export default function AddNote() {
           </svg>
         </button>
       </div>
-      <div className="addnote-body" />
+      <textarea
+        ref={inputRef}
+        className="addnote-body"
+        value={text}
+        placeholder="Write a note…"
+        autoComplete="off"
+        autoCapitalize="sentences"
+        spellCheck={false}
+        onChange={(e) => setText(e.target.value)}
+      />
     </div>
   );
 }
