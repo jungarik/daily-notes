@@ -27,14 +27,35 @@
   body { display: flex; flex-direction: column; }
 
   /* Instagram-style stats header (glass) */
-  /* No bar: the header is a transparent strip the feed scrolls under. The two
-     actions carry their own glass (see .hdr-add / .hdr-filter) and the numbers
-     carry a shadow instead, so nothing here paints a background. */
+  /* No bar. The two actions carry their own glass (see .hdr-add / .hdr-filter);
+     the stats are held up by a progressive scrim instead of a panel.
+
+     `header::before` blurs and darkens what is behind it, then a mask fades
+     that whole effect out downward — so the treatment is strongest under the
+     numbers and reaches exactly zero below them. There is no edge anywhere:
+     content simply sharpens as it scrolls out from under the stats. It extends
+     24px past the header so the fade finishes in clear air rather than at the
+     boundary.
+
+     `pointer-events` is off for the strip and back on for the buttons: with no
+     background this is still a full-width sticky layer, and it would otherwise
+     swallow taps on the cards underneath. `.dock` does the same. */
   header {
     position: sticky; top: 0; z-index: 5;
     display: flex; align-items: center;
     padding: 14px 0;
     pointer-events: none;
+  }
+  header::before {
+    content: "";
+    position: absolute; left: 0; right: 0; top: 0; bottom: -24px;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(25,25,25,.8) 0%, rgba(25,25,25,0) 78%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
   }
   header button { pointer-events: auto; }
   /* The stats keep their natural width in the middle; the two side columns
@@ -44,10 +65,8 @@
   .hdr-stats { display: flex; gap: 30px; }
   .hdr-side { flex: 1; display: flex; align-items: center; justify-content: center; }
   .stat { text-align: center; min-width: 54px; }
-  /* With no bar behind them the stats can land on a note's photo, so they take
-     a shadow rather than a panel — the one legibility fix that adds no surface. */
-  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
-  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; }
+  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
 
   /* Floating liquid-glass bottom tab bar */
   /* Floating dock: chat circle (left) · tab pill (center) · search circle (right) */
