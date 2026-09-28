@@ -21,8 +21,11 @@ export default function Header() {
     <header>
       <div className="hdr-side">
         <button className="hdr-add" aria-label="Add note" onClick={openAddNote}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round">
-            <path d="M12 6v12M6 12h12" />
+          {/* viewBox is cropped to the glyph's own bounds (plus half a stroke),
+              so the CSS height is the height of the visible ink rather than of
+              a box the path sits inside. See styles.css. */}
+          <svg viewBox="-0.87 -0.87 13.73 13.73" fill="none" stroke="currentColor" strokeLinecap="round">
+            <path d="M6 0v12M0 6h12" />
           </svg>
         </button>
       </div>
@@ -39,8 +42,14 @@ export default function Header() {
           aria-label="Filter folders"
           onClick={openFilter}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+          {/* Three dots in a row, filled rather than stroked. The box is the
+              ink: equal dots and gaps fill all 10 units, so the CSS width is
+              the distance from the left edge of the first dot to the right
+              edge of the last. */}
+          <svg viewBox="0 0 10 2" fill="currentColor">
+            <circle cx="1" cy="1" r="1" />
+            <circle cx="5" cy="1" r="1" />
+            <circle cx="9" cy="1" r="1" />
           </svg>
         </button>
       </div>

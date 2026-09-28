@@ -313,10 +313,20 @@
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-  /* Both header actions take their ink and colour from the stat numerals, so
-     nothing here is picked by eye. Stroke needs a viewBox conversion: the paths
-     are drawn in 24 units, so at a rendered size S a stroke-width of W paints
-     W * S/24 pixels. 1.8px is the stem of a 19px numeral at weight 600. */
+  /* Both header actions span the stat block exactly: top edge on the numbers'
+     top, bottom edge on the labels' bottom. That span is
+     19px*1.15 + 11px*1.5 = 38.35px, and because the stat block is the tallest
+     thing in the header, an element that tall and vertically centred lands on
+     it with no offset — the earlier nudges are gone.
+
+     Each `viewBox` is cropped to its own path (see Header.jsx), so these
+     heights are the height of the VISIBLE INK. Uncropped, the funnel filled
+     only 14 of 24 units and a 38px box drew a 24px funnel floating in the
+     middle, which is why it never reached either edge.
+
+     Stroke still converts: at rendered size S over a viewBox of H units, a
+     stroke-width of W paints W * S/H pixels. Both solve to 1.8px, the stem of
+     a 19px numeral at weight 600. */
   .hdr-add, .hdr-filter {
     display: flex; align-items: center; justify-content: center;
     padding: 0;
@@ -325,21 +335,23 @@
     cursor: pointer;
   }
 
-  /* Add note: a ring the size of the numerals, lifted from the stat block's
-     centre onto the NUMBER row — (21.85 - 38.35) / 2 = -8.25px. */
+  /* Add note: the ring spans the block, the plus inside is the numerals' own
+     19px. Ring and glyph are both 2.4px — heavier than the 1.8px numeral stem,
+     so the action reads as an action rather than as another number. Clearance
+     inside the ring is (38.35 - 2*2.4 - 19) / 2 = 7.3px. */
   .hdr-add {
-    width: 28px; height: 28px;
-    border: 1.8px solid var(--text);
+    width: 38.35px; height: 38.35px;
+    border: 2.4px solid var(--text);
     border-radius: 50%;
-    transform: translateY(-8.25px);
   }
-  .hdr-add svg { width: 19px; height: 19px; stroke-width: 2.3; }   /* -> 1.82px */
+  .hdr-add svg { width: 19px; height: 19px; stroke-width: 1.73; }   /* -> 2.40px */
 
-  /* Filter: no ring, and as tall as the whole stat block — the 19px*1.15 number
-     line box plus the 11px*1.5 label under it. Bigger glyph, same ink, so the
-     stroke-width comes down as the size goes up. */
+  /* Filter: three dots in a row, no ring, spanning the same 19px as the plus
+     glyph beside it — so the two actions match on the glyph, not on the button.
+     Equal dots and gaps: 3.8px each. Filled, so there is no stroke to convert.
+     Horizontal, so 19px is now the width and the height follows the dot. */
   .hdr-filter { border: none; }
-  .hdr-filter svg { width: 38px; height: 38px; stroke-width: 1.14; }   /* -> 1.81px */
+  .hdr-filter svg { width: 19px; height: 3.8px; }
   .hdr-filter.active { color: var(--accent); }
   .hdr-filter.hidden { display: none; }
 
