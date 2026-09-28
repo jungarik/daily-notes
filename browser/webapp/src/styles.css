@@ -307,21 +307,40 @@
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-  /* Header filter button (top-right) */
-  .hdr-filter { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; }
+  /* Header circle buttons: add-note (left) and folder filter (right).
+     Both are drawn to match the stat numerals they sit beside, so the three
+     numbers here are all derived from `.stat b` (19px / weight 600) rather than
+     picked by eye:
+
+       ink    1.8px  — the stem of a 19px numeral at weight 600, used for both
+                       the ring and the icon stroke
+       colour var(--text) — the numerals' colour, not the muted grey
+       centre 14px (header padding-top) + half the 19px*1.15 line box, so the
+              ring sits on the NUMBER row. Centring on the header instead
+              (top: 50%) centred it on number + label, which is what made a
+              36px circle look like it spanned the whole header. */
+  .hdr-add, .hdr-filter {
+    position: absolute;
+    top: calc(14px + (19px * 1.15) / 2);
+    transform: translateY(-50%);
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1.8px solid var(--text);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .hdr-add { left: 12px; }
+  .hdr-filter { right: 12px; }
   .hdr-filter.active { color: #fff; background: var(--accent); border-color: var(--accent); }
   .hdr-filter.hidden { display: none; }
 
-  /* Header add-note button (top-left) — the filter's mirror image. The header's
-     52px side padding already reserves the room for it. */
-  .hdr-add { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; }
-
-  /* Both header icons, matched to the stat numerals beside them.
-     Size is `.stat b`'s 19px. Stroke needs the viewBox conversion: the paths are
-     drawn in 24 units and painted at 19px, so a unit is 19/24 of a pixel and a
-     stroke-width of W renders at W * 19/24. 2.3 lands at ~1.8px — the stem of a
-     19px numeral at weight 600. The old 1.8 rendered at 1.35px, which is why the
-     icons read as hairlines next to the numbers. */
+  /* The glyphs, at the numerals' own size. Stroke needs the viewBox conversion:
+     the paths are drawn in 24 units and painted at 19px, so a unit is 19/24 of a
+     pixel and a stroke-width of W renders at W * 19/24. 2.3 lands at ~1.8px, the
+     same ink as the ring. The old 1.8 rendered at 1.35px, which is why the icons
+     read as hairlines next to the numbers. */
   .hdr-add svg, .hdr-filter svg { width: 19px; height: 19px; stroke-width: 2.3; }
 
   /* Add note page: a full-screen overlay, above the dock (40) and the note
