@@ -34,7 +34,6 @@
     background: rgba(25,25,25,.72);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     backdrop-filter: blur(18px) saturate(160%);
-    border-bottom: 1px solid var(--border);
   }
   /* The stats keep their natural width in the middle; the two side columns
      split what is left, so each action centres in the gap between the numbers
@@ -331,26 +330,44 @@
     display: flex; align-items: center; justify-content: center;
     padding: 0;
     background: transparent;
-    color: var(--text);
+    color: var(--text-muted);
     cursor: pointer;
   }
 
-  /* Add note: the ring spans the block, the plus inside is the numerals' own
-     19px. Ring and glyph are both 2.4px — heavier than the 1.8px numeral stem,
-     so the action reads as an action rather than as another number. Clearance
-     inside the ring is (38.35 - 2*2.4 - 19) / 2 = 7.3px. */
+  /* Add note: the header's primary action, in the same #2f6feb the pill's send
+     button and `.confirm-btn.yes` use — this app's "commit" blue. `.ts-send` is
+     already a blue disc with a white glyph, so the plus reads as the same kind
+     of control rather than as a new one. (Violet is the accent for *state* —
+     an active filter, a note's path — which is a different job.)
+
+     54px around a 20px glyph, both from the dock's `.fab`, so the two ends of
+     the screen agree on what a round action looks like. That makes the disc the
+     tallest thing in the header — taller than the 38.35px stat block — so the
+     header grows to fit it and the disc is simply centred: top-aligning it to
+     the numbers stops being meaningful once it overhangs them on both sides.
+
+     The border is `--border`, NOT the dock's white hairline: white at 14% over
+     a saturated blue is invisible, and a mid grey would be worse still — at
+     #8a8a8e the contrast against #2f6feb is 1.33:1, because the two sit at
+     nearly the same luminance. Dark is the only grey that reads as an edge
+     here (#333 gives 2.76:1). */
   .hdr-add {
-    width: 38.35px; height: 38.35px;
-    border: 2.4px solid var(--text);
+    width: 54px; height: 54px;
+    border: 1.5px solid var(--border);
     border-radius: 50%;
+    background: #2f6feb;
+    color: #fff;
   }
-  .hdr-add svg { width: 19px; height: 19px; stroke-width: 1.73; }   /* -> 2.40px */
+  .hdr-add svg { width: 20px; height: 20px; stroke-width: 1.64; }   /* -> 2.40px */
 
   /* Filter: three dots in a row, no ring, spanning the same 19px as the plus
      glyph beside it — so the two actions match on the glyph, not on the button.
      Equal dots and gaps: 3.8px each. Filled, so there is no stroke to convert.
-     Horizontal, so 19px is now the width and the height follows the dot. */
-  .hdr-filter { border: none; }
+     Horizontal, so 19px is now the width and the height follows the dot.
+
+     Centred on the NUMBERS row rather than on the block: the numbers' centre is
+     24.92px from the header top, the block's is 33.17px, hence -8.25px. */
+  .hdr-filter { border: none; transform: translateY(-8.25px); }
   .hdr-filter svg { width: 19px; height: 3.8px; }
   .hdr-filter.active { color: var(--accent); }
   .hdr-filter.hidden { display: none; }

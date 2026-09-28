@@ -19,12 +19,12 @@ export default function Header() {
   const showFilter = state.view === "notes" || state.view === "map";
   return (
     <header>
+      {/* Every viewBox here is cropped to the glyph's own bounds (plus half a
+          stroke), so the CSS size is the size of the visible ink rather than of
+          a box the path sits inside. See styles.css. */}
       <div className="hdr-side">
         <button className="hdr-add" aria-label="Add note" onClick={openAddNote}>
-          {/* viewBox is cropped to the glyph's own bounds (plus half a stroke),
-              so the CSS height is the height of the visible ink rather than of
-              a box the path sits inside. See styles.css. */}
-          <svg viewBox="-0.87 -0.87 13.73 13.73" fill="none" stroke="currentColor" strokeLinecap="round">
+          <svg viewBox="-0.82 -0.82 13.64 13.64" fill="none" stroke="currentColor" strokeLinecap="round">
             <path d="M6 0v12M0 6h12" />
           </svg>
         </button>
