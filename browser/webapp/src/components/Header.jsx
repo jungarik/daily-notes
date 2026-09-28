@@ -12,8 +12,10 @@ export default function Header() {
   const showFilter = state.view === "notes" || state.view === "map";
   return (
     <header>
+      {/* Stroke weight and size come from CSS so both icons stay matched to the
+          stat numerals — see .hdr-icon in styles.css. */}
       <button className="hdr-add" aria-label="Add note" onClick={openAddNote}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round">
           <path d="M12 6v12M6 12h12" />
         </svg>
       </button>
@@ -25,7 +27,7 @@ export default function Header() {
         aria-label="Filter folders"
         onClick={openFilter}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 5h18l-7 8v6l-4-2v-4z" />
         </svg>
       </button>
