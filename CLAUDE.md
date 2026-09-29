@@ -413,13 +413,16 @@ user to an internal `user_id` and return only that user's data:
 `GET /api/notesheet/{id}` (preview), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
 folders can't be moved), `GET /api/mapview/graph` (connections map),
-`GET /api/header/stats` (Notes/Links/Reminders counts), `GET /api/search?q=`
+`GET /api/header/stats` (root-folder counts: per root, its sub-folders plus
+its loose notes, labelled in the user's language), `GET /api/search?q=`
 (server-side search), and `GET /api/notecard/attachments/{id}?t=<token>` (the
 signed image proxy). `POST /api/chat/v2` + `/api/chat/v2/confirm` back the
 **agentic chat tab** (see below).
 
-UI: a sticky **header** with Instagram-style stats (Notes / Links / Reminders)
-and, on the Notes and Map tabs, a funnel **folder-filter** button. A floating
+UI: a **header** with no bar of its own — a blue add-note disc, the vault's
+root-folder counts (Inbox / Projects / Areas; the API also returns Resources)
+and a **folder-filter** button, over a progressive blur scrim. Tapping add-note
+opens a full-screen capture page. A floating
 glass **dock** holds a center pill (Notes / Map / Explorer icons, in that order)
 flanked by two circle buttons — chat (left) and search (right). Tapping a circle
 swaps the pill's icons for a shared input bar (with a Send button) and the pill

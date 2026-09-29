@@ -16,17 +16,6 @@ function buildTree(notes) {
   }
   return root;
 }
-function countNotes(node) {
-  let c = node.files.length;
-  for (const k in node.folders) c += countNotes(node.folders[k]);
-  return c;
-}
-function countLinks(node) {
-  let c = 0;
-  for (const f of node.files) c += f.links || 0;
-  for (const k in node.folders) c += countLinks(node.folders[k]);
-  return c;
-}
 
 const FolderSvg = () => (
   <svg className="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" /></svg>
@@ -49,7 +38,7 @@ function FileRow({ note }) {
 }
 
 function Folder({ name, node, path }) {
-  const { openCtx, setScoped } = useApp();
+  const { openCtx } = useApp();
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(false);
   const isRoot = path.indexOf("/") < 0;
@@ -58,7 +47,7 @@ function Folder({ name, node, path }) {
   return (
     <div className={"folder" + (open ? " open" : "")}>
       <div className={"row" + (sel ? " selected" : "")}
-        onClick={() => { setOpen((o) => !o); setSel(true); setScoped({ notes: countNotes(node), links: countLinks(node) }); }}>
+        onClick={() => { setOpen((o) => !o); setSel(true); }}>
         <FolderSvg />
         <span className="name">{name}</span>
         {!isRoot && (

@@ -47,7 +47,7 @@ export const fetchNotes = () => apiGet("/api/explorer").catch(() => []);
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
-export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ notes: 0, links: 0, reminders: 0 }));
+export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });

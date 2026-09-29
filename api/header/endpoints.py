@@ -1,4 +1,4 @@
-"""Header router — GET /api/header/stats. Notes / Links / Reminders counts."""
+"""Header router — GET /api/header/stats. The vault's root-folder counts."""
 
 from fastapi import APIRouter, Depends
 

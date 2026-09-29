@@ -12,10 +12,10 @@ import { useApp } from "../store/AppContext.jsx";
 // Sizes and stroke weights live in CSS, derived from `.stat b` — see styles.css.
 export default function Header() {
   const { state, openFilter, openAddNote } = useApp();
-  const stats = state.stats || { notes: 0, links: 0, reminders: 0 };
-  const s = state.scoped;   // folder-scoped counts when an explorer folder is selected
-  const statNotes = s ? s.notes : stats.notes;
-  const statLinks = s ? s.links : stats.links;
+  // The API returns every reported root in display order and already localised;
+  // the header has room for three, so it takes the first three rather than
+  // naming them again here and inviting the two lists to drift.
+  const stats = (state.stats || []).slice(0, 3);
   const showFilter = state.view === "notes" || state.view === "map";
   return (
     <header>
@@ -31,9 +31,11 @@ export default function Header() {
       </div>
 
       <div className="hdr-stats">
-        <div className="stat"><b>{statNotes}</b><span>Notes</span></div>
-        <div className="stat"><b>{statLinks}</b><span>Links</span></div>
-        <div className="stat"><b>{stats.reminders}</b><span>Reminders</span></div>
+        {stats.map((stat) => (
+          <div className="stat" key={stat.key}>
+            <b>{stat.count}</b><span>{stat.label}</span>
+          </div>
+        ))}
       </div>
 
       <div className="hdr-side">

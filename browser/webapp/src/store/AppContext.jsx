@@ -26,14 +26,13 @@ const initial = {
   notes: [],                // explorer tree + search source
   feed: null,               // full note cards; null = not loaded
   filterSel: loadFilter(),  // Set of included folder keys, or null = all
-  stats: { notes: 0, links: 0, reminders: 0 },   // header stats (/api/header/stats)
+  stats: [],                // header root-folder counts (/api/header/stats)
   sheetNoteId: null,        // open note preview (null = closed)
   filterOpen: false,
   addNoteOpen: false,       // the Add note page (a full-screen overlay)
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
   searchQuery: "",
-  scoped: null,             // {notes, links} when an explorer folder is selected
   chat: { threadId: null, messages: [], busy: false },
 };
 
@@ -80,13 +79,12 @@ export function AppProvider({ children }) {
   // ----- data -----
   const reload = useCallback(async () => {
     const [notes, feed] = await Promise.all([api.fetchNotes(), api.fetchFeed()]);
-    patch({ notes, feed, scoped: null });
+    patch({ notes, feed });
   }, [patch]);
 
-  const setScoped = useCallback((s) => patch({ scoped: s }), [patch]);
 
   const refreshStats = useCallback(async () => {
-    patch({ stats: await api.fetchStats() });
+    patch({ stats: (await api.fetchStats()).stats || [] });
   }, [patch]);
 
   // ----- preview sheet -----
@@ -144,11 +142,11 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     state, patch, setView, closeMode, toggleMode, reload, refreshStats,
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
-    openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped, feedReq,
+    openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, feedReq,
     openAddNote, closeAddNote,
   }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
-      openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, setScoped,
+      openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat,
       openAddNote, closeAddNote]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
