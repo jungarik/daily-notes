@@ -42,14 +42,14 @@ export default function Header() {
           aria-label="Filter folders"
           onClick={openFilter}
         >
-          {/* Three dots in a row, filled rather than stroked. The box is the
-              ink: equal dots and gaps fill all 10 units, so the CSS width is
-              the distance from the left edge of the first dot to the right
-              edge of the last. */}
-          <svg viewBox="0 0 10 2" fill="currentColor">
+          {/* Three stacked dots, filled rather than stroked. The box is the
+              ink: equal dots and gaps fill all 10 units, so the CSS height is
+              the distance from the top of the first dot to the bottom of the
+              last. */}
+          <svg viewBox="0 0 2 10" fill="currentColor">
             <circle cx="1" cy="1" r="1" />
-            <circle cx="5" cy="1" r="1" />
-            <circle cx="9" cy="1" r="1" />
+            <circle cx="1" cy="5" r="1" />
+            <circle cx="1" cy="9" r="1" />
           </svg>
         </button>
       </div>

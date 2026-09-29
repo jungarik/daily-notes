@@ -42,8 +42,8 @@
      swallow taps on the cards underneath. `.dock` does the same. */
   header {
     position: sticky; top: 0; z-index: 5;
-    display: flex; align-items: center;
-    padding: 14px 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
     pointer-events: none;
   }
   header::before {
@@ -58,12 +58,14 @@
     mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
   }
   header button { pointer-events: auto; }
-  /* The stats keep their natural width in the middle; the two side columns
-     split what is left, so each action centres in the gap between the numbers
-     and its screen edge. An empty right column still holds its share, which is
-     what keeps the stats centred when the filter is hidden. */
-  .hdr-stats { display: flex; gap: 30px; }
-  .hdr-side { flex: 1; display: flex; align-items: center; justify-content: center; }
+  /* Plus hard left, stats hard right. The side wrappers no longer split the
+     free space between them — they are sized to their contents and the stats
+     take the slack with `margin-left: auto`, so the stats + dots group is
+     pinned right whatever the counts widen to. The dots follow the numbers in
+     DOM order, which puts them at the end of that line; the header's 12px gap
+     keeps them off the last stat and its 16px padding off the screen edge. */
+  .hdr-stats { display: flex; gap: 30px; margin-left: auto; }
+  .hdr-side { flex: none; display: flex; align-items: center; }
   .stat { text-align: center; min-width: 54px; }
   .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; }
   .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
@@ -335,22 +337,13 @@
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-  /* Two floating 54px circles, the size and lift of the dock's `.fab`, now that
-     the header itself paints nothing. Both carry the dock's shadow — a cast
-     shadow plus an inset top highlight — which is what makes a thing read as
-     floating above the feed rather than sitting on a bar.
-
-     At 54px each circle is taller than the 38.35px stat block, so the header
-     sizes to them and they are simply centred. The old nudges that put a glyph
-     on the numbers' line are gone: a circle that overhangs the block on both
-     sides has no meaningful edge to align. */
+  /* The two actions no longer match: the plus is a floating disc, the filter is
+     a bare glyph. All they share is being flex-centred buttons with no padding
+     of their own. */
   .hdr-add, .hdr-filter {
-    flex: none; width: 54px; height: 54px;
+    flex: none;
     display: flex; align-items: center; justify-content: center;
-    padding: 0;
-    border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
   }
 
   /* Add note: the header's primary action, in the same #2f6feb the pill's send
@@ -366,25 +359,39 @@
      nearly the same luminance. Dark is the only grey that reads as an edge
      here (#333 gives 2.76:1). */
   .hdr-add {
+    width: 54px; height: 54px;
+    padding: 0;
     border: 1.5px solid var(--border);
+    border-radius: 50%;
     background: #2f6feb;
     color: #fff;
+    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
   }
   .hdr-add svg { width: 20px; height: 20px; stroke-width: 1.64; }   /* -> 2.40px */
 
-  /* Filter: the dock's glass, so the dots get a real 54px tap target instead of
-     a 20x4px sliver. Three dots in a row, filled, equal dots and gaps — 4px
-     each at this size — matching the plus glyph's 20px span. */
+  /* Filter: three stacked dots and nothing else — no ring, no glass, no float.
+     16px tall, 20% off the 20px the plus glyph uses, so dots are 3.2px with
+     3.2px gaps.
+
+     The padding is the tap target, not decoration: the ink is 3.2px wide, and a
+     button that narrow is unhittable. 12px each side makes it 27x40px while
+     leaving the glyph exactly 16px.
+
+     The lift puts the first dot on the numbers' top line. The 54px plus sets
+     the header's row height, so the 38.35px stat block is centred in it and the
+     numbers start at 14 + (54 - 38.35)/2 = 21.83px; the 40px button centres at
+     21px and its padding puts the glyph at 33px. Hence -11.17px. */
   .hdr-filter {
-    border: 1px solid rgba(255,255,255,.14);
-    background: rgba(48,48,48,.55);
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    backdrop-filter: blur(22px) saturate(180%);
+    padding: 12px;
+    border: none;
+    background: transparent;
     color: var(--text-muted);
+    transform: translateY(-11.17px);
   }
-  .hdr-filter svg { width: 20px; height: 4px; }
+  .hdr-filter svg { width: 3.2px; height: 16px; }
   .hdr-filter.active { color: var(--accent); }
   .hdr-filter.hidden { display: none; }
+
 
   /* Add note page: a full-screen overlay, above the dock (40) and the note
      sheet (51), so its two buttons sit in the screen's real top corners
