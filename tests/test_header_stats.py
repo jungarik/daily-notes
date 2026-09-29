@@ -145,12 +145,12 @@ class LocaleTests(unittest.TestCase):
         """Only the bot writes `users.language`, so a Mini-App-only user has
         NULL and must still get a usable header.
 
-        The expected string is spelled out rather than derived from
-        `FALLBACK_LOCALE`: comparing the constant against itself would pass
+        The expected string is spelled out rather than derived from the
+        fallback constant: comparing a constant against itself would pass
         whatever it were changed to, which is not a test of anything."""
         stats, _ = _stats(None, {})
 
-        self.assertEqual("uk", helper.FALLBACK_LOCALE)
+        self.assertEqual("uk", i18n.DEFAULT_LOCALE)
         self.assertEqual("Вхідні", stats["stats"][0]["label"])
 
 

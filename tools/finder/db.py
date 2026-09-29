@@ -85,7 +85,11 @@ def upcoming_reminders(user_id: int, limit: int = 10):
             """
             SELECT r.id, r.remind_at, n.text, r.status
             FROM reminders r JOIN notes n ON n.id = r.note_id
+            -- Still to come, not merely still pending. A reminder whose time
+            -- has passed but was never delivered is not going to fire on its
+            -- own, so listing it as upcoming is a lie the user acts on.
             WHERE r.user_id = %s AND r.status IN ('scheduled', 'postponed')
+              AND r.remind_at >= now()
             ORDER BY r.remind_at LIMIT %s;
             """,
             (user_id, limit),

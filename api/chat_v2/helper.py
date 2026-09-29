@@ -33,7 +33,7 @@ def normalize_settings(tz_name: str | None, lang: str | None) -> tuple[ZoneInfo,
         except Exception:
             tz = config.DEFAULT_TZ
 
-    locale = i18n.normalize(lang) or i18n.DEFAULT_LOCALE
+    locale = i18n.resolve_locale(lang)
 
     return tz, locale
 

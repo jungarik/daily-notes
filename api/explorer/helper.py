@@ -17,19 +17,13 @@ def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
     return snippet[:limit] + "…" if len(snippet) > limit else snippet
 
 
-# Only the bot ever writes `users.language`, so a Mini-App-only user has none.
-# Matches `api/header`, and for the same reason: the fallback is this app's
-# choice, not `i18n`'s, which is also the bot's default.
-FALLBACK_LOCALE = "uk"
-
-
 def list_roots(user_id: int) -> list[dict]:
     """Every root folder, labelled in the user's language, in canonical order.
 
     All of them — including Archive — because this is the vault's roster, not a
     selection for one screen.
     """
-    locale = i18n.normalize(db.get_language(user_id)) or FALLBACK_LOCALE
+    locale = i18n.resolve_locale(db.get_language(user_id))
 
     return [{"key": key, "label": i18n.t(locale, key)}
             for key in helper.order_root_keys()]

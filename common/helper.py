@@ -71,7 +71,7 @@ def order_root_keys() -> tuple[str, ...]:
 def localized_root_folders(language: str | None) -> tuple[dict[str, str], str]:
     """`({localised name: english description}, default root)`, in canonical
     order — dicts keep insertion order, so the caller gets the ordering free."""
-    locale = i18n.normalize(language) or i18n.DEFAULT_LOCALE
+    locale = i18n.resolve_locale(language)
     roots = {i18n.t(locale, key): config.ROOT_FOLDERS[key]["description"]
              for key in order_root_keys()}
     default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)

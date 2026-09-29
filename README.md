@@ -214,7 +214,8 @@ Best-practice behaviours baked in:
   until then `REMINDER_TZ` is used.
 - **Per-user language.** All bot messages and button labels are localized in
   English and Ukrainian. Set with `/language uk` or `/language en` (stored in
-  `user_settings`); until then `BOT_DEFAULT_LOCALE` is used. Translations live in
+  `user_settings`); until then `APP_DEFAULT_LOCALE` is used (default `uk`).
+Translations live in
   `locales.json`; add a language by adding a key there.
 - **Idempotent claiming.** The dispatcher claims due rows with
   `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` into a transient

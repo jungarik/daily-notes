@@ -88,7 +88,7 @@ class RosterTests(unittest.TestCase):
     def test_no_stored_language_falls_back_to_ukrainian(self):
         """Only the bot writes `users.language`. Spelled out rather than
         derived from the constant, which would pass for any value."""
-        self.assertEqual("uk", explorer.FALLBACK_LOCALE)
+        self.assertEqual("uk", i18n.DEFAULT_LOCALE)
         self.assertEqual("Вхідні", _roots(None)[0]["label"])
 
     def test_the_roster_does_not_depend_on_the_vault_having_notes(self):

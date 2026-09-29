@@ -291,7 +291,8 @@ DEFAULT_ROOT_FOLDER_KEY = os.environ.get("DEFAULT_ROOT_FOLDER_KEY", "folder_inbo
 
 # --- Localization ---
 
-BOT_DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")
+# Read by `i18n` (which also still honours the legacy BOT_DEFAULT_LOCALE).
+APP_DEFAULT_LOCALE = os.environ.get("APP_DEFAULT_LOCALE", "uk")
 
 
 # --- API service (separate Railway deployable) ---

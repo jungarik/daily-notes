@@ -12,8 +12,12 @@ def all_links(user_id: int, limit: int = 1000) -> list[tuple[int, int]]:
             """
             SELECT l.from_note_id, l.to_note_id
             FROM note_links l
+            -- Both endpoints must be filed: an edge to an un-filed note
+            -- would point at a node `notes_brief` no longer returns.
             JOIN notes a ON a.id = l.from_note_id AND a.user_id = %s
+                        AND a.path IS NOT NULL AND a.path <> ''
             JOIN notes b ON b.id = l.to_note_id AND b.user_id = %s
+                        AND b.path IS NOT NULL AND b.path <> ''
             LIMIT %s;
             """,
             (user_id, user_id, limit),
@@ -35,7 +39,8 @@ def notes_brief(user_id: int, ids) -> list[dict]:
                    (SELECT count(*) FROM note_attachments a
                     WHERE a.note_id = n.id) AS attachments
             FROM notes n
-            WHERE n.user_id = %s AND n.id = ANY(%s);
+            WHERE n.user_id = %s AND n.id = ANY(%s)
+              AND n.path IS NOT NULL AND n.path <> '';
             """,
             (user_id, ids),
         )

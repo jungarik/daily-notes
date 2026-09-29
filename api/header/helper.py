@@ -18,11 +18,6 @@ from common import helper
 # browser/webapp/src/components/Header.jsx).
 REPORTED_ROOTS = 4
 
-# Only the bot ever writes `users.language`, so a Mini-App-only user has none.
-# The fallback lives here rather than in `i18n.DEFAULT_LOCALE` because that one
-# is the bot's default too, and these are not the same decision.
-FALLBACK_LOCALE = "uk"
-
 
 def stats(user_id: int) -> dict:
     """`{stats: [{key, label, count}]}` — one entry per reported root folder.
@@ -32,7 +27,7 @@ def stats(user_id: int) -> dict:
     the label says one thing and the paths say another, and no amount of
     guessing here would make those agree.
     """
-    locale = i18n.normalize(db.get_language(user_id)) or FALLBACK_LOCALE
+    locale = i18n.resolve_locale(db.get_language(user_id))
     labelled = [(key, i18n.t(locale, key))
                 for key in helper.order_root_keys()[:REPORTED_ROOTS]]
     counts = db.count_root_entries(user_id, [name for _, name in labelled])

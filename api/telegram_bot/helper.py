@@ -550,7 +550,7 @@ def _resolve_tz(name: str | None) -> ZoneInfo:
 
 
 def _resolve_locale(lang: str | None) -> str:
-    return i18n.normalize(lang) or i18n.DEFAULT_LOCALE
+    return i18n.resolve_locale(lang)
 
 
 def timezone(user_id: int) -> ZoneInfo:

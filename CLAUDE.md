@@ -441,6 +441,19 @@ navigates without recursion). Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
 menu on a card/folder opens a context menu to change its path.
 
+A note with no `path` is not in the vault yet: `feed`, `explorer`, `mapview`
+and `search` all filter it out (`mapview` on both its edge and its node query,
+or the graph draws a node whose detail never arrives). `notesheet` and
+`notecard` do **not** filter, so the note stays openable by id and a
+`[[note:ID]]` card still renders; neither do the chat agents or the bot's RAG,
+so an un-filed note remains findable and one enrichment away from appearing.
+
+"Upcoming" reminders require `remind_at >= now()` as well as a pending status,
+in `tools/finder/db.upcoming_reminders` and the bot's, plus the count beside
+the list. `agenda_reminders` keeps its own explicit range (a past window is a
+fair question) and the dispatcher keeps `remind_at <= now()`, which is the
+opposite direction and the whole point of it.
+
 Root folders have one canonical order, the `order` value in
 `config.ROOT_FOLDERS` (steps of 10). `common.helper.order_root_keys()` is the
 only source of it: `/api/explorer` ships it to the client as the root roster and

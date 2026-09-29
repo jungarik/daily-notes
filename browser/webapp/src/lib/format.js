@@ -18,7 +18,8 @@ export function fmtDateShort(iso) {
 // A stable colour for a note's path: every note filed in the same folder gets
 // the same hue, so the map's dots and card borders group by folder at a glance.
 export function pathColor(path, sat = 52, light = 58) {
-  const key = String(path || "Inbox").trim() || "Inbox";
+  // A hash seed, never shown — so it needs no label, just stability.
+  const key = String(path || "").trim();
   let h = 0;
 
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
@@ -27,7 +28,10 @@ export function pathColor(path, sat = 52, light = 58) {
 }
 
 // A note's folder key for the filter (its path, or a bucket for unsorted notes).
-export const notePathKey = (d) => (d && d.path) || "(unsorted)";
+// Which folder a note belongs to. Every note the vault views receive has a
+// path — the API filters out the ones that do not — so there is nothing to
+// fall back to.
+export const notePathKey = (d) => (d && d.path) || "";
 
 export const dateText = (d) => fmtDate(d && d.created_at);
 export const tagsText = (d) => (d && d.tags && d.tags.length ? "🏷 " + d.tags.join(", ") : "");

@@ -12,7 +12,11 @@ def search_notes(user_id: int, query: str, limit: int = 50) -> list[dict]:
             """
             SELECT id, title, path, text
             FROM notes
-            WHERE user_id = %s
+            -- An un-filed note (no path) is not part of the vault yet: it is
+            -- hidden from every browsing view until enrichment gives it a
+            -- home. The bot and the chat agents still see it, so it stays
+            -- recoverable. Duplicated per section, like the rest of the SQL.
+            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
               AND (coalesce(title, '') ILIKE %s
                    OR coalesce(path, '') ILIKE %s
                    OR coalesce(text, '') ILIKE %s)

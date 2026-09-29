@@ -17,9 +17,17 @@ _LOCALES = json.loads(
     (pathlib.Path(__file__).parent / "locales.json").read_text(encoding="utf-8")
 )
 
-DEFAULT_LOCALE = os.environ.get("BOT_DEFAULT_LOCALE", "en")
+# The locale every surface falls back to when a user has no stored language.
+# `users.language` is written only by the bot's /lang command, so a Mini-App-only
+# user has none — and each surface deciding that separately is how the header
+# comes to label a folder «Вхідні» while enrichment writes "Inbox" into the path.
+# `BOT_DEFAULT_LOCALE` is still read so an existing deployment keeps working; the
+# name is legacy, since this is not the bot's setting any more.
+DEFAULT_LOCALE = (os.environ.get("APP_DEFAULT_LOCALE")
+                  or os.environ.get("BOT_DEFAULT_LOCALE")
+                  or "uk")
 if DEFAULT_LOCALE not in _LOCALES:
-    DEFAULT_LOCALE = "en"
+    DEFAULT_LOCALE = "uk"
 
 SUPPORTED = tuple(_LOCALES.keys())  # ('en', 'uk')
 
@@ -34,6 +42,16 @@ def normalize(code: str | None) -> str | None:
     if c.startswith("en"):
         return "en"
     return None
+
+
+def resolve_locale(code: str | None) -> str:
+    """The locale to use for `code`, falling back to the app default.
+
+    The one place that fallback is decided. `normalize(x) or DEFAULT_LOCALE`
+    written out per vertical is the same decision made five times, which is a
+    licence for two of them to differ.
+    """
+    return normalize(code) or DEFAULT_LOCALE
 
 
 _MONTHS_ABBR = {

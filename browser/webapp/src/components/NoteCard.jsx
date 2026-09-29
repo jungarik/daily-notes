@@ -57,7 +57,7 @@ export default function NoteCard({ detail }) {
           }}
         >⋮</span>
       </div>
-      <div className="card-path">{"📁 " + (detail.path || "Inbox")}</div>
+      <div className="card-path">{"📁 " + detail.path}</div>
       {tags && <div className="card-meta">{tags}</div>}
       {(text || !hasImages) && (
         <div className={"card-body" + (text ? "" : " muted")}>{text || "(empty note)"}</div>

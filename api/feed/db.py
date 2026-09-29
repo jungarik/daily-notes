@@ -19,7 +19,11 @@ def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
                    (SELECT count(*) FROM note_links l
                     WHERE l.from_note_id = n.id OR l.to_note_id = n.id) AS links
             FROM notes n
-            WHERE n.user_id = %s
+            -- An un-filed note (no path) is not part of the vault yet: it is
+            -- hidden from every browsing view until enrichment gives it a
+            -- home. The bot and the chat agents still see it, so it stays
+            -- recoverable. Duplicated per section, like the rest of the SQL.
+            WHERE n.user_id = %s AND n.path IS NOT NULL AND n.path <> ''
             ORDER BY n.created_at DESC NULLS LAST, n.id DESC
             LIMIT %s;
             """,

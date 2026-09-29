@@ -66,7 +66,8 @@ offers the roster (`get_vault_context`) and the tool that writes the path
 `users.language`: a root name ends up inside the note's stored path, so if those
 two resolved the locale separately, a proposal of “Вхідні” could be normalised
 back to “Inbox” on the way to the database. The caller decides the locale once —
-`api/chat_v2` from `users.language`, falling back to `BOT_DEFAULT_LOCALE`.
+`api/chat_v2` from `users.language` via `i18n.resolve_locale`, falling back to
+`APP_DEFAULT_LOCALE`.
 
 ## Layers and public API
 

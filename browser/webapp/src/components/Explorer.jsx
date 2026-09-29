@@ -6,7 +6,8 @@ import { compareRoots } from "../lib/format.js";
 function buildTree(notes) {
   const root = { folders: {}, files: [] };
   for (const n of notes) {
-    const path = ((n.path || "Inbox").trim()) || "Inbox";
+    // Every note here has a path: /api/explorer omits the un-filed ones.
+    const path = (n.path || "").trim();
     const parts = path.split("/").map((p) => p.trim()).filter(Boolean);
     let node = root;
     for (const part of parts) {

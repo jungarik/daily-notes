@@ -9,7 +9,7 @@ from tools.finder import db
 
 def _known_paths(user_id: int) -> list[str]:
     _, raw_language = db.get_user_settings(user_id)
-    locale = i18n.normalize(raw_language) or i18n.DEFAULT_LOCALE
+    locale = i18n.resolve_locale(raw_language)
     roots = {i18n.t(locale, key) for key in config.ROOT_FOLDERS}
     paths = [name for name, _ in db.list_paths(user_id)]
     paths.extend(name for name in roots if name not in paths)
