@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
+import { compareRoots } from "../lib/format.js";
 
 // --- tree building for the explorer view ---
 function buildTree(notes) {
@@ -67,7 +68,9 @@ export default function Explorer({ hidden }) {
   const { state } = useApp();
   const notes = state.notes || [];
   const root = useMemo(() => buildTree(notes), [notes]);
-  const rootFolders = Object.keys(root.folders).sort((a, b) => a.localeCompare(b));
+  // Only the top level follows the vault's order; `Folder` keeps sorting its
+  // own children alphabetically.
+  const rootFolders = Object.keys(root.folders).sort(compareRoots(state.roots));
   const empty = !rootFolders.length && !root.files.length;
   return (
     <div id="tree" className={"view" + (hidden ? " hidden" : "")}>

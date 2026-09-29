@@ -41,3 +41,25 @@ export function linkedItems(detail) {
   }
   return items;
 }
+
+// Compare two top-level folder names by the vault's canonical root order.
+//
+// `roots` is the roster from /api/explorer — [{key, label}] in the order the
+// server says roots belong in. A vault can legitimately hold a folder that is
+// not on it: a root left in another language by a language switch, or one typed
+// by hand. Those sort alphabetically *after* the known roots rather than being
+// dropped (which would hide notes) or leading (which would be noise).
+//
+// Sub-folders and notes are not affected — only the top level has an opinion.
+export function compareRoots(roots) {
+  const rank = new Map((roots || []).map((root, index) => [root.label, index]));
+
+  return (a, b) => {
+    const ra = rank.has(a) ? rank.get(a) : Infinity;
+    const rb = rank.has(b) ? rank.get(b) : Infinity;
+
+    if (ra !== rb) return ra - rb;
+
+    return a.localeCompare(b);
+  };
+}

@@ -1,6 +1,10 @@
-"""Explorer section service: shape note rows for the tree/list."""
+"""Explorer section service: the tree's note rows, and the root roster that
+gives its top level an order.
+"""
 
+import i18n
 from api.explorer import db
+from common import helper
 
 
 def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
@@ -11,6 +15,24 @@ def _display_title(title: str | None, text: str | None, limit: int = 60) -> str:
     if not snippet:
         return "untitled"
     return snippet[:limit] + "…" if len(snippet) > limit else snippet
+
+
+# Only the bot ever writes `users.language`, so a Mini-App-only user has none.
+# Matches `api/header`, and for the same reason: the fallback is this app's
+# choice, not `i18n`'s, which is also the bot's default.
+FALLBACK_LOCALE = "uk"
+
+
+def list_roots(user_id: int) -> list[dict]:
+    """Every root folder, labelled in the user's language, in canonical order.
+
+    All of them — including Archive — because this is the vault's roster, not a
+    selection for one screen.
+    """
+    locale = i18n.normalize(db.get_language(user_id)) or FALLBACK_LOCALE
+
+    return [{"key": key, "label": i18n.t(locale, key)}
+            for key in helper.order_root_keys()]
 
 
 def list_for_tree(user_id: int) -> list[dict]:

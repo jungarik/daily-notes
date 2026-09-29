@@ -250,17 +250,37 @@ LATE_NOTE_SECONDS = 60
 
 # translations under each locale in locales.json.
 
-ROOT_FOLDERS: dict[str, str] = {
+# `order` is the vault's canonical top-level order, used wherever roots are
+# listed to a person. It is explicit rather than implied by the position of a
+# line here, so alphabetising this dict some day cannot silently reorder the
+# Explorer. Steps of 10 leave room to slot a root between two without
+# renumbering the rest.
+ROOT_FOLDERS: dict[str, dict] = {
 
-    "folder_inbox": "uncategorized / not yet sorted",
+    "folder_inbox": {
+        "order": 10,
+        "description": "uncategorized / not yet sorted",
+    },
 
-    "folder_projects": "active efforts with a concrete outcome or deadline",
+    "folder_projects": {
+        "order": 20,
+        "description": "active efforts with a concrete outcome or deadline",
+    },
 
-    "folder_areas": "ongoing responsibilities to maintain over time",
+    "folder_areas": {
+        "order": 30,
+        "description": "ongoing responsibilities to maintain over time",
+    },
 
-    "folder_resources": "reference material and topics of interest",
+    "folder_resources": {
+        "order": 40,
+        "description": "reference material and topics of interest",
+    },
 
-    "folder_archive": "inactive or completed items kept for reference",
+    "folder_archive": {
+        "order": 50,
+        "description": "inactive or completed items kept for reference",
+    },
 
 }
 

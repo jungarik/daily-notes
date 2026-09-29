@@ -9,15 +9,14 @@ names in a second place to drift.
 
 import i18n
 from api.header import db
+from common import helper
 
-# The roots the header reports, in display order. All four are returned; the
-# Mini App shows the first three (see browser/webapp/src/components/Header.jsx).
-STAT_ROOT_KEYS = (
-    "folder_inbox",
-    "folder_projects",
-    "folder_areas",
-    "folder_resources",
-)
+# How many of the vault's roots the header reports. The order and the keys come
+# from `config.ROOT_FOLDERS` rather than being restated here — two lists
+# declaring root order is how the Explorer and the header drift apart. Four are
+# returned; the Mini App shows the first three (see
+# browser/webapp/src/components/Header.jsx).
+REPORTED_ROOTS = 4
 
 # Only the bot ever writes `users.language`, so a Mini-App-only user has none.
 # The fallback lives here rather than in `i18n.DEFAULT_LOCALE` because that one
@@ -34,7 +33,8 @@ def stats(user_id: int) -> dict:
     guessing here would make those agree.
     """
     locale = i18n.normalize(db.get_language(user_id)) or FALLBACK_LOCALE
-    labelled = [(key, i18n.t(locale, key)) for key in STAT_ROOT_KEYS]
+    labelled = [(key, i18n.t(locale, key))
+                for key in helper.order_root_keys()[:REPORTED_ROOTS]]
     counts = db.count_root_entries(user_id, [name for _, name in labelled])
 
     return {

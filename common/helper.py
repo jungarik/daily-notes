@@ -58,11 +58,24 @@ def required_values_error(value, name: str, keys: list[str]) -> str | None:
 required_keys_error = required_values_error
 
 
+def order_root_keys() -> tuple[str, ...]:
+    """The vault's root folder keys, in the order a person should see them.
+
+    One source of truth for that order: everything that lists roots derives
+    from here rather than from the position of a line in `config`.
+    """
+    return tuple(sorted(config.ROOT_FOLDERS,
+                        key=lambda key: config.ROOT_FOLDERS[key]["order"]))
+
+
 def localized_root_folders(language: str | None) -> tuple[dict[str, str], str]:
+    """`({localised name: english description}, default root)`, in canonical
+    order — dicts keep insertion order, so the caller gets the ordering free."""
     locale = i18n.normalize(language) or i18n.DEFAULT_LOCALE
-    roots = {i18n.t(locale, key): definition
-             for key, definition in config.ROOT_FOLDERS.items()}
+    roots = {i18n.t(locale, key): config.ROOT_FOLDERS[key]["description"]
+             for key in order_root_keys()}
     default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
+
     return roots, default
 
 

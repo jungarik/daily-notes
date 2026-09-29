@@ -24,6 +24,7 @@ const initial = {
   prevView: "notes",        // last non-input view (for close/back)
   barMode: null,            // "search" | "chat" while the pill shows its input
   notes: [],                // explorer tree + search source
+  roots: [],                // vault root folders, in canonical order
   feed: null,               // full note cards; null = not loaded
   filterSel: loadFilter(),  // Set of included folder keys, or null = all
   stats: [],                // header root-folder counts (/api/header/stats)
@@ -78,8 +79,8 @@ export function AppProvider({ children }) {
 
   // ----- data -----
   const reload = useCallback(async () => {
-    const [notes, feed] = await Promise.all([api.fetchNotes(), api.fetchFeed()]);
-    patch({ notes, feed });
+    const [explorer, feed] = await Promise.all([api.fetchNotes(), api.fetchFeed()]);
+    patch({ notes: explorer.notes || [], roots: explorer.roots || [], feed });
   }, [patch]);
 
 

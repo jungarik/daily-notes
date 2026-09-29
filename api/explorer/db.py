@@ -1,4 +1,9 @@
-"""Persistence for the explorer section (isolated): the user's notes list."""
+"""Persistence for the explorer section (isolated): notes, and the language
+their folder roster is labelled in.
+
+The language lookup is duplicated from the other verticals rather than
+shared: a section owns the SQL it needs (see CLAUDE.md).
+"""
 
 from db import cursor
 
@@ -25,3 +30,16 @@ def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
              "created_at": r[4], "links": r[5]}
             for r in cur.fetchall()
         ]
+
+
+def get_language(user_id: int) -> str | None:
+    """The user's chosen language, or None when they have never set one.
+
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the caller decides what that means.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+    return row[0] if row else None

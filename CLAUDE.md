@@ -409,7 +409,10 @@ separate client from the bot and authenticates with Telegram's signed `initData`
 (`X-Telegram-Init-Data` header, verified in `api/telegram_auth.py` via
 `current_user`); it calls its per-section endpoints, which resolve the Telegram
 user to an internal `user_id` and return only that user's data:
-`GET /api/feed` (full note cards, newest first), `GET /api/explorer` (tree) +
+`GET /api/feed` (full note cards, newest first), `GET /api/explorer`
+(`{notes, roots}` — the tree's notes plus the vault's root folders,
+localised and in `config.ROOT_FOLDERS` order, which is how the client
+orders a top level it only knows as localised path strings) +
 `GET /api/notesheet/{id}` (preview), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
 folders can't be moved), `GET /api/mapview/graph` (connections map),
@@ -437,6 +440,14 @@ text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
 navigates without recursion). Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
 menu on a card/folder opens a context menu to change its path.
+
+Root folders have one canonical order, the `order` value in
+`config.ROOT_FOLDERS` (steps of 10). `common.helper.order_root_keys()` is the
+only source of it: `/api/explorer` ships it to the client as the root roster and
+`api/header` takes the first four for its counts, so neither restates it.
+`lib/format.compareRoots` sorts known roots by the roster and anything
+unrecognised — a root left behind by a language switch, say — alphabetically
+after, rather than dropping it and hiding notes.
 
 The **folder filter** is a tri-state checkbox tree (built client-side from the
 loaded notes' paths): a parent is checked when all its descendants are, or

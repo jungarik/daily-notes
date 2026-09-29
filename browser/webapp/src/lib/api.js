@@ -43,7 +43,7 @@ export function mediaUrl(u) {
 // the matching api/<section>/ folder). Attachment proxy lives in the notecard
 // section. Chat is on /api/chat/v2 — the agent-farm surface; /api/chat (v1) is
 // still mounted on the API while v2 is proven, so a revert is a URL change.
-export const fetchNotes = () => apiGet("/api/explorer").catch(() => []);
+export const fetchNotes = () => apiGet("/api/explorer").catch(() => ({ notes: [], roots: [] }));
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));

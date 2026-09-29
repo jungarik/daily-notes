@@ -20,15 +20,22 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).parents[1]
 
-# `api.header.db` imports the shared psycopg pool at module load; the section's
-# logic is what is under test, so the connection is stubbed away.
-if "db" not in sys.modules:
-    stub = types.ModuleType("db")
-    stub.cursor = lambda: None
-    sys.modules["db"] = stub
+# `api.*.db` imports the shared psycopg pool at module load, which is absent
+# here. Stub it just long enough to import the modules under test, then take it
+# back out of `sys.modules`: leaving a fake `db` behind changes how *other* test
+# modules import, which is a real way for one file to alter another's result.
+_had_db = "db" in sys.modules
+
+if not _had_db:
+    _stub = types.ModuleType("db")
+    _stub.cursor = lambda: None
+    sys.modules["db"] = _stub
 
 import i18n                                  # noqa: E402
 from api.header import helper                # noqa: E402
+
+if not _had_db:
+    del sys.modules["db"]
 
 
 def _sqlite_ready(sql: str) -> str:
@@ -100,23 +107,29 @@ class CountRuleTests(unittest.TestCase):
         self.assertEqual(1, counts["Projects"])
 
 
+def _stats(language, counts):
+    """`helper.stats` over a stubbed database.
+
+    Returns the payload and the root names the query was asked to match, so a
+    test can check the labels and the matching against each other.
+    """
+    with patch.object(helper.db, "get_language", return_value=language), \
+            patch.object(helper.db, "count_root_entries",
+                         return_value=counts) as counted:
+        return helper.stats(7), counted.call_args[0][1]
+
+
 class LocaleTests(unittest.TestCase):
     """The label and the query must come from one locale, or the counts are
     labelled in one language and matched in another."""
 
-    def _stats(self, language, counts):
-        with patch.object(helper.db, "get_language", return_value=language), \
-                patch.object(helper.db, "count_root_entries",
-                             return_value=counts) as counted:
-            return helper.stats(7), counted.call_args[0][1]
-
     def test_labels_and_matched_names_are_the_same_strings(self):
-        stats, matched = self._stats("uk", {})
+        stats, matched = _stats("uk", {})
 
         self.assertEqual([entry["label"] for entry in stats["stats"]], matched)
 
     def test_ukrainian_roots(self):
-        stats, _ = self._stats("uk", {"Проєкти": 3})
+        stats, _ = _stats("uk", {"Проєкти": 3})
 
         by_key = {entry["key"]: entry for entry in stats["stats"]}
         self.assertEqual("Вхідні", by_key["folder_inbox"]["label"])
@@ -124,7 +137,7 @@ class LocaleTests(unittest.TestCase):
         self.assertEqual(3, by_key["folder_projects"]["count"])
 
     def test_an_unmatched_root_reports_zero(self):
-        stats, _ = self._stats("uk", {})
+        stats, _ = _stats("uk", {})
 
         self.assertEqual([0, 0, 0, 0], [e["count"] for e in stats["stats"]])
 
@@ -135,19 +148,22 @@ class LocaleTests(unittest.TestCase):
         The expected string is spelled out rather than derived from
         `FALLBACK_LOCALE`: comparing the constant against itself would pass
         whatever it were changed to, which is not a test of anything."""
-        stats, _ = self._stats(None, {})
+        stats, _ = _stats(None, {})
 
         self.assertEqual("uk", helper.FALLBACK_LOCALE)
         self.assertEqual("Вхідні", stats["stats"][0]["label"])
 
 
 class ShapeTests(unittest.TestCase):
-    def test_four_roots_in_display_order(self):
+    def test_four_roots_in_the_vault_order(self):
         """The Mini App shows the first three by position, so the order is part
-        of the contract rather than an implementation detail."""
+        of the contract rather than an implementation detail — and it comes from
+        `config.ROOT_FOLDERS`, not from a second list kept here."""
+        stats, _ = _stats("uk", {})
+
         self.assertEqual(
-            ("folder_inbox", "folder_projects", "folder_areas", "folder_resources"),
-            helper.STAT_ROOT_KEYS)
+            ["folder_inbox", "folder_projects", "folder_areas", "folder_resources"],
+            [entry["key"] for entry in stats["stats"]])
 
 
 if __name__ == "__main__":

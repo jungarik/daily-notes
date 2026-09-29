@@ -107,7 +107,8 @@ def transcribe(audio_bytes: bytes) -> str:
 
 def _localized_roots(user_id: int) -> tuple[dict[str, str], str]:
     locale = language(user_id)
-    roots = {i18n.t(locale, key): definition for key, definition in config.ROOT_FOLDERS.items()}
+    roots = {i18n.t(locale, key): root["description"]
+             for key, root in config.ROOT_FOLDERS.items()}
     default = i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
     return roots, default
 

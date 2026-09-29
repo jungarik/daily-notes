@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { notePathKey } from "../lib/format.js";
+import { compareRoots, notePathKey } from "../lib/format.js";
 
 // Tri-state folder filter over the feed's paths; applies to the feed (and the
 // Map). Selection persists in the store (localStorage-backed).
 export default function FolderFilter() {
   const { state, closeFilter, setFilter } = useApp();
-  const { filterOpen, feed, filterSel } = state;
+  const { filterOpen, feed, filterSel, roots } = state;
 
   const keys = useMemo(
     () => (feed ? [...new Set(feed.map(notePathKey))].filter(Boolean).sort() : []),
@@ -24,14 +24,20 @@ export default function FolderFilter() {
       }
     }
     const out = [];
+    // Depth 0 is the vault's roots, so they take its order; everything deeper
+    // stays alphabetical.
+    const byRoot = compareRoots(roots);
     (function walk(node, depth) {
-      for (const child of [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      const children = [...node.children.values()].sort(
+        depth === 0 ? (a, b) => byRoot(a.name, b.name)
+                    : (a, b) => a.name.localeCompare(b.name));
+      for (const child of children) {
         out.push({ name: child.name, path: child.path, depth });
         walk(child, depth + 1);
       }
     })(root, 0);
     return out;
-  }, [keys]);
+  }, [keys, roots]);
 
   if (!filterOpen) return null;
 
