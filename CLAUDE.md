@@ -422,10 +422,40 @@ its loose notes, labelled in the user's language), `GET /api/search?q=`
 signed image proxy). `POST /api/chat/v2` + `/api/chat/v2/confirm` back the
 **agentic chat tab** (see below).
 
-UI: a **header** with no bar of its own — a blue add-note disc, the vault's
-root-folder counts (Inbox / Projects / Areas; the API also returns Resources)
-and a **folder-filter** button, over a progressive blur scrim. Tapping add-note
-opens a full-screen capture page. A floating
+UI: a **header** with no bar of its own — an **Inbox ring**, the vault's other
+root-folder counts (Projects / Areas / Resources) and a **folder-filter**
+button, over a progressive blur scrim. The ring is two concentric bands in a
+64px box. Inside is the **disc** — 54px, the size the dock's circles use, a
+1.5px grey border holding the Inbox count at `.stat b`'s size and weight; it is
+always drawn, so an empty Inbox is just a bordered circle with a white `0`. The
+count is **SVG `<text>` inside the same `<svg>` as the circles**, not a
+positioned `<span>` over them: its `x`/`y` *are* the circles' `cx`/`cy`, so no
+inherited `line-height` or stacking can drift it off the centre they are drawn
+around (an overlay span did exactly that, sitting low in the disc). `dy="0.35em"`
+does the vertical centring rather than `dominant-baseline`, which older WebKit
+ignores; digits have no descenders, so that puts the glyph's middle on the
+circle's. It is white at every count, zero included — the dashes say how full
+the Inbox is, and a number that changed colour too would say it twice. Past
+`COUNT_CAP` = 99 it reads `99+` (`lib/format.formatCount`), which keeps the
+label inside the disc's ~51px of clear width at one fixed size instead of
+introducing a second font size that only renders on counts nobody has.
+Outside it, across a 2.5px gap, is the **dashed ring**: 2.5px white, one dash
+per waiting note, capped at `RING_MAX_SEGMENTS` = 12 (128 notes over that
+circumference is 0.6px of ink per dash — a solid blur that would look the same
+at 90 or 300). At zero the dashed circle is **not rendered at all** rather than
+given an empty dash array, which is what makes "nothing waiting" a different
+shape rather than a solid ring. A small blue **plus badge** sits centred on the
+disc's edge at the lower right, punching through both bands with a `--bg`
+border; it is the only control — the bands and the count are a readout, because
+two hit zones inside one circle is a mis-tap that opens a full-screen page.
+Growing the box from 54 to 64px does **not** disturb `.hdr-filter`'s -11.17px
+lift: both it and the stats are centred in the header row, so the offset
+between them is independent of row height. `/api/header/stats` returns all four
+roots and the client picks Inbox out **by key**, so changing root order
+server-side moves columns rather than silently dropping one. The dash geometry
+and the label are `lib/format.ringDashes` / `formatCount` (pure, tested under
+node in `tests/test_inbox_ring_js.py`): the gap absorbs the round line caps,
+which paint half a stroke width past each end of every dash. A floating
 glass **dock** holds a center pill (Notes / Map / Explorer icons, in that order)
 flanked by two circle buttons — chat (left) and search (right). Tapping a circle
 swaps the pill's icons for a shared input bar (with a Send button) and the pill

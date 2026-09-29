@@ -46,6 +46,56 @@ export function linkedItems(detail) {
   return items;
 }
 
+// --- the header's Inbox ring ------------------------------------------------
+
+// How many segments the ring can show. The Inbox is a to-do pile, not a
+// gauge: past a dozen the exact number stops being the point, and the ring has
+// only ~163px of circumference to spend. One segment per note at 128 notes is
+// 0.6px of ink with a 0.6px gap, which renders as a solid blur — the same
+// picture the ring would draw for 90 or for 300. The count in the middle is
+// the precise reading; the ring is the glance.
+export const RING_MAX_SEGMENTS = 12;
+
+// Fraction of each segment's share of the circle that is gap rather than ink.
+const RING_GAP_RATIO = 0.4;
+
+// Above this the count is shown as "99+". The disc has ~51 units of clear
+// width and three digits at 19px take ~33, so four would still fit — but a
+// second font size for a case that never arrives is a branch nobody tests, and
+// the ring already carries "a lot" on its own.
+export const COUNT_CAP = 99;
+
+// The count as it appears in the disc: an exact figure, or the cap.
+export function formatCount(count) {
+  const notes = Math.max(0, Math.floor(Number(count) || 0));
+
+  return notes > COUNT_CAP ? `${COUNT_CAP}+` : String(notes);
+}
+
+// Ring geometry for `count` notes, in user units of the 54-unit viewBox.
+//
+// Returns `{ segments, dash, gap }` for `stroke-dasharray="dash gap"`, and
+// `segments: 0` for an empty Inbox — the caller draws that as one continuous
+// muted circle, since a ring of nothing is a different statement from a ring
+// of one.
+//
+// `strokeWidth` is subtracted from the dash and handed to the gap because the
+// stroke is drawn with round caps, which add half a stroke width at each end
+// of every dash. Without that the painted segment is longer than the requested
+// dash and the gaps close up as the count climbs.
+export function ringDashes(count, circumference, strokeWidth) {
+  const notes = Math.max(0, Math.floor(Number(count) || 0));
+  const segments = Math.min(notes, RING_MAX_SEGMENTS);
+
+  if (segments === 0) return { segments: 0, dash: 0, gap: 0 };
+
+  const step = circumference / segments;
+  // A single segment would otherwise close into a full circle and lose its gap.
+  const gap = Math.min(step * RING_GAP_RATIO + strokeWidth, step * 0.9);
+
+  return { segments, dash: step - gap, gap };
+}
+
 // Compare two top-level folder names by the vault's canonical root order.
 //
 // `roots` is the roster from /api/explorer — [{key, label}] in the order the

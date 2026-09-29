@@ -337,37 +337,91 @@
   #pathSheet .path-btn.ghost { background: transparent; color: var(--text-muted); }
   #pathSheet .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-  /* The two actions no longer match: the plus is a floating disc, the filter is
-     a bare glyph. All they share is being flex-centred buttons with no padding
-     of their own. */
+  /* The two actions no longer match: the plus is a badge on the Inbox ring, the
+     filter is a bare glyph. All they share is being flex-centred buttons with
+     no padding of their own. */
   .hdr-add, .hdr-filter {
     flex: none;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
   }
 
-  /* Add note: the header's primary action, in the same #2f6feb the pill's send
-     button and `.confirm-btn.yes` use — this app's "commit" blue. (Violet is
-     the accent for *state* — an active filter, a note's path — a different
-     job.) It keeps the solid fill rather than going glass: a backdrop blur
-     does nothing under an opaque colour, and turning it translucent would make
-     it the third identical grey circle on screen.
+  /* #2f6feb is this app's "commit" blue — the pill's send button and
+     `.confirm-btn.yes` use it too. (Violet is the accent for *state*: an active
+     filter, a note's path. A different job.) Both the ring and the badge take
+     it, which is the point: they are one control's readout and its action, not
+     two things that happen to sit near each other. */
 
-     The border is `--border`, NOT the dock's white hairline: white at 14% over
-     a saturated blue is invisible, and a mid grey would be worse still — at
-     #8a8a8e the contrast against #2f6feb is 1.33:1, because the two sit at
-     nearly the same luminance. Dark is the only grey that reads as an edge
-     here (#333 gives 2.76:1). */
+  /* The Inbox unit: a bordered disc holding the count, a dashed ring around it
+     carrying one dash per waiting note, and the add button as a badge on the
+     disc's lower-right — the Instagram add-story shape. The disc and ring are a
+     readout and the badge is the only control, so only the badge is a <button>.
+
+     64px, not 54: the disc is still 54 across — the size the dock's circles
+     use, arrived at deliberately — and the dashed ring needs the band around
+     it. Growing the box does NOT invalidate `.hdr-filter`'s lift: both it and
+     the stats are centred in the header row, so the offset between them is the
+     same at any row height (see the derivation there).
+
+     The radii are in Header.jsx, not here, because the dash array is computed
+     from them. */
+  .hdr-inbox { position: relative; width: 64px; height: 64px; flex: none; }
+  .hdr-ring { position: absolute; inset: 0; width: 64px; height: 64px; }
+
+  /* The disc's border. Always present, and grey rather than blue: it is the
+     container for the number, not a signal. */
+  .hdr-ring-disc { stroke: var(--border); }
+
+  /* One dash per waiting note, up to twelve, in the band outside the disc —
+     the dash array is computed in lib/format.ringDashes, because the gap has
+     to absorb the round caps. White and half a pixel heavier than the disc's
+     border, so it reads as something added rather than as part of the circle.
+     At zero the element is not rendered at all (see Header.jsx), which is what
+     makes "nothing waiting" a visibly different shape from "twelve waiting". */
+  .hdr-ring-dashes { stroke: #fff; }
+
+  /* The count owns the middle, at `.stat b`'s size and weight — it is one of
+     the vault's root counts and should not look like a different species of
+     number just because it sits in a circle. Tabular figures so the digits
+     don't shuffle the centring as the count changes.
+
+     It is SVG text, so the colour is `fill` and not `color`, and there is no
+     `line-height` in the picture at all — which is the point of putting it
+     there. The box is 64 units wide and rendered at 64px, so 19px here is
+     19px on screen, the same number `.stat b` uses.
+
+     White at every count, zero included: the dashes are what say how full the
+     Inbox is, and a number that also changed colour would be saying it twice. */
+  .hdr-ring-count {
+    fill: #fff;
+    font-size: 19px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The badge, centred on the disc's own edge at the lower right, which puts it
+     across the dashed band too. Its border is the page background rather than a
+     colour, so it punches a hole through both rings instead of sitting on top
+     of a segment — the trick that keeps every shape readable where they meet.
+
+     20px of blue is well under any sane tap target, so `::after` extends the
+     hit area to 44px without moving the ink. It has to stay inside .hdr-inbox's
+     stacking context but above the ring, hence the z-index. */
   .hdr-add {
-    width: 54px; height: 54px;
+    position: absolute; right: 3px; bottom: 3px; z-index: 1;
+    width: 21px; height: 21px;
     padding: 0;
-    border: 1.5px solid var(--border);
+    border: 2px solid var(--bg);
     border-radius: 50%;
     background: #2f6feb;
     color: #fff;
-    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+    box-shadow: 0 2px 8px rgba(0,0,0,.45);
   }
-  .hdr-add svg { width: 20px; height: 20px; stroke-width: 1.64; }   /* -> 2.40px */
+  .hdr-add::after {
+    content: ""; position: absolute;
+    left: 50%; top: 50%; width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .hdr-add svg { width: 9px; height: 9px; stroke-width: 2.4; }   /* -> 1.62px */
 
   /* Filter: three stacked dots and nothing else — no ring, no glass, no float.
      16px tall, 20% off the 20px the plus glyph uses, so dots are 3.2px with
@@ -377,10 +431,13 @@
      button that narrow is unhittable. 12px each side makes it 27x40px while
      leaving the glyph exactly 16px.
 
-     The lift puts the first dot on the numbers' top line. The 54px plus sets
-     the header's row height, so the 38.35px stat block is centred in it and the
-     numbers start at 14 + (54 - 38.35)/2 = 21.83px; the 40px button centres at
-     21px and its padding puts the glyph at 33px. Hence -11.17px. */
+     The lift puts the first dot on the numbers' top line, and it is the same
+     number whatever sets the row height — which is why growing `.hdr-inbox`
+     from 54px to 64px left it alone. Both the stats and this button are centred
+     in the row, so for a row of height H the numbers start at
+     14 + (H - 38.35)/2 = H/2 - 5.175, the 40px button's glyph starts at
+     14 + (H - 40)/2 + 12 = H/2 + 6, and the difference is -11.175 with H
+     cancelling out. */
   .hdr-filter {
     padding: 12px;
     border: none;

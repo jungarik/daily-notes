@@ -13,9 +13,13 @@ from common import helper
 
 # How many of the vault's roots the header reports. The order and the keys come
 # from `config.ROOT_FOLDERS` rather than being restated here — two lists
-# declaring root order is how the Explorer and the header drift apart. Four are
-# returned; the Mini App shows the first three (see
-# browser/webapp/src/components/Header.jsx).
+# declaring root order is how the Explorer and the header drift apart.
+#
+# All four are returned and all four are shown, in two places: the Mini App
+# renders `folder_inbox` as the ring around its add-note button and the other
+# three as the stats row (see browser/webapp/src/components/Header.jsx). The
+# client picks Inbox out by key, so changing the order here moves columns
+# rather than dropping one.
 REPORTED_ROOTS = 4
 
 
