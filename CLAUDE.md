@@ -446,14 +446,16 @@ the Inbox is, and a number that changed colour too would say it twice. Past
 `COUNT_CAP` = 99 it reads `99+` (`lib/format.formatCount`), which keeps the
 label inside the disc's ~51px of clear width at one fixed size instead of
 introducing a second font size that only renders on counts nobody has.
-Outside it, across a 2.5px gap, is the **dashed ring**: 2.5px white, one dash
-per waiting note, capped at `RING_MAX_SEGMENTS` = 12 (128 notes over that
+Outside it, across a 2.5px gap, is the **dashed ring**: 2.5px `--commit`, one
+dash per waiting note, capped at `RING_MAX_SEGMENTS` = 12 (128 notes over that
 circumference is 0.6px of ink per dash — a solid blur that would look the same
 at 90 or 300). At zero the dashed circle is **not rendered at all** rather than
 given an empty dash array, which is what makes "nothing waiting" a different
 shape rather than a solid ring. A small blue **plus badge** sits centred on the
-disc's edge at the lower right, punching through both bands with a `--bg`
-border; it is the only control — the bands and the count are a readout, because
+disc's edge at the lower right, cutting through both bands with a **1.5px white
+border** — load-bearing now the dashes share its blue, since a dash crossing it
+would otherwise merge into the badge and stop reading as a separate object; it
+is the only control — the bands and the count are a readout, because
 two hit zones inside one circle is a mis-tap that opens a full-screen page.
 Tapping the badge opens the **Add note page**: a full-screen overlay whose own
 floating bar replaces the header and dock while it is open, and mirrors the

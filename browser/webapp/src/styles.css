@@ -414,11 +414,16 @@
 
   /* One dash per waiting note, up to twelve, in the band outside the disc —
      the dash array is computed in lib/format.ringDashes, because the gap has
-     to absorb the round caps. White and half a pixel heavier than the disc's
-     border, so it reads as something added rather than as part of the circle.
+     to absorb the round caps. Half a pixel heavier than the disc's border, so
+     it reads as something added rather than as part of the circle.
+
+     `--commit` rather than white: the dashes belong to the add-note control
+     they surround, and the badge at their lower right is the same blue. That
+     makes the badge's own border the thing separating them — see below.
+
      At zero the element is not rendered at all (see Header.jsx), which is what
      makes "nothing waiting" a visibly different shape from "twelve waiting". */
-  .hdr-ring-dashes { stroke: #fff; }
+  .hdr-ring-dashes { stroke: var(--commit); }
 
   /* The count owns the middle, at `.stat b`'s size and weight — it is one of
      the vault's root counts and should not look like a different species of
@@ -439,9 +444,13 @@
   }
 
   /* The badge, centred on the disc's own edge at the lower right, which puts it
-     across the dashed band too. Its border is the page background rather than a
-     colour, so it punches a hole through both rings instead of sitting on top
-     of a segment — the trick that keeps every shape readable where they meet.
+     across the dashed band too.
+
+     Its border is WHITE, and that is load-bearing now the dashes are also
+     `--commit`: blue on blue, a dash crossing the badge would merge straight
+     into it and the badge would stop reading as a separate object. A hairline
+     of white cuts the dash cleanly at the badge's edge. (A `--bg` border did
+     this job while the dashes were white — same trick, opposite colours.)
 
      20px of blue is well under any sane tap target, so `::after` extends the
      hit area to 44px without moving the ink. It has to stay inside .hdr-inbox's
@@ -450,7 +459,7 @@
     position: absolute; right: 3px; bottom: 3px; z-index: 1;
     width: 21px; height: 21px;
     padding: 0;
-    border: 2px solid var(--bg);
+    border: 1.5px solid #fff;
     border-radius: 50%;
     background: var(--commit);
     color: #fff;
