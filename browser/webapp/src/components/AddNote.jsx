@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { keyboardInset } from "../lib/format.js";
+import MarkdownHelp from "./MarkdownHelp.jsx";
 
 // The three capture kinds the bar offers alongside typing — the same three the
 // bot already accepts (text, voice, photo), plus the one piece of metadata
@@ -44,6 +45,28 @@ const CAPTURE_KINDS = [
   },
 ];
 
+// The right-edge button's two faces. One control, not two: it shows the mode it
+// will switch *to*, so an eye means "tap to read" and a pencil means "tap to
+// write" — the pattern the dock's circles already use when their glyph becomes
+// a ✕.
+//
+// Tapping swaps the glyph and nothing else. There is no markdown renderer yet,
+// so switching the pane would show the same raw text twice; this is the control
+// being designed, not the mode being built.
+const EyeGlyph = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const PencilGlyph = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+    <path d="M14.5 7.5 16.5 9.5" />
+  </svg>
+);
+
 // The Add note page.
 //
 // A full-screen overlay rather than a `view`: it covers the header and the
@@ -67,12 +90,20 @@ export default function AddNote() {
   // How far the keyboard covers the window. Drives the bar's lift, so both
   // buttons stay reachable while typing instead of sitting under the keys.
   const [inset, setInset] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Which face the right-edge button shows. Nothing reads it but the glyph —
+  // there is no renderer for it to drive yet.
+  const [reading, setReading] = useState(false);
   const open = state.addNoteOpen;
 
   useEffect(() => {
     if (!open) return;
 
     setText("");
+    // Both reset per visit rather than persisting: a capture screen should
+    // open the same way every time, not in whatever state it was left.
+    setHelpOpen(false);
+    setReading(false);
   }, [open]);
 
   useEffect(() => {
@@ -116,6 +147,42 @@ export default function AddNote() {
         tabIndex={open ? 0 : -1}
         onChange={(e) => setText(e.target.value)}
       />
+      {/* Help, in the top-right corner. No glass: the glyph is already a
+          circled `?`, so out of the capsule it *is* "just a question icon and
+          a circle" with nothing else drawn around it. */}
+      <div className="addnote-help">
+        <button
+          className={"addnote-help-btn" + (helpOpen ? " active" : "")}
+          aria-label="Markdown"
+          title="Markdown"
+          aria-expanded={helpOpen}
+          onClick={() => setHelpOpen((open) => !open)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9.4 9.3a2.7 2.7 0 1 1 3.4 3.2c-.6.2-.8.7-.8 1.3v.4" />
+            <path d="M12 17.3h.01" />
+          </svg>
+        </button>
+
+        {/* Hangs below the button and grows leftward — anchored at `right: 0`
+            so its right edge stays on the button's, rather than running off
+            the screen it is pinned to the corner of. */}
+        {helpOpen && <MarkdownHelp onClose={() => setHelpOpen(false)} />}
+      </div>
+
+      {/* One circle, same as the ✕ and ✓ below, centred on the right edge. It
+          shows the mode it switches *to*. */}
+      <button
+        className="fab addnote-side"
+        aria-label={reading ? "Write markdown" : "Rendered view"}
+        title={reading ? "Write markdown" : "Rendered view"}
+        aria-pressed={reading}
+        onClick={() => setReading((on) => !on)}
+      >
+        {reading ? <PencilGlyph /> : <EyeGlyph />}
+      </button>
+
       <div
         className="addnote-bar"
         style={{ bottom: `calc(30px + env(safe-area-inset-bottom, 0px) + ${inset}px)` }}

@@ -476,7 +476,32 @@ the old `setTimeout`-after-mount did. The bar rides above the keyboard on
 included, since iOS scrolls the visual viewport when the keyboard opens) and
 returns 0 where the API is absent. Nothing is captured yet — the Mini App still
 has no note-create endpoint, so both buttons just close.
-`tests/test_addnote_keyboard.py` pins the inset maths and the focus path.
+Two more controls sit outside that bar. A single `.fab` — the same circle as
+the ✕ and ✓, because one control in a capsule is a lozenge — floats centred on
+the **right edge** as the markdown mode toggle: it shows the mode it switches
+*to* (eye → "tap to read", pencil → "tap to write"), the same trick the dock's
+circles use when their glyph becomes a ✕. Tapping flips local state and nothing
+else; there is no renderer, so switching the pane would show the same raw text
+twice. In the **top-right corner** is the **help button**, opening
+`MarkdownHelp.jsx`. It carries no glass and no ring — its glyph is already a
+circled `?`, so any chrome would be a second circle around the first — and it
+needs no top padding on the textarea, because the 74px right padding that
+clears the mode circle already keeps text 74px from an edge the button only
+reaches 48px into. The cheat sheet hangs below it at `right: 0`, growing
+*leftward* rather than off the corner it is pinned to. That sheet is
+**Ukrainian only and hard-coded**: the Mini App has no
+i18n layer, every other label being fixed English or translated server-side,
+and a second translation table beside `locales.json` is one more thing to
+drift. Its examples are hand-styled rather than rendered (no renderer yet), and
+it documents **no underline** — Markdown has none, and the only route to one is
+raw HTML this app never renders.
+
+A trap worth knowing: `pointer-events: none` on the overlay does **not**
+disable a child that sets `auto`, so every control inside the always-mounted
+page is scoped to `.addnote.show`. Unscoped, the closed page's buttons stayed
+live over the feed and a tap where Done sits fired Done.
+`tests/test_addnote_keyboard.py` pins the inset maths, the focus path, the
+`.show` scoping and the cheat sheet.
 
 Growing the box from 54 to 64px does **not** disturb `.hdr-filter`'s -11.17px
 lift: both it and the stats are centred in the header row, so the offset
