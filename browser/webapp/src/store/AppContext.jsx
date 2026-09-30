@@ -61,6 +61,10 @@ export function AppProvider({ children }) {
   const feedReq = useRef(0);
   const threadRef = useRef(null);   // chat thread id (avoids stale closures)
   const busyRef = useRef(false);    // guards against overlapping chat turns
+  // The Add note textarea. It lives here rather than inside AddNote because
+  // `openAddNote` has to focus it, and that has to happen in the click handler
+  // of the button that opens the page — see the comment there.
+  const addNoteInputRef = useRef(null);
 
   // ----- navigation -----
   const setView = useCallback((view) => {
@@ -125,8 +129,22 @@ export function AppProvider({ children }) {
   // The Add note page covers the whole screen rather than taking a slot in
   // `view`, so closing it needs no `prevView` dance — whatever tab was behind
   // it is still the current one.
-  const openAddNote = useCallback(() => patch({ addNoteOpen: true }), [patch]);
-  const closeAddNote = useCallback(() => patch({ addNoteOpen: false }), [patch]);
+  // Focus first, then open. The order is the whole trick: iOS and Telegram's
+  // webview raise the keyboard only for a `focus()` made during a user gesture,
+  // and `patch` is asynchronous — anything that waits for the re-render has
+  // already lost the gesture and gets a caret with no keyboard. AddNote is
+  // always mounted precisely so there is something to focus at this moment.
+  const openAddNote = useCallback(() => {
+    if (addNoteInputRef.current) addNoteInputRef.current.focus();
+
+    patch({ addNoteOpen: true });
+  }, [patch]);
+
+  const closeAddNote = useCallback(() => {
+    if (addNoteInputRef.current) addNoteInputRef.current.blur();
+
+    patch({ addNoteOpen: false });
+  }, [patch]);
   const setFilter = useCallback((sel) => { saveFilter(sel); patch({ filterSel: sel }); }, [patch]);
 
   const setSearchQuery = useCallback((q) => patch({ searchQuery: q }), [patch]);
@@ -165,6 +183,7 @@ export function AppProvider({ children }) {
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
     openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, feedReq,
     openAddNote, closeAddNote, openDelete, closeDelete, removeNote,
+    addNoteInputRef,
   }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
       openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat,

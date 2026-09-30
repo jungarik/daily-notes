@@ -8,6 +8,16 @@
     --text-faint:    #6a6a6e;
     --accent:        #a482ff;   /* Obsidian violet */
     --accent-soft:   rgba(164,130,255,0.14);
+    /* The commit blue. EVERY affirmative action wears it — send, confirm,
+       save, the Add-note tick, the header's plus — so "the blue one does the
+       thing" holds everywhere and needs learning once. Violet (--accent) is
+       for *state* instead: an active filter, a note's path. Keeping the two
+       apart is the whole point; a violet Save and a blue Send would make the
+       colour mean nothing.
+
+       White on it is 4.57:1, asserted in tests/test_commit_colour.py. */
+    --commit:        #2f6feb;
+    --commit-soft:   rgba(47,111,235,0.08);
     /* Destructive. Two shades, because one red cannot do both jobs here:
        #d0343a carries white text at 4.96:1 (a filled button), while the same
        colour as *text* on the #262626 menu reaches only 3.6:1 — under the 4.5
@@ -141,7 +151,7 @@
   .dock.input .tabbar { flex: 1; align-items: flex-end; border-radius: 27px; }
   .dock.input .tab-input { width: 100%; align-items: flex-end; }
   .dock.input .tab-input input, .dock.input .tab-input textarea { flex: 1; width: auto; max-width: none; }
-  .tab-input .ts-send { border: none; background: #2f6feb; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center; align-self: flex-end; }
+  .tab-input .ts-send { border: none; background: var(--commit); color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center; align-self: flex-end; }
   .tab-input .ts-send svg { width: 16px; height: 16px; }
   .fab.hidden { display: none; }
 
@@ -183,7 +193,7 @@
   /* Chat conversation */
   #chat:not(.hidden) { display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 0; }
   .msg { max-width: 82%; padding: 9px 13px; border-radius: 16px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-  .msg.user { align-self: flex-end; background: #2f6feb; color: #fff; border-bottom-right-radius: 5px; }
+  .msg.user { align-self: flex-end; background: var(--commit); color: #fff; border-bottom-right-radius: 5px; }
   .msg.bot { align-self: flex-start; background: var(--bg-alt); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
   .msg.bot.muted { color: var(--text-muted); }
   .chat-empty { color: var(--text-muted); text-align: center; padding: 24px 12px; font-size: 14px; }
@@ -195,7 +205,7 @@
   .note-mini-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
   .note-mini { display: flex; flex-direction: column; gap: 2px; width: 100%; margin: 4px 0; padding: 8px 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
   .note-mini:first-child { margin-top: 0; }
-  .note-mini:hover { border-color: #2f6feb; }
+  .note-mini:hover { border-color: var(--commit); }
   .note-mini-title { font-size: 14px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
   .note-mini-meta { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--text-muted); overflow: hidden; }
   .note-mini-meta > span { display: inline-flex; align-items: center; gap: 3px; }
@@ -211,13 +221,13 @@
   .confirm-text { font-size: 14px; color: var(--text); }
   .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
   .confirm-btn { flex: 1; font: inherit; font-size: 13px; padding: 8px; border-radius: 9px; cursor: pointer; border: 1px solid var(--border); }
-  .confirm-btn.yes { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+  .confirm-btn.yes { background: var(--commit); color: #fff; border-color: var(--commit); }
   .confirm-btn.yes:disabled { background: var(--bg-alt); color: var(--text-muted); border-color: var(--border); cursor: default; }
   .confirm-btn.no { background: transparent; color: var(--text-muted); }
   .link-picker { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
   .link-opt { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; }
-  .link-opt.on { border-color: #2f6feb; background: rgba(47, 111, 235, 0.08); }
-  .link-opt input { margin: 2px 0 0; accent-color: #2f6feb; flex: none; }
+  .link-opt.on { border-color: var(--commit); background: var(--commit-soft); }
+  .link-opt input { margin: 2px 0 0; accent-color: var(--commit); flex: none; }
   .link-opt-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .link-opt-title { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
   .link-opt-reason { font-size: 11px; color: var(--text); opacity: 0.8; overflow-wrap: anywhere; }
@@ -361,7 +371,7 @@
      and duplicating three rules per sheet is how two sheets drift apart. */
   .path-btn { font: inherit; font-size: 14px; border-radius: 10px; padding: 10px 18px; cursor: pointer; border: 1px solid var(--border); }
   .path-btn.ghost { background: transparent; color: var(--text-muted); }
-  .path-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .path-btn.primary { background: var(--commit); color: #fff; border-color: var(--commit); }
   .path-btn.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
   .path-btn[disabled] { opacity: .55; cursor: default; }
 
@@ -379,11 +389,8 @@
     cursor: pointer;
   }
 
-  /* #2f6feb is this app's "commit" blue — the pill's send button and
-     `.confirm-btn.yes` use it too. (Violet is the accent for *state*: an active
-     filter, a note's path. A different job.) Both the ring and the badge take
-     it, which is the point: they are one control's readout and its action, not
-     two things that happen to sit near each other. */
+  /* The badge takes `--commit` like every other affirmative control. See the
+     variable's own note in :root for why that is one colour and not several. */
 
   /* The Inbox unit: a bordered disc holding the count, a dashed ring around it
      carrying one dash per waiting note, and the add button as a badge on the
@@ -445,7 +452,7 @@
     padding: 0;
     border: 2px solid var(--bg);
     border-radius: 50%;
-    background: #2f6feb;
+    background: var(--commit);
     color: #fff;
     box-shadow: 0 2px 8px rgba(0,0,0,.45);
   }
@@ -484,35 +491,66 @@
 
 
   /* Add note page: a full-screen overlay, above the dock (40) and the note
-     sheet (51), so its two buttons sit in the screen's real top corners
-     rather than under the header. */
+     sheet (51). Its own floating bar replaces both while it is open.
+
+     Hidden with opacity rather than `display: none` or unmounting, and this is
+     load-bearing rather than a transition flourish: neither of those leaves a
+     focusable element behind, and focusing the textarea during the opening tap
+     is the only way iOS raises the keyboard (see AddNote.jsx). `pointer-events`
+     keeps the invisible layer from swallowing taps meant for the feed. */
   .addnote {
     position: fixed; inset: 0; z-index: 60;
     display: flex; flex-direction: column;
     background: var(--bg);
+    opacity: 0; pointer-events: none;
+    transition: opacity .16s ease;
   }
+  .addnote.show { opacity: 1; pointer-events: auto; }
+
+  /* The bar floats like the dock and in the same place, so the page reads as
+     the dock changing hands rather than a new bar arriving. `bottom` is set
+     inline: it carries the keyboard inset, which only JS can measure. */
   .addnote-bar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+    position: absolute; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; padding: 0 16px;
+    pointer-events: none;
   }
-  /* Tick and cross are glyph-only: no border, no fill, nothing to read as a
-     checkbox. */
-  .addnote-btn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; padding: 0; border: none; background: none; color: var(--text); cursor: pointer; }
-  .addnote-btn svg { width: 24px; height: 24px; }
-  /* The page IS the input: one textarea filling everything under the bar, so
-     there is no field to aim at — the caret is already at the top left and the
-     whole screen is the writing surface.
+  .addnote-bar > * { pointer-events: auto; }
+
+  /* The tick commits, so it is blue like every other affirmative control. The
+     glass is dropped rather than tinted: a backdrop blur does nothing beneath
+     an opaque fill, and leaving it on would cost the filter for no effect.
+     Border and shadow stay, so the circle keeps the dock's silhouette and the
+     pair still reads as one bar. The cross keeps the plain `.fab` — a discard
+     should not compete with the commit. */
+  .fab.commit {
+    background: var(--commit);
+    color: #fff;
+    border-color: var(--commit);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* The page IS the input: one textarea filling the screen, so there is no
+     field to aim at — the caret is already at the top left and the whole
+     surface is writable.
+
+     The bottom padding clears the floating bar (54px of circle + its 30px
+     offset + room to breathe) so the last line of a long note never ends up
+     underneath it.
 
      16px is not a style choice: iOS zooms the viewport on focus for anything
      smaller, which would jolt the page the moment the keyboard opens. */
   .addnote-body {
     flex: 1; min-height: 0; width: 100%;
-    padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px
+             calc(100px + env(safe-area-inset-bottom, 0px));
     border: none; outline: none; resize: none;
     background: transparent;
     color: var(--text);
     font: inherit; font-size: 16px; line-height: 1.55;
-    caret-color: #2f6feb;
+    caret-color: var(--commit);
     overflow-y: auto;
   }
   .addnote-body::placeholder { color: var(--text-faint); }
@@ -545,6 +583,6 @@
   .map-card .note-mini-title { font-size: 12.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .map-card .note-mini-meta { font-size: 10px; gap: 3px 6px; }
   .map-card .note-mini-meta svg { width: 11px; height: 11px; }
-  .map-card.sel .note-mini { border-color: #2f6feb; box-shadow: 0 0 0 1px #2f6feb, 0 6px 20px rgba(0, 0, 0, .55); }
+  .map-card.sel .note-mini { border-color: var(--commit); box-shadow: 0 0 0 1px var(--commit), 0 6px 20px rgba(0, 0, 0, .55); }
   .map-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--text-faint); font-size: 11px; pointer-events: none; }
 

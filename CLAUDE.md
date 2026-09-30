@@ -455,6 +455,23 @@ shape rather than a solid ring. A small blue **plus badge** sits centred on the
 disc's edge at the lower right, punching through both bands with a `--bg`
 border; it is the only control — the bands and the count are a readout, because
 two hit zones inside one circle is a mis-tap that opens a full-screen page.
+Tapping the badge opens the **Add note page**: a full-screen overlay whose own
+floating bar — two `.fab` circles, ✕ left and ✓ right, the dock's glass in the
+dock's own position — replaces the header and dock while it is open. It is
+**always mounted**, hidden with `opacity: 0` + `pointer-events: none` rather
+than unmounted or `display: none`, and that is load-bearing rather than a
+transition: neither of those leaves a focusable element, and iOS and Telegram's
+webview raise the keyboard only for a `focus()` made *during a user gesture*.
+So `openAddNote` focuses the textarea (shared through `AppContext` as
+`addNoteInputRef`) **before** it patches state — anything waiting on the
+re-render has lost the gesture and gets a caret with no keyboard, which is what
+the old `setTimeout`-after-mount did. The bar rides above the keyboard on
+`lib/format.keyboardInset`, which reads `window.visualViewport` (`offsetTop`
+included, since iOS scrolls the visual viewport when the keyboard opens) and
+returns 0 where the API is absent. Nothing is captured yet — the Mini App still
+has no note-create endpoint, so both buttons just close.
+`tests/test_addnote_keyboard.py` pins the inset maths and the focus path.
+
 Growing the box from 54 to 64px does **not** disturb `.hdr-filter`'s -11.17px
 lift: both it and the stats are centred in the header row, so the offset
 between them is independent of row height. `/api/header/stats` returns all four
@@ -497,6 +514,18 @@ which some Telegram webviews suppress outright) with a generic irreversibility
 warning and a red button. `--danger` (#d0343a) is the fill and `--danger-text`
 (#ff6b6b) the label on dark, because neither clears 4.5:1 in the other's role —
 `tests/test_contextmenu_delete.py` asserts both ratios.
+
+**Colour means one thing each.** `--commit` (#2f6feb) is worn by **every**
+affirmative control and nothing else — the pill's Send, chat's Confirm, the
+change-path Save, the Add-note tick, the header's plus badge — so "the blue one
+does the thing" is learned once and holds everywhere. `--accent` (violet) means
+*state* instead: an active filter, a note's path. `--danger` means destruction.
+The split only pays if it is absolute, which is why Save moved off violet, and
+why the blue is a variable rather than the eleven hex literals it used to be:
+one of them would eventually have drifted. `tests/test_commit_colour.py` walks
+the affirmative selectors, fails if any takes `--accent`, fails if the hex
+reappears outside its `:root` declaration, and checks white still clears 4.5:1
+on it.
 
 A note with no `path` is not in the vault yet: `feed`, `explorer`, `mapview`
 and `search` all filter it out (`mapview` on both its edge and its node query,

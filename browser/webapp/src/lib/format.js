@@ -46,6 +46,22 @@ export function linkedItems(detail) {
   return items;
 }
 
+// How much of the window the on-screen keyboard is covering, in px.
+//
+// `visualViewport` is the part of the page actually visible: when the keyboard
+// opens it shrinks from the bottom, and on iOS it can also be scrolled, which
+// is what `offsetTop` accounts for — without it the bar drifts as the page
+// moves under the keyboard rather than staying pinned above it.
+//
+// Returns 0 when there is no keyboard, and 0 when the browser has no
+// `visualViewport` at all, which is the right fallback: the bar then sits at
+// its normal offset from the bottom, exactly where it was before.
+export function keyboardInset(windowHeight, viewport) {
+  if (!viewport) return 0;
+
+  return Math.max(0, windowHeight - viewport.height - (viewport.offsetTop || 0));
+}
+
 // --- the header's Inbox ring ------------------------------------------------
 
 // How many segments the ring can show. The Inbox is a to-do pile, not a
