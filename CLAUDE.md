@@ -473,18 +473,38 @@ webview raise the keyboard only for a `focus()` made *during a user gesture*.
 So `openAddNote` focuses the textarea (shared through `AppContext` as
 `addNoteInputRef`) **before** it patches state — anything waiting on the
 re-render has lost the gesture and gets a caret with no keyboard, which is what
-the old `setTimeout`-after-mount did. The bar rides above the keyboard on
-`lib/format.keyboardInset`, which reads `window.visualViewport` (`offsetTop`
-included, since iOS scrolls the visual viewport when the keyboard opens) and
-returns 0 where the API is absent. Nothing is captured yet — the Mini App still
+the old `setTimeout`-after-mount did.
+
+**The overlay is sized to the visible viewport**, not the screen:
+`lib/format.visibleViewport` returns `{top, height}` straight from
+`window.visualViewport` (`offsetTop` included, since iOS scrolls the visual
+viewport when the keyboard opens), and the overlay takes them inline with
+`bottom: auto` to release the CSS `inset: 0`. Everything anchored to its bottom
+edge or its centre then lands above the keyboard by construction, so the bar is
+a plain `bottom: calc(30px + env(safe-area-inset-bottom))` with no arithmetic.
+This replaced a `keyboardInset` helper that derived a keyboard height by
+subtracting the visual viewport from `window.innerHeight` — **the one number
+that cannot be trusted here**: iOS does not shrink `innerHeight` for the
+keyboard and Telegram's webview resizes its container independently, so the
+difference came out near a full page height and threw the bar off the top of
+the screen on iPhone. Reading one source removes the class of bug; a test
+asserts the helper touches no `window`, `document` or `innerHeight`. Null
+viewport (older webviews) leaves the overlay full-screen.
+Nothing is captured yet — the Mini App still
 has no note-create endpoint, so both buttons just close.
-Two more controls sit outside that bar. A single `.fab` — the same circle as
-the ✕ and ✓, because one control in a capsule is a lozenge — floats centred on
-the **right edge** as the markdown mode toggle: it shows the mode it switches
-*to* (eye → "tap to read", pencil → "tap to write"), the same trick the dock's
-circles use when their glyph becomes a ✕. Tapping flips local state and nothing
-else; there is no renderer, so switching the pane would show the same raw text
-twice. In the **top-right corner** is the **help button**, opening
+A column of `.fab` circles runs down the **right edge**, centred as one group —
+the container carries the centring, not any button, so it stays balanced as the
+column grows. At its top is the markdown **mode toggle**, which shows the mode
+it switches *to* (eye → "tap to read", pencil → "tap to write"), the same trick
+the dock's circles use when their glyph becomes a ✕; tapping flips local state
+and nothing else, since there is no renderer and switching the pane would show
+the same raw text twice. Below it, **path / link / tags** — what the note *is*,
+as opposed to what it says — all `disabled`, because a path picker would set a
+field on a note that is never saved. They are plain circles rather than a
+capsule: every control on this edge is the same `.fab` as the ✕ and ✓. The
+**reminder** button stays in the bottom capture pill despite being metadata
+too — moving it would churn a bar that is already settled. In the **top-right
+corner** is the **help button**, opening
 `MarkdownHelp.jsx`. It carries no glass and no ring — its glyph is already a
 circled `?`, so any chrome would be a second circle around the first — and it
 needs no top padding on the textarea, because the 74px right padding that

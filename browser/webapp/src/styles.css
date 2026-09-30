@@ -446,11 +446,10 @@
   /* The badge, centred on the disc's own edge at the lower right, which puts it
      across the dashed band too.
 
-     Its border is WHITE, and that is load-bearing now the dashes are also
-     `--commit`: blue on blue, a dash crossing the badge would merge straight
-     into it and the badge would stop reading as a separate object. A hairline
-     of white cuts the dash cleanly at the badge's edge. (A `--bg` border did
-     this job while the dashes were white — same trick, opposite colours.)
+     No border. The badge and the dashes are both `--commit`, so where a dash
+     crosses the badge they merge — a deliberate choice: the ring and the
+     button it belongs to read as one object rather than two. If they ever need
+     separating again, a hairline in `--bg` or white is what does it.
 
      20px of blue is well under any sane tap target, so `::after` extends the
      hit area to 44px without moving the ink. It has to stay inside .hdr-inbox's
@@ -459,7 +458,7 @@
     position: absolute; right: 3px; bottom: 3px; z-index: 1;
     width: 21px; height: 21px;
     padding: 0;
-    border: 1.5px solid #fff;
+    border: none;
     border-radius: 50%;
     background: var(--commit);
     color: #fff;
@@ -517,10 +516,17 @@
   .addnote.show { opacity: 1; pointer-events: auto; }
 
   /* The bar floats like the dock and in the same place, so the page reads as
-     the dock changing hands rather than a new bar arriving. `bottom` is set
-     inline: it carries the keyboard inset, which only JS can measure. */
+     the dock changing hands rather than a new bar arriving.
+
+     A plain bottom offset, no keyboard maths: the overlay is sized to the
+     visible viewport (see AddNote.jsx), so its bottom edge already sits on top
+     of the keyboard. This used to add a JS-measured inset derived from
+     `window.innerHeight`, which Telegram's iOS webview reports independently of
+     the keyboard — the difference came out near a full page height and threw
+     the bar off the top of the screen. */
   .addnote-bar {
     position: absolute; left: 0; right: 0;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
     display: flex; align-items: center; justify-content: center;
     gap: 12px; padding: 0 16px;
     pointer-events: none;
@@ -537,18 +543,23 @@
      capsule sized for text that isn't there. */
   .addnote-bar .tab { padding: 13px 14px; }
 
-  /* The mode button: one `.fab`, the same circle as the ✕ and ✓ below it,
-     centred on the right edge. A capsule around a single control is a lozenge,
-     and this is one control.
+  /* The right-edge column: view toggle, then the note's metadata. Separate
+     `.fab` circles rather than a capsule — every control on this edge is the
+     same circle as the ✕ and ✓, and the 12px gap is the dock's own.
 
-     Centred with top + translate rather than `inset-block` so it lands on the
-     middle of the *screen*, not the middle of whatever the textarea holds. */
+     The whole column is centred as one group (top + translate on the
+     container, not on any button), so it stays balanced as fields are added or
+     removed, and it lands on the middle of the *screen* rather than the middle
+     of whatever the textarea currently holds. */
   .addnote-side {
     position: absolute; right: 12px; top: 50%;
     transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 12px;
     pointer-events: none;
   }
   .addnote.show .addnote-side { pointer-events: auto; }
+  /* Not yet built, and saying so — same treatment as the capture pill. */
+  .addnote-side .fab:disabled { opacity: .45; cursor: default; }
 
   /* Help, top right. No glass and no ring of its own — the glyph is already a
      circled `?`, so drawing another circle around it would be two. Muted like

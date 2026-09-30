@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { keyboardInset } from "../lib/format.js";
+import { visibleViewport } from "../lib/format.js";
 import MarkdownHelp from "./MarkdownHelp.jsx";
 
 // The three capture kinds the bar offers alongside typing — the same three the
@@ -67,6 +67,47 @@ const PencilGlyph = () => (
   </svg>
 );
 
+// What the note *is*, as opposed to what it says: where it is filed, what it
+// connects to, what it is about. They sit below the view toggle as plain
+// circles rather than in a capsule — every control on this edge is one `.fab`,
+// the same circle as the ✕ and ✓.
+//
+// Inert, like the capture buttons: there is no note-create endpoint, so a path
+// picker would set a field on a note that is never saved. The reminder button
+// stays in the bottom pill — it is metadata too, but moving it would churn a
+// bar that is already settled.
+const METADATA_FIELDS = [
+  {
+    field: "path",
+    label: "Set the folder",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
+      </svg>
+    ),
+  },
+  {
+    field: "link",
+    label: "Link to another note",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.5 1.5" />
+        <path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.5-1.5" />
+      </svg>
+    ),
+  },
+  {
+    field: "tags",
+    label: "Add tags",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M11.4 3.5H5a1.5 1.5 0 0 0-1.5 1.5v6.4a1.5 1.5 0 0 0 .44 1.06l7.6 7.6a1.5 1.5 0 0 0 2.12 0l6.4-6.4a1.5 1.5 0 0 0 0-2.12l-7.6-7.6a1.5 1.5 0 0 0-1.06-.44Z" />
+        <path d="M7.8 7.8h.01" />
+      </svg>
+    ),
+  },
+];
+
 // The Add note page.
 //
 // A full-screen overlay rather than a `view`: it covers the header and the
@@ -87,9 +128,10 @@ const PencilGlyph = () => (
 export default function AddNote() {
   const { state, closeAddNote, addNoteInputRef } = useApp();
   const [text, setText] = useState("");
-  // How far the keyboard covers the window. Drives the bar's lift, so both
-  // buttons stay reachable while typing instead of sitting under the keys.
-  const [inset, setInset] = useState(0);
+  // The visible area while the keyboard is up. The whole overlay is sized to
+  // it, so everything anchored to the overlay's bottom or centre lands in the
+  // part of the screen you can actually see.
+  const [box, setBox] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
   // Which face the right-edge button shows. Nothing reads it but the glyph —
   // there is no renderer for it to drive yet.
@@ -111,7 +153,7 @@ export default function AddNote() {
 
     if (!open || !viewport) return;
 
-    const measure = () => setInset(keyboardInset(window.innerHeight, viewport));
+    const measure = () => setBox(visibleViewport(viewport));
 
     measure();
     // `scroll` as well as `resize`: iOS scrolls the visual viewport when the
@@ -132,6 +174,11 @@ export default function AddNote() {
       aria-modal="true"
       aria-label="Add note"
       aria-hidden={open ? undefined : true}
+      // Sized to the visible area rather than the whole screen, so the bar at
+      // its bottom edge and the column at its centre both land where you can
+      // see them once the keyboard is up. `bottom: auto` releases the `inset:
+      // 0` in CSS, which would otherwise fight the explicit height.
+      style={box ? { top: box.top, height: box.height, bottom: "auto" } : undefined}
     >
       <textarea
         ref={addNoteInputRef}
@@ -171,22 +218,36 @@ export default function AddNote() {
         {helpOpen && <MarkdownHelp onClose={() => setHelpOpen(false)} />}
       </div>
 
-      {/* One circle, same as the ✕ and ✓ below, centred on the right edge. It
-          shows the mode it switches *to*. */}
-      <button
-        className="fab addnote-side"
-        aria-label={reading ? "Write markdown" : "Rendered view"}
-        title={reading ? "Write markdown" : "Rendered view"}
-        aria-pressed={reading}
-        onClick={() => setReading((on) => !on)}
-      >
-        {reading ? <PencilGlyph /> : <EyeGlyph />}
-      </button>
+      {/* The right edge: the view toggle, then the note's metadata. All the
+          same `.fab` circle as the ✕ and ✓, stacked and centred as one group
+          so the column stays balanced whatever it holds. */}
+      <div className="addnote-side">
+        <button
+          className="fab"
+          aria-label={reading ? "Write markdown" : "Rendered view"}
+          title={reading ? "Write markdown" : "Rendered view"}
+          aria-pressed={reading}
+          onClick={() => setReading((on) => !on)}
+        >
+          {reading ? <PencilGlyph /> : <EyeGlyph />}
+        </button>
 
-      <div
-        className="addnote-bar"
-        style={{ bottom: `calc(30px + env(safe-area-inset-bottom, 0px) + ${inset}px)` }}
-      >
+        {METADATA_FIELDS.map((meta) => (
+          <button
+            key={meta.field}
+            className="fab"
+            aria-label={meta.label}
+            title={meta.label}
+            disabled
+          >
+            {meta.icon}
+          </button>
+        ))}
+      </div>
+
+      {/* No keyboard arithmetic here any more: the overlay itself ends where
+          the keyboard begins, so an ordinary bottom offset is above it. */}
+      <div className="addnote-bar">
         <button className="fab" aria-label="Cancel" onClick={closeAddNote}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 6l12 12M18 6L6 18" />

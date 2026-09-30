@@ -46,20 +46,27 @@ export function linkedItems(detail) {
   return items;
 }
 
-// How much of the window the on-screen keyboard is covering, in px.
+// The area actually visible, in layout-viewport coordinates — what is left of
+// the page once the on-screen keyboard covers the bottom of it.
 //
-// `visualViewport` is the part of the page actually visible: when the keyboard
-// opens it shrinks from the bottom, and on iOS it can also be scrolled, which
-// is what `offsetTop` accounts for — without it the bar drifts as the page
-// moves under the keyboard rather than staying pinned above it.
+// This deliberately reads `visualViewport` and NOTHING else. The previous
+// version subtracted it from `window.innerHeight` to derive a keyboard height,
+// and `innerHeight` is the one number that cannot be trusted here: iOS does not
+// shrink it for the keyboard, and Telegram's webview resizes its container
+// independently, so the two disagreed and the difference — meant to be the
+// keyboard — came out near the full page height. The bar lifted by that and
+// left the screen.
 //
-// Returns 0 when there is no keyboard, and 0 when the browser has no
-// `visualViewport` at all, which is the right fallback: the bar then sits at
-// its normal offset from the bottom, exactly where it was before.
-export function keyboardInset(windowHeight, viewport) {
-  if (!viewport) return 0;
+// Returning the box instead of a height means the caller sizes the overlay to
+// it, so "sit above the keyboard" becomes ordinary bottom-anchoring inside a
+// shorter box rather than arithmetic that can be wrong.
+//
+// Null when the browser has no `visualViewport`: the caller then leaves the
+// overlay full-screen, exactly as it behaved before any of this existed.
+export function visibleViewport(viewport) {
+  if (!viewport) return null;
 
-  return Math.max(0, windowHeight - viewport.height - (viewport.offsetTop || 0));
+  return { top: viewport.offsetTop || 0, height: viewport.height };
 }
 
 // --- the header's Inbox ring ------------------------------------------------

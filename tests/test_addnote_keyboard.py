@@ -32,14 +32,14 @@ CONTEXT = ROOT / "browser" / "webapp" / "src" / "store" / "AppContext.jsx"
 CSS = ROOT / "browser" / "webapp" / "src" / "styles.css"
 
 SCRIPT = """
-import { keyboardInset } from %s;
+import { visibleViewport } from %s;
 const cases = JSON.parse(process.argv[2]);
-console.log(JSON.stringify(cases.map(([h, v]) => keyboardInset(h, v))));
+console.log(JSON.stringify(cases.map(visibleViewport)));
 """
 
 
-def _insets(cases):
-    script = ROOT / "tests" / ".keyboard_inset.mjs"
+def _boxes(cases):
+    script = ROOT / "tests" / ".visible_viewport.mjs"
     script.write_text(SCRIPT % json.dumps(FORMAT_JS.as_posix()), encoding="utf-8")
     try:
         out = subprocess.run(["node", str(script), json.dumps(cases)],
@@ -51,32 +51,50 @@ def _insets(cases):
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not available")
-class KeyboardInsetTests(unittest.TestCase):
-    def test_no_keyboard_means_no_lift(self):
-        """Viewport fills the window: the bar stays at its normal offset."""
-        self.assertEqual([0], _insets([[800, {"height": 800, "offsetTop": 0}]]))
+class VisibleViewportTests(unittest.TestCase):
+    """What the overlay is sized to while the keyboard is up.
 
-    def test_an_open_keyboard_is_the_hidden_remainder(self):
-        self.assertEqual([300], _insets([[800, {"height": 500, "offsetTop": 0}]]))
+    The bug this replaced: the old helper derived a keyboard height by
+    subtracting `visualViewport.height` from `window.innerHeight`. iOS does not
+    shrink `innerHeight` for the keyboard and Telegram's webview resizes its
+    container on its own, so the two disagreed by nearly a full page — the bar
+    lifted by that and left the top of the screen. Reading only the visual
+    viewport removes the second number, and with it the whole class of bug.
+    """
 
-    def test_a_scrolled_visual_viewport_counts_too(self):
-        """iOS scrolls the visual viewport when the keyboard opens. Without
-        `offsetTop` the bar drifts away from the keyboard's top edge as the
-        page moves beneath it."""
-        self.assertEqual([340], _insets([[800, {"height": 400, "offsetTop": 60}]]))
+    def test_it_reports_the_viewport_as_a_box(self):
+        self.assertEqual([{"top": 0, "height": 800}],
+                         _boxes([{"height": 800, "offsetTop": 0}]))
 
-    def test_a_missing_visual_viewport_lifts_nothing(self):
-        """Older webviews have no `visualViewport`. The bar then sits where it
-        always did rather than at some computed-from-undefined position."""
-        self.assertEqual([0, 0], _insets([[800, None], [800, 0]]))
+    def test_an_open_keyboard_shortens_the_box(self):
+        """Nothing is subtracted from anything: the height *is* the visible
+        height, so the overlay ends where the keyboard begins."""
+        self.assertEqual([{"top": 0, "height": 500}],
+                         _boxes([{"height": 500, "offsetTop": 0}]))
 
-    def test_the_inset_never_goes_negative(self):
-        """A viewport reported taller than the window — which happens mid
-        rotation — would otherwise push the bar down off the screen."""
-        self.assertEqual([0], _insets([[600, {"height": 700, "offsetTop": 0}]]))
+    def test_a_scrolled_visual_viewport_moves_the_box_down(self):
+        """iOS scrolls the visual viewport when the keyboard opens; `offsetTop`
+        is where it now starts, so the overlay follows rather than drifting."""
+        self.assertEqual([{"top": 60, "height": 400}],
+                         _boxes([{"height": 400, "offsetTop": 60}]))
 
     def test_a_viewport_without_offsettop_is_treated_as_unscrolled(self):
-        self.assertEqual([300], _insets([[800, {"height": 500}]]))
+        self.assertEqual([{"top": 0, "height": 500}], _boxes([{"height": 500}]))
+
+    def test_a_missing_visual_viewport_gives_no_box(self):
+        """Older webviews have none. Null tells the caller to leave the overlay
+        full-screen, exactly as it behaved before any of this existed."""
+        self.assertEqual([None, None], _boxes([None, 0]))
+
+    def test_it_reads_nothing_but_the_viewport(self):
+        """The guard against the bug returning: a second source of truth is
+        what broke this, so the helper takes one argument and no globals."""
+        source = FORMAT_JS.read_text(encoding="utf-8")
+        body = source.split("export function visibleViewport", 1)[1].split("\n}", 1)[0]
+
+        self.assertNotIn("innerHeight", body)
+        self.assertNotIn("window", body)
+        self.assertNotIn("document", body)
 
 
 class FocusPathTests(unittest.TestCase):
@@ -132,13 +150,27 @@ class BarTests(unittest.TestCase):
         self.addnote = ADDNOTE.read_text(encoding="utf-8")
         self.css = CSS.read_text(encoding="utf-8")
 
-    def test_the_buttons_reuse_the_dock_glass(self):
-        """Three circles carry `.fab` — ✕, ✓ and the right-edge mode button —
-        so none of them can drift from the dock in size, border or shadow.
-        Matched on the class *prefix*: the tick adds `commit` and the mode
-        button adds `addnote-side`, so an assertion on `className="fab"` alone
-        fails on correct markup."""
-        self.assertEqual(3, len(re.findall(r'className="fab\b', self.addnote)))
+    def test_every_circle_on_the_page_reuses_the_dock_glass(self):
+        """None of these can drift from the dock in size, border or shadow.
+
+        Counted as *declarations*, not rendered buttons: ✕, ✓ and the view
+        toggle are written out, while the metadata fields share one `.fab`
+        inside a `.map`, so four literals render six circles. Matched on the
+        class prefix because the tick adds a `commit` modifier.
+
+        The check that matters is the converse — no button anywhere on the page
+        is a circle *without* `.fab` — so it is asserted directly below.
+        """
+        self.assertEqual(4, len(re.findall(r'className="fab\b', self.addnote)))
+
+    def test_no_button_outside_the_help_corner_skips_fab(self):
+        """The one exception is the help button, which is deliberately bare."""
+        classes = re.findall(r'className=\{?"([\w -]+)"', self.addnote)
+        buttons = [name for name in classes
+                   if "fab" in name or "addnote-help-btn" in name]
+
+        self.assertEqual(5, len(buttons))
+        self.assertEqual(1, sum("addnote-help-btn" in name for name in buttons))
 
     def test_only_the_tick_is_the_commit_colour(self):
         """A discard should not compete with the commit for attention."""
@@ -175,12 +207,22 @@ class BarTests(unittest.TestCase):
         self.assertIn("aria-label={capture.label}", self.addnote)
         self.assertEqual(3, len(re.findall(r'label: "[^"]+"', kinds)))
 
-    def test_the_bar_carries_the_keyboard_inset_inline(self):
-        """Only JS can measure it, so it cannot live in the stylesheet."""
-        self.assertIn("${inset}px", self.addnote)
+    def test_the_overlay_is_sized_to_the_visible_viewport(self):
+        """This is what puts the bar above the keyboard. `bottom: auto` is not
+        cosmetic — without it the CSS `inset: 0` pins the bottom edge to the
+        screen and fights the explicit height."""
+        self.assertIn("style={box ? { top: box.top, height: box.height, bottom: \"auto\" }",
+                      self.addnote)
 
-    def test_the_bar_sits_at_the_docks_own_offset(self):
-        self.assertIn("calc(30px + env(safe-area-inset-bottom, 0px)", self.addnote)
+    def test_the_bar_does_no_keyboard_arithmetic_of_its_own(self):
+        """It is a plain bottom offset in CSS now. An inline `bottom` computed
+        from a measured inset is what put the bar off the top of the screen."""
+        self.assertNotIn("${inset}", self.addnote)
+        self.assertNotIn("innerHeight", self.addnote)
+
+        block = self.css.split(".addnote-bar {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("bottom: calc(30px + env(safe-area-inset-bottom, 0px))", block)
 
     def test_the_text_clears_both_floating_bars(self):
         """Both bars float over the textarea, so without padding on those two
@@ -198,11 +240,42 @@ class SideBarTests(unittest.TestCase):
         self.addnote = ADDNOTE.read_text(encoding="utf-8")
         self.css = CSS.read_text(encoding="utf-8")
 
-    def test_the_mode_button_is_a_circle_not_a_capsule(self):
-        """One control in a `.tabbar` is a lozenge. It takes the same `.fab`
-        circle as the ✕ and ✓, so all three match."""
-        self.assertIn('className="fab addnote-side"', self.addnote)
+    def test_the_column_is_circles_not_a_capsule(self):
+        """Every control on this edge is the same `.fab` as the ✕ and ✓, in a
+        plain flex column — no capsule grouping any of them."""
         self.assertNotIn("tabbar vertical", self.addnote)
+
+        block = self.css.split(".addnote-side {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("flex-direction: column", block)
+
+    def test_the_whole_column_is_centred_as_one_group(self):
+        """The container carries the centring, not any single button, so the
+        column stays balanced as fields are added or removed."""
+        block = self.css.split(".addnote-side {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("top: 50%", block)
+        self.assertIn("translateY(-50%)", block)
+
+    def test_the_metadata_fields_are_path_link_and_tags(self):
+        self.assertEqual(["path", "link", "tags"],
+                         re.findall(r'field: "(\w+)"', self.addnote))
+
+    def test_the_metadata_buttons_are_disabled(self):
+        """No note-create endpoint, so a path picker would set a field on a
+        note that is never saved."""
+        fields = self.addnote.split("const METADATA_FIELDS = [", 1)[1].split("\n];", 1)[0]
+        mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("))}", 1)[0]
+
+        self.assertEqual(3, len(re.findall(r'label: "[^"]+"', fields)))
+        self.assertEqual(1, mapped.count("<button"))
+        self.assertEqual(1, mapped.count("disabled"))
+
+    def test_the_reminder_button_stayed_in_the_bottom_pill(self):
+        """It is metadata too, but it was left where it was rather than churn
+        a bar that is already settled."""
+        self.assertIn('kind: "reminder"', self.addnote)
+        self.assertNotIn('field: "reminder"', self.addnote)
 
     def test_the_vertical_capsule_rule_is_gone_with_it(self):
         """Dead CSS for a class nothing renders reads as a live variant."""
