@@ -518,6 +518,14 @@
   }
   .addnote-bar > * { pointer-events: auto; }
 
+  /* The pill's buttons are icon-only here, so they drop the dock's label gap
+     and its wider horizontal padding — otherwise three bare glyphs sit in a
+     capsule sized for text that isn't there. */
+  .addnote-bar .tab { padding: 13px 14px; }
+  /* Not yet built, and saying so. A control that looks live and does nothing
+     reads as a broken app; a dimmed one reads as a promise. */
+  .addnote-bar .tab:disabled { opacity: .45; cursor: default; }
+
   /* The tick commits, so it is blue like every other affirmative control. The
      glass is dropped rather than tinted: a backdrop blur does nothing beneath
      an opaque fill, and leaving it on would cost the filter for no effect.

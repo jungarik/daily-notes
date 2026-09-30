@@ -456,8 +456,14 @@ disc's edge at the lower right, punching through both bands with a `--bg`
 border; it is the only control — the bands and the count are a readout, because
 two hit zones inside one circle is a mis-tap that opens a full-screen page.
 Tapping the badge opens the **Add note page**: a full-screen overlay whose own
-floating bar — two `.fab` circles, ✕ left and ✓ right, the dock's glass in the
-dock's own position — replaces the header and dock while it is open. It is
+floating bar replaces the header and dock while it is open, and mirrors the
+dock's own composition: two `.fab` circles — ✕ left, ✓ right in `--commit` —
+flanking a `.tabbar` pill of three icon-only capture buttons (photo, voice,
+reminder: the kinds the bot already accepts, plus the one piece of metadata
+worth setting while the thought is fresh). **All three are `disabled`** — the
+Mini App has no note-create endpoint, so wiring a photo picker would produce a
+file with nowhere to go; dimmed reads as not-yet, whereas a live-looking button
+that swallows the tap reads as a bug. It is
 **always mounted**, hidden with `opacity: 0` + `pointer-events: none` rather
 than unmounted or `display: none`, and that is load-bearing rather than a
 transition: neither of those leaves a focusable element, and iOS and Telegram's

@@ -142,6 +142,31 @@ class BarTests(unittest.TestCase):
         """A discard should not compete with the commit for attention."""
         self.assertEqual(1, self.addnote.count('className="fab commit"'))
 
+    def test_the_capture_pill_reuses_the_docks_capsule(self):
+        """`.tabbar` is the dock's own pill class, so the two capsules cannot
+        drift apart in blur, border or radius."""
+        self.assertIn('className="tabbar"', self.addnote)
+
+    def test_the_pill_offers_the_three_capture_kinds(self):
+        """The same three the bot accepts, plus the one bit of metadata worth
+        setting while the thought is fresh."""
+        self.assertEqual(["photo", "voice", "reminder"],
+                         re.findall(r'kind: "(\w+)"', self.addnote))
+
+    def test_every_capture_button_is_disabled(self):
+        """There is no note-create endpoint yet, so none of these can do
+        anything. `disabled` is what makes that legible rather than looking
+        like a button that swallowed the tap."""
+        pill = self.addnote.split('className="tabbar"', 1)[1].split("</nav>", 1)[0]
+
+        self.assertEqual(1, pill.count("<button"))
+        self.assertEqual(1, pill.count("disabled"))
+
+    def test_the_icon_only_buttons_carry_accessible_names(self):
+        """Three bare glyphs are unreadable to a screen reader without one."""
+        self.assertIn("aria-label={capture.label}", self.addnote)
+        self.assertEqual(3, len(re.findall(r'label: "[^"]+"', self.addnote)))
+
     def test_the_bar_carries_the_keyboard_inset_inline(self):
         """Only JS can measure it, so it cannot live in the stylesheet."""
         self.assertIn("${inset}px", self.addnote)

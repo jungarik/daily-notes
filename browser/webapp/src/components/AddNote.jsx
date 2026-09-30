@@ -2,6 +2,48 @@ import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { keyboardInset } from "../lib/format.js";
 
+// The three capture kinds the bar offers alongside typing — the same three the
+// bot already accepts (text, voice, photo), plus the one piece of metadata
+// worth setting while the thought is still fresh.
+//
+// NONE OF THEM DO ANYTHING YET, deliberately. The Mini App has no note-create
+// endpoint at all, so wiring these before the tick can save would build a photo
+// picker whose result has nowhere to go. They are `disabled` rather than inert
+// with a live look: a button that depresses and then does nothing reads as a
+// bug, whereas a dimmed one reads as not-yet.
+const CAPTURE_KINDS = [
+  {
+    kind: "photo",
+    label: "Add a photo",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-9Z" />
+        <circle cx="12" cy="12.5" r="3.4" />
+      </svg>
+    ),
+  },
+  {
+    kind: "voice",
+    label: "Record a voice note",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" />
+      </svg>
+    ),
+  },
+  {
+    kind: "reminder",
+    label: "Set a reminder",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <circle cx="12" cy="13" r="8" />
+        <path d="M12 9v4.3l2.8 1.7M9 2.5 5.5 5M15 2.5 18.5 5" />
+      </svg>
+    ),
+  },
+];
+
 // The Add note page.
 //
 // A full-screen overlay rather than a `view`: it covers the header and the
@@ -83,6 +125,25 @@ export default function AddNote() {
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
+
+        {/* Same glass capsule the dock's tab pill uses, between the two
+            circles exactly as it is on the main page. */}
+        <nav className="tabbar" aria-label="Capture">
+          <div className="tab-icons">
+            {CAPTURE_KINDS.map((capture) => (
+              <button
+                key={capture.kind}
+                className="tab"
+                aria-label={capture.label}
+                title={capture.label}
+                disabled
+              >
+                {capture.icon}
+              </button>
+            ))}
+          </div>
+        </nav>
+
         <button className="fab commit" aria-label="Done" onClick={closeAddNote}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 13l4 4L19 7" />
