@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { setNotePath, moveFolder } from "../lib/api.js";
 
-// The ⋮ context menu (positioned at the tapped element) + the change-path sheet.
+// The ⋮ context menu (positioned at the tapped element) + its two sheets:
+// change-path, and the delete confirmation.
 export default function ContextMenu() {
-  const { state, closeCtx, openPath, closePath, reload } = useApp();
+  const { state, closeCtx, openPath, closePath, openDelete, closeDelete,
+          removeNote, reload } = useApp();
   const ctx = state.ctx;            // { target, rect } or null
   const menuRef = useRef(null);
   const [pos, setPos] = useState({ left: -9999, top: -9999 });
@@ -34,9 +36,67 @@ export default function ContextMenu() {
       {ctx && (
         <div className="ctx-menu show" ref={menuRef} style={{ left: pos.left, top: pos.top }}>
           <button className="ctx-item" onClick={() => openPath(ctx.target)}>📁 Change path</button>
+          {/* Notes only. A folder here is not an object — it is a path prefix
+              on some set of notes — so a folder Delete would silently mean
+              "destroy everything filed under this", which is far too much to
+              sit one tap away in the same menu as a rename. */}
+          {ctx.target.type === "note" && (
+            <button className="ctx-item danger" onClick={() => openDelete(ctx.target)}>
+              🗑 Delete
+            </button>
+          )}
         </div>
       )}
       <PathSheet target={state.pathTarget} onClose={closePath} onSaved={reload} />
+      <DeleteSheet target={state.deleteTarget} onClose={closeDelete} onConfirm={removeNote} />
+    </>
+  );
+}
+
+// The confirmation. Deliberately the same bottom sheet as the change-path form
+// rather than a native `confirm()`: that renders as browser chrome inside
+// Telegram's webview, cannot be coloured, and is suppressed outright by some
+// in-app webviews — which would make Delete appear to do nothing at all.
+function DeleteSheet({ target, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (target) { setBusy(false); setErr(""); }
+  }, [target]);
+
+  // Not named `confirm` — that shadows `window.confirm`, and a reader skimming
+  // for whether this uses a native dialog would find the wrong thing.
+  const runDelete = async () => {
+    if (!target || busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(target.id);
+    } catch (e) {
+      setErr("Couldn't delete. Try again.");
+      setBusy(false);
+    }
+  };
+
+  const open = !!target;
+  return (
+    <>
+      <div className={"sheet-backdrop" + (open ? " show" : "")} onClick={busy ? undefined : onClose} />
+      <div className={"sheet" + (open ? " show" : "")} id="deleteSheet">
+        <div className="grip" />
+        <div className="card-title">Delete “{(target && target.name) || "note"}”?</div>
+        <div className="delete-warning">
+          This can’t be undone. Its photos, voice recording, reminders and links
+          to other notes are deleted with it.
+        </div>
+        <div className="path-error">{err}</div>
+        <div className="path-actions">
+          <button className="path-btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="path-btn danger" onClick={runDelete} disabled={busy}>
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
     </>
   );
 }

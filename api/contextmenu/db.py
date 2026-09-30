@@ -32,6 +32,48 @@ def get_meta(note_id: int) -> dict | None:
                 "tags": row[3] or [], "priority": row[4]}
 
 
+def object_keys(note_id: int) -> list[str]:
+    """Every bucket object this note owns — attachments plus its voice audio.
+
+    Read this BEFORE deleting the note. `note_attachments.note_id` cascades, so
+    afterwards the rows naming these keys are gone and the objects are orphaned
+    with nothing left to identify them.
+
+    Both kinds arrive as one list because the bucket does not distinguish them:
+    the caller is about to hand each to `file_store.delete_object`.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT storage_key FROM note_attachments WHERE note_id = %s
+            UNION ALL
+            SELECT audio_key FROM notes WHERE id = %s AND audio_key IS NOT NULL;
+            """,
+            (note_id, note_id),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def delete_note(user_id: int, note_id: int) -> bool:
+    """Hard-delete the note, owner-scoped. True if a row went.
+
+    The `user_id` predicate is the tenancy guard, not a convenience: without it
+    any authenticated caller could delete any note by guessing an id.
+
+    Dependants go with it by cascade — `note_chunks`, `note_attachments`,
+    `note_links` (both directions) and `reminders`. Unlike the bot's
+    `delete_if_bare` this has no conditions: a filed note, a linked note and a
+    note with a reminder still to come all delete, which is what makes it the
+    web app's Delete rather than its cleanup.
+    """
+    with cursor() as cur:
+        cur.execute(
+            "DELETE FROM notes WHERE id = %s AND user_id = %s RETURNING id;",
+            (note_id, user_id),
+        )
+        return cur.fetchone() is not None
+
+
 def move_folder_paths(user_id: int, old_path: str, new_path: str) -> int:
     """Bulk-rename: set every one of the user's notes whose path is exactly
     `old_path` to `new_path` (direct notes only). Returns notes moved."""

@@ -415,7 +415,8 @@ localised and in `config.ROOT_FOLDERS` order, which is how the client
 orders a top level it only knows as localised path strings) +
 `GET /api/notesheet/{id}` (preview), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
-folders can't be moved), `GET /api/mapview/graph` (connections map),
+folders can't be moved), `DELETE /api/contextmenu/notes/{id}` (hard delete),
+`GET /api/mapview/graph` (connections map),
 `GET /api/header/stats` (root-folder counts: per root, its sub-folders plus
 its loose notes, labelled in the user's language), `GET /api/search?q=`
 (server-side search), and `GET /api/notecard/attachments/{id}?t=<token>` (the
@@ -469,7 +470,27 @@ carousel on top, then title (date at the end of the title line), path, tags, ful
 text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
 navigates without recursion). Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
-menu on a card/folder opens a context menu to change its path.
+menu on a card/folder opens a context menu to change its path, and — **on notes
+only** — to delete.
+
+**Delete is hard and unconditional.** `DELETE /api/contextmenu/notes/{id}`
+removes the note whatever its state: filed, linked, or carrying a reminder that
+has not fired. That is the opposite of the bot's `delete_if_bare`, which refuses
+all three, and the difference is the point — one is a cleanup, this is the user
+asking. Chunks, attachments, links (both directions) and reminders go by
+cascade; the attachment and voice objects are removed from the bucket, which
+does not cascade, so `helper.delete_note` reads the keys **before** the row
+delete — afterwards `note_attachments` is gone and the objects are unidentifiable.
+A key that won't delete is logged as an orphan and does not fail the request:
+the row is already gone, so reporting failure would tell the user the note
+survived. The `user_id` predicate on the DELETE is the tenancy guard, and 404
+covers both "no such note" and "not yours". Folders get no Delete: a folder is a
+path prefix rather than an object, so it would silently mean "destroy everything
+filed under this". Confirmation is an in-app sheet (never `window.confirm`,
+which some Telegram webviews suppress outright) with a generic irreversibility
+warning and a red button. `--danger` (#d0343a) is the fill and `--danger-text`
+(#ff6b6b) the label on dark, because neither clears 4.5:1 in the other's role —
+`tests/test_contextmenu_delete.py` asserts both ratios.
 
 A note with no `path` is not in the vault yet: `feed`, `explorer`, `mapview`
 and `search` all filter it out (`mapview` on both its edge and its node query,

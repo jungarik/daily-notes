@@ -7,6 +7,7 @@ the shared config + i18n so the section owns its rules.
 import logging
 
 import config
+import file_store
 import i18n
 from api.contextmenu import db
 
@@ -46,6 +47,34 @@ def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | No
     db.set_path(note_id, cleaned)
     logger.info("Note %s (user %s) path set to %r", note_id, user_id, cleaned)
     return ("ok", db.get_meta(note_id))
+
+
+def delete_note(user_id: int, note_id: int) -> str:
+    """Owner-scoped hard delete. Returns 'ok' | 'not_found'.
+
+    The order is the correctness argument: read the bucket keys, delete the row,
+    then purge the objects. Deleting first cascades `note_attachments` away and
+    leaves every file in the bucket with nothing pointing at it.
+
+    A key that will not delete does not fail the request. The row is already
+    gone by then, so there is nothing to roll back to and reporting failure
+    would tell the user the note survived when it did not — the orphan is
+    logged instead, by `file_store` and again here.
+    """
+    keys = db.object_keys(note_id)
+
+    if not db.delete_note(user_id, note_id):
+        return "not_found"
+
+    orphaned = [key for key in keys if not file_store.delete_object(key)]
+    logger.info("Deleted note %s (user %s) and %d/%d bucket object(s)",
+                note_id, user_id, len(keys) - len(orphaned), len(keys))
+
+    if orphaned:
+        logger.warning("Note %s deleted but %d object(s) remain in the bucket: %s",
+                       note_id, len(orphaned), ", ".join(orphaned))
+
+    return "ok"
 
 
 def move_folder(user_id: int, old_path: str, raw_new_path: str) -> tuple[str, dict | None]:

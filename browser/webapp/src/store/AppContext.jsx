@@ -33,6 +33,7 @@ const initial = {
   addNoteOpen: false,       // the Add note page (a full-screen overlay)
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
+  deleteTarget: null,       // delete-confirmation sheet target (notes only)
   searchQuery: "",
   chat: { threadId: null, messages: [], busy: false },
 };
@@ -88,6 +89,20 @@ export function AppProvider({ children }) {
     patch({ stats: (await api.fetchStats()).stats || [] });
   }, [patch]);
 
+  // Deleting lives here rather than in the sheet because the aftermath is all
+  // store state: the preview may be showing the note that just went, and both
+  // the feed and the header counts are now stale. Throws on failure so the
+  // sheet can say so — a delete that fails silently leaves the user believing
+  // the note is gone.
+  const removeNote = useCallback(async (id) => {
+    await api.deleteNote(id);
+    patch({
+      deleteTarget: null,
+      sheetNoteId: state.sheetNoteId === id ? null : state.sheetNoteId,
+    });
+    await Promise.all([reload(), refreshStats()]);
+  }, [patch, reload, refreshStats, state.sheetNoteId]);
+
   // ----- preview sheet -----
   const openNote = useCallback((id) => patch({ sheetNoteId: id }), [patch]);
   const closeNote = useCallback(() => patch({ sheetNoteId: null }), [patch]);
@@ -97,6 +112,11 @@ export function AppProvider({ children }) {
   const closeCtx = useCallback(() => patch({ ctx: null }), [patch]);
   const openPath = useCallback((target) => patch({ ctx: null, pathTarget: target }), [patch]);
   const closePath = useCallback(() => patch({ pathTarget: null }), [patch]);
+
+  // Delete closes the menu the same way change-path does, and the confirmation
+  // sheet is what actually calls the API.
+  const openDelete = useCallback((target) => patch({ ctx: null, deleteTarget: target }), [patch]);
+  const closeDelete = useCallback(() => patch({ deleteTarget: null }), [patch]);
 
   // ----- filter -----
   const openFilter = useCallback(() => patch({ filterOpen: true }), [patch]);
@@ -144,11 +164,11 @@ export function AppProvider({ children }) {
     state, patch, setView, closeMode, toggleMode, reload, refreshStats,
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
     openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, feedReq,
-    openAddNote, closeAddNote,
+    openAddNote, closeAddNote, openDelete, closeDelete, removeNote,
   }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
       openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat,
-      openAddNote, closeAddNote]);
+      openAddNote, closeAddNote, openDelete, closeDelete, removeNote]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

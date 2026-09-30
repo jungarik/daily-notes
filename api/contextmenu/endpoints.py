@@ -1,4 +1,5 @@
-"""Contextmenu router — POST /api/contextmenu/notes/{id}/path and /folder/move."""
+"""Contextmenu router — the ⋮ menu's actions: change a note's path, rename a
+folder, delete a note."""
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -25,6 +26,21 @@ def set_path(note_id: int, req: SetPathRequest,
     if status == "not_found":
         raise HTTPException(status_code=404, detail="note not found")
     return NoteMeta(**meta)
+
+
+@router.delete("/notes/{note_id}", status_code=204)
+def delete_note(note_id: int, user_id: int = Depends(current_user)) -> None:
+    """Hard-delete a note and everything hanging off it.
+
+    Chunks, attachments, links and reminders cascade; the attachment and voice
+    objects are removed from the bucket, which does not. There is no undo and
+    no soft-delete tombstone — the menu item says as much before it gets here.
+
+    404 covers both "no such note" and "not yours": a caller who does not own it
+    learns nothing about whether it exists.
+    """
+    if helper.delete_note(user_id, note_id) == "not_found":
+        raise HTTPException(status_code=404, detail="note not found")
 
 
 @router.post("/folder/move", response_model=MoveFolderResponse)

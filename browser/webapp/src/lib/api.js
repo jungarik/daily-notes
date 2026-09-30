@@ -30,6 +30,13 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
+// Separate from apiPost because a 204 has no body to parse: `res.json()` on an
+// empty response rejects, which would report a successful delete as a failure.
+export async function apiDelete(path) {
+  const res = await fetch(API_BASE + path, { method: "DELETE", headers: headers() });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
 // Attachment URLs come back relative (/api/notecard/attachments/…); resolve them
 // against the API origin.
 export function mediaUrl(u) {
@@ -51,6 +58,9 @@ export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
+// No `.catch` here, unlike the reads above: a delete that quietly resolved
+// would leave the note on screen with the user believing it is gone.
+export const deleteNote = (id) => apiDelete("/api/contextmenu/notes/" + encodeURIComponent(id));
 export const chatSend = (message, thread_id) => apiPost("/api/chat/v2", { message, thread_id });
 export const chatConfirm = (thread_id, approve, selection) =>
   apiPost("/api/chat/v2/confirm", { thread_id, approve, selection: selection ?? null });
