@@ -384,7 +384,13 @@ API image is built from **`Dockerfile.api`** (single-stage Python — the API is
 pure `/api` gateway and serves no frontend). The Mini App is a **separate static
 Railway service** built from **`Dockerfile.webapp`** (Vite build → a Caddy static
 server, `browser/webapp/Caddyfile`, SPA fallback to `index.html`); it calls the
-API cross-origin (hence CORS + `WEBAPP_ALLOWED_ORIGINS` on the API). The bot is
+API cross-origin (hence CORS + `WEBAPP_ALLOWED_ORIGINS` on the API). Because the
+Mini App is a separate origin, **every verb a router serves must be listed in
+`allow_methods`** in `api/main.py`: `CORSMiddleware` answers a preflight for an
+unlisted method with 400 *before* the route is reached, so a new verb presents
+as a broken endpoint with a perfectly correct handler behind it — which is how
+`DELETE /api/contextmenu/notes/{id}` first shipped dead.
+`tests/test_cors_methods.py` keeps the list in step with the routers. The bot is
 built from **`Dockerfile.bot`** (single-stage Python; `CMD python -m
 capture.Telegram_Bot.bot`). Each of the three services selects its Dockerfile
 via a `RAILWAY_DOCKERFILE_PATH` service variable (`Dockerfile.api` /

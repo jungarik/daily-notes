@@ -73,10 +73,15 @@ def create_app() -> FastAPI:
     # CORS is required. Endpoints authenticate per-request via signed initData,
     # not cookies, so a wildcard origin is safe (no credentials). In production,
     # set WEBAPP_ALLOWED_ORIGINS to the Mini App's origin to be explicit.
+    # Every method any router actually serves has to be listed: CORSMiddleware
+    # answers a preflight for anything else with 400 before the request ever
+    # reaches the route, so a new verb looks like a broken endpoint rather than
+    # a missing config line. tests/test_cors_methods.py keeps this in step with
+    # the routers.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.WEBAPP_ALLOWED_ORIGINS,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
