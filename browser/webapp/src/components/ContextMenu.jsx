@@ -6,7 +6,7 @@ import { setNotePath, moveFolder } from "../lib/api.js";
 // change-path, and the delete confirmation.
 export default function ContextMenu() {
   const { state, closeCtx, openPath, closePath, openDelete, closeDelete,
-          removeNote, reload } = useApp();
+          removeNote, reload, openAddNote } = useApp();
   const ctx = state.ctx;            // { target, rect } or null
   const menuRef = useRef(null);
   const [pos, setPos] = useState({ left: -9999, top: -9999 });
@@ -35,6 +35,9 @@ export default function ContextMenu() {
     <>
       {ctx && (
         <div className="ctx-menu show" ref={menuRef} style={{ left: pos.left, top: pos.top }}>
+          {ctx.target.type === "note" && (
+            <button className="ctx-item" onClick={() => openAddNote(ctx.target.id)}>✏️ Edit</button>
+          )}
           <button className="ctx-item" onClick={() => openPath(ctx.target)}>📁 Change path</button>
           {/* Notes only. A folder here is not an object — it is a path prefix
               on some set of notes — so a folder Delete would silently mean

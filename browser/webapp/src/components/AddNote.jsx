@@ -103,7 +103,9 @@ const METADATA_FIELDS = [
 // rather than anything here doing it after mount. A `setTimeout` after render,
 // which is what this used to do, is past the gesture and gets a caret with no
 // keyboard.
-export default function AddNote() {
+// `note_id` identifies an existing note for future loading/saving. Both modes
+// currently open blank and close without persisting changes.
+export default function AddNote({ note_id = null }) {
   const { state, closeAddNote, addNoteInputRef } = useApp();
   const [text, setText] = useState("");
   // The visible area while the keyboard is up. The whole overlay is sized to
@@ -146,7 +148,7 @@ export default function AddNote() {
       className={"addnote" + (open ? " show" : "")}
       role="dialog"
       aria-modal="true"
-      aria-label="Add note"
+      aria-label={note_id == null ? "Add note" : "Edit note"}
       aria-hidden={open ? undefined : true}
       // Sized to the visible area rather than the whole screen, so the bar at
       // its bottom edge and the column at its centre both land where you can

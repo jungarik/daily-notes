@@ -97,7 +97,7 @@ export default function Header() {
               {formatCount(count)}
             </text>
           </svg>
-          <button className="hdr-add" aria-label={`Add note (${count} in Inbox)`} onClick={openAddNote}>
+          <button className="hdr-add" aria-label={`Add note (${count} in Inbox)`} onClick={() => openAddNote()}>
             <svg viewBox="-0.82 -0.82 13.64 13.64" fill="none" stroke="currentColor" strokeLinecap="round">
               <path d="M6 0v12M0 6h12" />
             </svg>

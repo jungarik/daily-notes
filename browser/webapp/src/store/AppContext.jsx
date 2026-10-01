@@ -31,6 +31,7 @@ const initial = {
   sheetNoteId: null,        // open note preview (null = closed)
   filterOpen: false,
   addNoteOpen: false,       // the Add note page (a full-screen overlay)
+  addNoteId: null,          // existing note to edit; null for a new note
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
   deleteTarget: null,       // delete-confirmation sheet target (notes only)
@@ -134,16 +135,16 @@ export function AppProvider({ children }) {
   // and `patch` is asynchronous — anything that waits for the re-render has
   // already lost the gesture and gets a caret with no keyboard. AddNote is
   // always mounted precisely so there is something to focus at this moment.
-  const openAddNote = useCallback(() => {
+  const openAddNote = useCallback((note_id = null) => {
     if (addNoteInputRef.current) addNoteInputRef.current.focus();
 
-    patch({ addNoteOpen: true });
+    patch({ addNoteOpen: true, addNoteId: note_id, ctx: null });
   }, [patch]);
 
   const closeAddNote = useCallback(() => {
     if (addNoteInputRef.current) addNoteInputRef.current.blur();
 
-    patch({ addNoteOpen: false });
+    patch({ addNoteOpen: false, addNoteId: null });
   }, [patch]);
   const setFilter = useCallback((sel) => { saveFilter(sel); patch({ filterSel: sel }); }, [patch]);
 

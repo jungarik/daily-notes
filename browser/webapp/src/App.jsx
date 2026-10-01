@@ -28,7 +28,7 @@ export default function App() {
       <NoteSheet />
       <ContextMenu />
       <FolderFilter />
-      <AddNote />
+      <AddNote note_id={state.addNoteId} />
     </>
   );
 }

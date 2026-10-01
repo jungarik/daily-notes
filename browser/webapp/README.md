@@ -5,6 +5,12 @@ Dock, Feed, Explorer, MapView, Search, Chat, NoteSheet, ContextMenu,
 FolderFilter) over a small `AppContext` store, with a single reused `styles.css`.
 It is deployed as its own static host and calls the API cross-origin.
 
+The note context menu offers **Edit** above **Change path** (notes only). It
+opens the Add Note overlay with `note_id` and immediately focuses its textarea
+to open the mobile keyboard. The header's plus opens it with no note ID, and
+closing clears the ID. Loading existing content and saving edits are not wired
+yet; the editor still opens blank and both bottom buttons close it.
+
 ## Layout
 
 ```
