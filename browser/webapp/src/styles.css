@@ -554,10 +554,22 @@
   .addnote-side {
     position: absolute; right: 12px; top: 50%;
     transform: translateY(-50%);
-    display: flex; flex-direction: column; gap: 12px;
+    display: flex; flex-direction: column; gap: 10px;
     pointer-events: none;
   }
   .addnote.show .addnote-side { pointer-events: auto; }
+
+  /* 15% off the dock's 54px, scoped to this column so the dock and the bottom
+     bar keep theirs — `.fab` is shared, and shrinking it there would resize
+     every circle in the app. The glyph and the gap scale with it (20→17,
+     12→10) so the column keeps the same proportions, just smaller. */
+  .addnote-side .fab { width: 46px; height: 46px; }
+  .addnote-side .fab svg { width: 17px; height: 17px; }
+
+  /* AI sits apart from the three below it: it acts *on* the note, where they
+     describe it. A wider gap says that without inventing a second shape. */
+  .addnote-ai { margin-bottom: 18px; }
+
   /* Not yet built, and saying so — same treatment as the capture pill. */
   .addnote-side .fab:disabled { opacity: .45; cursor: default; }
 

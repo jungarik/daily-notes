@@ -494,14 +494,14 @@ Nothing is captured yet — the Mini App still
 has no note-create endpoint, so both buttons just close.
 A column of `.fab` circles runs down the **right edge**, centred as one group —
 the container carries the centring, not any button, so it stays balanced as the
-column grows. At its top is the markdown **mode toggle**, which shows the mode
-it switches *to* (eye → "tap to read", pencil → "tap to write"), the same trick
-the dock's circles use when their glyph becomes a ✕; tapping flips local state
-and nothing else, since there is no renderer and switching the pane would show
-the same raw text twice. Below it, **path / link / tags** — what the note *is*,
-as opposed to what it says — all `disabled`, because a path picker would set a
-field on a note that is never saved. They are plain circles rather than a
-capsule: every control on this edge is the same `.fab` as the ✕ and ✓. The
+column grows. They are **46px**, 15% off the dock's 54, scoped as
+`.addnote-side .fab` because `.fab` is shared and an unscoped size would shrink
+every circle in the app; the glyph and gap scale with it (20→17, 12→10). At the
+top, set apart by a wider gap rather than a different shape, is an inert **AI**
+button — it acts *on* the note where the rest describe it. Below it, **path /
+link / tags**, also `disabled`, because a path picker would set a field on a
+note that is never saved. They are plain circles rather than a capsule: every
+control on this edge is the same `.fab` as the ✕ and ✓. The
 **reminder** button stays in the bottom capture pill despite being metadata
 too — moving it would churn a bar that is already settled. In the **top-right
 corner** is the **help button**, opening

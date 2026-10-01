@@ -288,17 +288,42 @@ class SideBarTests(unittest.TestCase):
         self.assertIn("top: 50%", block)
         self.assertIn("translateY(-50%)", block)
 
-    def test_the_mode_button_shows_one_glyph_at_a_time(self):
-        """One control with two faces, showing the mode it switches *to* — the
-        same trick the dock's circles use when their glyph becomes a ✕. Two
-        separate buttons would make the current mode ambiguous."""
-        self.assertIn("{reading ? <PencilGlyph /> : <EyeGlyph />}", self.addnote)
+    def test_the_ai_button_leads_the_column_and_is_inert(self):
+        """It acts *on* the note where the three below describe it, so it comes
+        first and stands apart. Inert like the rest — there is nothing to act
+        on until a note can be saved."""
+        button = self.addnote.split('className="fab addnote-ai"', 1)[1].split(">", 1)[0]
 
-    def test_tapping_it_only_flips_local_state(self):
-        """Design pass: the glyph swaps and nothing else happens. There is no
-        renderer, so switching the pane would show the same raw text twice."""
-        self.assertIn("setReading((on) => !on)", self.addnote)
-        self.assertNotIn("reading ?", self.addnote.split("<textarea", 1)[1].split("/>", 1)[0])
+        self.assertIn("disabled", button)
+        self.assertLess(self.addnote.index("addnote-ai"),
+                        self.addnote.index("METADATA_FIELDS.map"))
+
+    def test_the_ai_button_is_set_apart_by_spacing_not_by_shape(self):
+        """A second shape in a column of circles would read as a different kind
+        of control rather than the same kind doing a different job."""
+        self.assertIn("className=\"fab addnote-ai\"", self.addnote)
+
+        block = self.css.split(".addnote-ai {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("margin-bottom", block)
+
+    def test_the_markdown_mode_toggle_is_gone(self):
+        """Removed with its glyphs and its state — a toggle left behind with no
+        renderer to drive is a control that does nothing."""
+        for leftover in ("EyeGlyph", "PencilGlyph", "setReading"):
+            with self.subTest(leftover=leftover):
+                self.assertNotIn(leftover, self.addnote)
+
+    def test_the_column_is_smaller_than_the_dock(self):
+        """15% off 54px, scoped to this column: `.fab` is shared, so an
+        unscoped size change would shrink every circle in the app."""
+        block = self.css.split(".addnote-side .fab {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("46px", block)
+
+        dock = self.css.split("\n  .fab {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("54px", dock)
 
 
 class MarkdownHelpTests(unittest.TestCase):

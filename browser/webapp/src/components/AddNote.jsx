@@ -45,28 +45,6 @@ const CAPTURE_KINDS = [
   },
 ];
 
-// The right-edge button's two faces. One control, not two: it shows the mode it
-// will switch *to*, so an eye means "tap to read" and a pencil means "tap to
-// write" — the pattern the dock's circles already use when their glyph becomes
-// a ✕.
-//
-// Tapping swaps the glyph and nothing else. There is no markdown renderer yet,
-// so switching the pane would show the same raw text twice; this is the control
-// being designed, not the mode being built.
-const EyeGlyph = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
-const PencilGlyph = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
-    <path d="M14.5 7.5 16.5 9.5" />
-  </svg>
-);
-
 // What the note *is*, as opposed to what it says: where it is filed, what it
 // connects to, what it is about. They sit below the view toggle as plain
 // circles rather than in a capsule — every control on this edge is one `.fab`,
@@ -133,19 +111,15 @@ export default function AddNote() {
   // part of the screen you can actually see.
   const [box, setBox] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Which face the right-edge button shows. Nothing reads it but the glyph —
-  // there is no renderer for it to drive yet.
-  const [reading, setReading] = useState(false);
   const open = state.addNoteOpen;
 
   useEffect(() => {
     if (!open) return;
 
     setText("");
-    // Both reset per visit rather than persisting: a capture screen should
-    // open the same way every time, not in whatever state it was left.
+    // Reset per visit rather than persisting: a capture screen should open the
+    // same way every time, not in whatever state it was left.
     setHelpOpen(false);
-    setReading(false);
   }, [open]);
 
   useEffect(() => {
@@ -218,18 +192,19 @@ export default function AddNote() {
         {helpOpen && <MarkdownHelp onClose={() => setHelpOpen(false)} />}
       </div>
 
-      {/* The right edge: the view toggle, then the note's metadata. All the
-          same `.fab` circle as the ✕ and ✓, stacked and centred as one group
-          so the column stays balanced whatever it holds. */}
+      {/* The right edge: AI on its own, then the note's metadata. All the same
+          `.fab` circle as the ✕ and ✓, stacked and centred as one group so the
+          column stays balanced whatever it holds. */}
       <div className="addnote-side">
-        <button
-          className="fab"
-          aria-label={reading ? "Write markdown" : "Rendered view"}
-          title={reading ? "Write markdown" : "Rendered view"}
-          aria-pressed={reading}
-          onClick={() => setReading((on) => !on)}
-        >
-          {reading ? <PencilGlyph /> : <EyeGlyph />}
+        {/* Set apart by a wider gap, not a different shape: it acts *on* the
+            note rather than describing it, which is a different kind of thing
+            from the three below. Inert — there is nothing for it to act on
+            until the note can be saved. */}
+        <button className="fab addnote-ai" aria-label="Ask AI" title="Ask AI" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3.2l1.9 4.9 4.9 1.9-4.9 1.9L12 16.8l-1.9-4.9L5.2 10l4.9-1.9L12 3.2Z" />
+            <path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z" />
+          </svg>
         </button>
 
         {METADATA_FIELDS.map((meta) => (
