@@ -21,11 +21,15 @@ a tall card scrolls. It renders **no title** — the date row, path,
 tags, text and linked notes only. `detail.title` is still used for the context
 menu's label and by the map's mini cards.
 
-The note context menu offers **Edit** above **Change path** (notes only); its items use the app's inline-SVG glyphs, not emoji. It
-opens the Add Note overlay with `note_id` and immediately focuses its textarea
-to open the mobile keyboard. The header's plus opens it with no note ID, and
-closing clears the ID. Loading existing content and saving edits are not wired
-yet; the editor still opens blank and both bottom buttons close it.
+The note context menu offers **Edit** above **Path** (notes only); its items
+use the app's inline-SVG glyphs, not emoji. Edit opens the Add Note overlay
+with `note_id` and immediately focuses its textarea to open the mobile
+keyboard; the overlay then reads the note from `GET /api/addnote/{id}` and
+fills the field — showing a "Loading…" placeholder meanwhile, never
+overwriting text typed in the gap, and leaving the page open with an inline
+message if the read fails. The header's plus opens it with no note ID and an
+empty field, and closing clears the ID. **Saving is still not wired** — there
+is no update endpoint and both bottom buttons just close.
 
 ## Layout
 

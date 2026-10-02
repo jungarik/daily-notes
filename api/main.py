@@ -31,6 +31,7 @@ from api.explorer.endpoints import router as explorer_router
 from api.notesheet.endpoints import router as notesheet_router
 from api.mapview.endpoints import router as mapview_router
 from api.contextmenu.endpoints import router as contextmenu_router
+from api.addnote.endpoints import router as addnote_router
 from api.header.endpoints import router as header_router
 from api.search.endpoints import router as search_section_router
 from api.chat_v2.endpoints import router as chat_v2_router
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(notesheet_router)
     app.include_router(mapview_router)
     app.include_router(contextmenu_router)
+    app.include_router(addnote_router)
     app.include_router(header_router)
     app.include_router(search_section_router)
     app.include_router(chat_v2_router)

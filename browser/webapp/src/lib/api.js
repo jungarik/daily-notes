@@ -56,6 +56,11 @@ export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(i
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
 export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
+// The note the Add note page opens for editing. No `.catch` — the page tells
+// the user it could not load rather than opening a blank editor that looks
+// like an empty note.
+export const fetchEditableNote = (id) =>
+  apiGet("/api/addnote/" + encodeURIComponent(id));
 // The change-path picker's roster: every root folder plus every path in use,
 // already ordered by root. Falls back to an empty list — the sheet's input
 // still accepts a typed path, so a failed read costs the suggestions, not the

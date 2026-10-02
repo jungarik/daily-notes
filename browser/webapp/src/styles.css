@@ -628,6 +628,9 @@
      stacking order of their own, so they paint in DOM order — and both the mode
      circle and the bottom bar come after this one, which put the panel
      underneath them. Raising the anchor lifts the panel with it. */
+  /* Sits in the page's own flow under the textarea, not over it: an overlaid
+     message would cover the text it is apologising for. */
+  .addnote-error { margin: 0 20px; color: #e5736b; font-size: 13px; }
   .addnote-help {
     position: absolute; right: 8px;
     top: calc(8px + env(safe-area-inset-top, 0px));

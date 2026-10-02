@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { visibleViewport } from "../lib/format.js";
+import { fetchEditableNote } from "../lib/api.js";
 import MarkdownHelp from "./MarkdownHelp.jsx";
 
 // The three capture kinds the bar offers alongside typing — the same three the
@@ -103,11 +104,16 @@ const METADATA_FIELDS = [
 // rather than anything here doing it after mount. A `setTimeout` after render,
 // which is what this used to do, is past the gesture and gets a caret with no
 // keyboard.
-// `note_id` identifies an existing note for future loading/saving. Both modes
-// currently open blank and close without persisting changes.
+// `note_id` names an existing note to edit; null opens an empty editor. The
+// note's text is read from `GET /api/addnote/{id}` after the page is already
+// up — see the fetch below for why it cannot be awaited first. Saving has no
+// endpoint yet, so both modes still close without persisting.
 export default function AddNote({ note_id = null }) {
   const { state, closeAddNote, addNoteInputRef } = useApp();
   const [text, setText] = useState("");
+  // "loading" | "ready" | "failed" for an existing note; always "ready" for a
+  // new one, which has nothing to wait for.
+  const [status, setStatus] = useState("ready");
   // The visible area while the keyboard is up. The whole overlay is sized to
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
@@ -118,11 +124,40 @@ export default function AddNote({ note_id = null }) {
   useEffect(() => {
     if (!open) return;
 
+    // Cleared on every open, including when switching from an edited note to
+    // a new one: the plus badge must give an empty editor, not the last note's
+    // body. `note_id` is in the dependencies for the same reason — opening a
+    // different note while the page is up has to reset too.
     setText("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
     setHelpOpen(false);
-  }, [open]);
+  }, [open, note_id]);
+
+  // The text arrives *after* the page is open, and that order is forced: the
+  // keyboard only rises for a `focus()` inside the opening gesture, so
+  // `openAddNote` focuses synchronously and nothing can be awaited before the
+  // page exists. Hence a placeholder rather than a spinner — the field is
+  // already focused and the user is already looking at it.
+  useEffect(() => {
+    if (!open || note_id == null) { setStatus("ready"); return; }
+
+    let live = true;
+    setStatus("loading");
+    fetchEditableNote(note_id).then(
+      (note) => {
+        if (!live) return;
+        // Never clobber what the user has typed in the gap. Their keystrokes
+        // are newer than this response, and a textarea that erases itself a
+        // second after opening is the worst failure available here.
+        setText((typed) => (typed ? typed : note.text || ""));
+        setStatus("ready");
+      },
+      () => { if (live) setStatus("failed"); },
+    );
+
+    return () => { live = false; };
+  }, [open, note_id]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -160,7 +195,7 @@ export default function AddNote({ note_id = null }) {
         ref={addNoteInputRef}
         className="addnote-body"
         value={text}
-        placeholder="Write a note…"
+        placeholder={status === "loading" ? "Loading…" : "Write a note…"}
         autoComplete="off"
         autoCapitalize="sentences"
         spellCheck={false}
@@ -170,6 +205,13 @@ export default function AddNote({ note_id = null }) {
         tabIndex={open ? 0 : -1}
         onChange={(e) => setText(e.target.value)}
       />
+      {/* Stays open on a failed read rather than closing: being dropped back
+          to the feed mid-gesture reads as a crash, and nothing is saved here
+          anyway. An empty editor with no message would be indistinguishable
+          from a note whose body really is empty. */}
+      {status === "failed" && (
+        <div className="addnote-error">Couldn’t load this note.</div>
+      )}
       {/* Help, in the top-right corner. No glass: the glyph is already a
           circled `?`, so out of the capsule it *is* "just a question icon and
           a circle" with nothing else drawn around it. */}

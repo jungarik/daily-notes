@@ -321,12 +321,13 @@ needs and is decoupled from the others — changing one section's logic can't
 ripple into another (the trade-off is deliberately duplicated query/shaping code).
 
 - **Web-app sections** (one per Mini App UI section): `feed`, `explorer`,
-  `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search`. These are
+  `notesheet`, `notecard`, `mapview`, `contextmenu`, `addnote`, `header`,
+  `search`. These are
   fully isolated — they import only shared *infra* (`db`, `api.deps` for auth,
   `api.media_token`, `file_store`). Each serves its own URL prefix
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
   `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
-  `POST /api/contextmenu/notes/{id}/path`,
+  `POST /api/contextmenu/notes/{id}/path`, `GET /api/addnote/{id}`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
@@ -492,8 +493,38 @@ difference came out near a full page height and threw the bar off the top of
 the screen on iPhone. Reading one source removes the class of bug; a test
 asserts the helper touches no `window`, `document` or `innerHeight`. Null
 viewport (older webviews) leaves the overlay full-screen.
-Nothing is captured yet — the Mini App still
-has no note-create endpoint, so both buttons just close.
+Nothing is captured or saved yet — the Mini App has no note-create and no
+note-update endpoint, so both buttons just close.
+
+**The editor reads its own section.** `GET /api/addnote/{note_id}` (the
+`api/addnote` vertical: `endpoints` → `helper` → `db`, its own SQL, shared
+infra only) returns `{id, text}` — one field beyond the id, matching the one
+control the page has wired. Selecting the path and tags for buttons that are
+`disabled` would read as though they were live, so the section grows when the
+page does, and the writes belong here beside the read when they arrive. The
+owner predicate is **in the query** (`WHERE id = %s AND user_id = %s`) rather
+than a check afterwards, and a miss is a 404 for both "no such note" and "not
+yours", so the endpoint is not an oracle for which ids exist.
+`helper.editable_note` is a strict pure mapper whose whole job is `text or ""`:
+`notes.text` is nullable and the textarea is a *controlled* React input, where
+`null` means uncontrolled — React warns and the field stops tracking its own
+state.
+
+The read happens **after** the page is open, and that order is forced rather
+than lazy: the keyboard rises only for a `focus()` inside the opening gesture,
+so `openAddNote` focuses synchronously and nothing can be awaited first. Two
+things follow. Loading shows a `"Loading…"` **placeholder** rather than a
+spinner — the field is already focused and under the user's eyes, and
+*disabling* it would drop that focus on iOS and cost the keyboard the gesture
+was for. And the response must never overwrite what was typed in the gap
+(`setText((typed) => typed ? typed : note.text)`): the keystrokes are newer
+than the response, and a textarea that erases itself a second after opening is
+the worst failure available here. A stale response from a previously opened
+note is dropped by the effect's `live` flag. A failed read leaves the page
+**open** with an inline message: closing mid-gesture reads as a crash, and a
+blank editor with no message is indistinguishable from a note whose body really
+is empty. `tests/test_addnote_api.py` and `tests/test_addnote_loading.py` pin
+the tenancy, the null-body mapping and each of those three decisions.
 A column of `.fab` circles runs down the **right edge**, centred as one group —
 the container carries the centring, not any button, so it stays balanced as the
 column grows. They are **46px**, 15% off the dock's 54, scoped as
@@ -577,13 +608,13 @@ context menu's `name` (so the delete sheet quotes the note back) and the map's
 mini cards, which have no body to fall back on. `tests/test_notecard_title.py`
 pins both the absence and those two survivors. Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
-menu on a card/folder opens a context menu to change its path, and — **on notes
+menu on a card/folder opens a context menu to change its path (**Path**), and — **on notes
 only** — to delete.
 
 **One icon style, including in the `⋮` menu.** Every glyph in the app is a
 24-viewBox inline SVG with `fill: none`, `stroke: currentColor` and a 1.8
 stroke — the dock's tabs, the pill's Send, the Add-note page's side buttons,
-and now the context menu's Edit / Change path / Delete, which used emoji
+and now the context menu's Edit / Path / Delete, which used emoji
 (✏️ 📁 🗑). Emoji fail three ways here: they render in a different style on
 every platform, so one menu looked imported from elsewhere; they carry their
 own colour, which left the Delete item's label red and its glyph grey; and they
@@ -596,7 +627,7 @@ button: the same object is not drawn two ways.
 `tests/test_contextmenu_icons.py` pins the recipe, the shared folder path and
 the absence of emoji.
 
-**Change path is a combobox, not a dropdown.** `GET
+**The path picker is a combobox, not a dropdown.** `GET
 /api/contextmenu/paths` returns every root folder — **including the empty
 ones**, since an empty root is exactly where a note gets moved and typing it by
 hand is what the picker exists to avoid — plus every path the user already
@@ -610,7 +641,9 @@ and reads the rows; `helper.known_paths` is a strict pure mapper over both, per
 (`helper.root_labels`): `clean_root_path` still accepts a root typed in any
 supported language, but four translations of Inbox in a list is noise.
 
-The sheet's single input is both the filter and the answer. On open it is
+The sheet behind the menu's **Path** item (the label is just "Path" — the
+sheet's own heading says whether it is a note's path or a folder's) has a
+single input that is both the filter and the answer. On open it is
 focused **and selected**, not just focused: a path is more often replaced than
 edited, so the first keystroke or Backspace clears the whole thing, while the
 old path stays readable until then — clearing the input on open would throw

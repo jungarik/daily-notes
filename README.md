@@ -42,7 +42,7 @@ shared, at the root.
 | `capture/Telegram_Bot/bot.py`        | Telegram handlers, command menu, reminder dispatcher loop  |
 | `capture/Telegram_Bot/api_client.py` | async client the bot uses to call `/api/telegram_bot/*` |
 | `api/`            | FastAPI gateway service (own Railway service); owns migrations |
-| `api/<section>/`  | one isolated vertical per web-app section: `feed`, `explorer`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `header`, `search` |
+| `api/<section>/`  | one isolated vertical per web-app section: `feed`, `explorer`, `notesheet`, `notecard`, `mapview`, `contextmenu`, `addnote`, `header`, `search` |
 | `api/chat_v2/`    | agentic chat tab (`/api/chat/v2`) — owns the thread projection; hands each turn to the agent farm |
 | `api/telegram_bot/` | every bot endpoint (`/api/telegram_bot/*`); owns its full domain in `helper.py` + `db.py` (capture, enrich, reminders, links, users, RAG) |
 | `agents/runtime/` | the turn loop, the roster, the turn tree (`agent_states`), the write ledger, and the graph plumbing |

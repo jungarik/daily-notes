@@ -72,7 +72,7 @@ export default function ContextMenu() {
             </button>
           )}
           <button className="ctx-item" onClick={() => openPath(ctx.target)}>
-            <FolderGlyph />Change path
+            <FolderGlyph />Path
           </button>
           {/* Notes only. A folder here is not an object — it is a path prefix
               on some set of notes — so a folder Delete would silently mean

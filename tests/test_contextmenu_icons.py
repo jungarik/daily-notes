@@ -83,9 +83,9 @@ class IconStyleTests(unittest.TestCase):
     def test_the_labels_survived(self):
         """Replacing the icon is not an excuse to lose the words — the menu is
         read, not recognised."""
-        for label in (">Edit", ">Change path", ">Delete"):
+        for label in ("Edit", "Path", "Delete"):
             with self.subTest(label=label):
-                self.assertIn(label.lstrip(">"), MENU_CODE)
+                self.assertIn("/>" + label, MENU_CODE)
 
 
 class IconLayoutTests(unittest.TestCase):
