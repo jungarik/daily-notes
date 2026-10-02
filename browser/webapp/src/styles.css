@@ -320,23 +320,49 @@
     -webkit-overflow-scrolling: touch;
   }
   .sheet.show { transform: translateY(0); }
-  .sheet .grip { width: 36px; height: 4px; border-radius: 3px; background: var(--border); margin: 0 auto 12px; }
+  /* The collapse bar stays put while the sheet scrolls.
+     It is a normal child of the scrolling `.sheet`, so it used to scroll away
+     — most visibly on a note with a photo, which is tall enough to scroll at
+     all. Sticky alone is not enough: the sheet's own 14px/18px padding is
+     *inside* the scrollport, so content travels through it in plain sight
+     above and beside a narrow bar. So the grip spans the full width (negative
+     margins cancel the side padding), carries the sheet's background and its
+     rounded top corners, and sticks at `-14px` to cover the top padding too.
+     The pill itself is the ::after, centred inside that band. */
+  .sheet .grip {
+    position: sticky; top: -14px; z-index: 2;
+    margin: -14px -18px 12px; padding: 14px 0 8px;
+    background: var(--bg-elev);
+    border-radius: 14px 14px 0 0;
+  }
+  .sheet .grip::after {
+    content: ""; display: block;
+    width: 36px; height: 4px; border-radius: 3px;
+    background: var(--border); margin: 0 auto;
+  }
   /* Preview content — shared by the bottom sheet and the Notes feed posts */
   .card-title { font-size: 16px; font-weight: 400; word-break: break-word; }
   .card-path { margin-top: 4px; color: var(--accent); font-size: 12px; }
   .card-meta { margin-top: 6px; color: var(--text-faint); font-size: 12px; }
-  .card-body { margin-top: 14px; color: var(--text-muted); font-size: 13px; line-height: 1.5; border-top: 1px dashed var(--border); padding-top: 12px; white-space: pre-wrap; word-break: break-word; }
+  /* First under the images now, so no rule above it — the dashed divider moved
+     down to `.post-head`, where the note's own words end and the machine's
+     description of them begins. */
+  .card-body { margin-top: 10px; color: var(--text); font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  /* Inline, muted, and part of the paragraph's flow — a tap target that reads
+     as text. `pre-wrap` on the parent means the leading space in "… more" is
+     preserved, which is what keeps it off the last word. */
+  .card-more { color: var(--text-faint); cursor: pointer; }
+  .card-more:active { color: var(--text-muted); }
   .card-body.muted { color: var(--text-faint); font-style: italic; }
-  .card-links { margin-top: 14px; }
+  .card-links { margin-top: 10px; }
   .card-links:empty { display: none; }
-  .links-label { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 6px; }
   .links-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .link-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 5px 10px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .link-chip:active { background: var(--border); }
 
   /* Notes feed — each note as a full-preview post */
   .post { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 14px; padding: 14px 14px 16px; }
-  .post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
   .post-head .card-date { flex: 1; min-width: 0; color: var(--text-muted); font-weight: 400; font-size: 12px; white-space: nowrap; }
   .post .post-dots { flex: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; line-height: 1.2; }
   /* In the preview sheet the card fills the sheet (no nested card chrome). */

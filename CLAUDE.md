@@ -543,10 +543,33 @@ the close/back control (the opposite circle hides). Views: **Notes** (a feed of
 note cards), **Explorer** (folder tree), **Map** (canvas force-directed graph),
 **Search** (client-side filter over loaded notes), **Chat** (conversation view
 over the `/api/chat/v2` seam). One card template (`buildPost`) is shared by the
-feed and the bottom-sheet preview (opened from the explorer/search/graph): image
-carousel on top, then the date row (sharing its line with the `⋮`), path, tags,
-full text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping
-one navigates without recursion). **The card shows no title.** `title` is an
+feed and the bottom-sheet preview (opened from the explorer/search/graph):
+image carousel on top, then **the note's own text**, then the date row (sharing
+its line with the `⋮`), path, tags, and a de-duplicated row of linked-note
+chips (depth-1 neighbours; tapping one navigates without recursion). The text
+leads because it is what the user wrote — the date, path and tags are the
+machine's description of it, so they follow rather than precede it. The dashed
+divider moved with that: it sits above `.post-head`, where the user's words end
+and the description begins, instead of above a body that is now the first thing
+on the card.
+
+Text past `CLAMP_CHARS` = 100 characters is cut with an **inline "… more"**
+(`lib/format.clampText`, pure and tested under node), not a button: the control
+belongs to the paragraph it interrupts, where a button would read as an action
+on the note like Enrich or Link. The cut retreats to the last space inside the
+budget so no word is sliced in half — unless there is no space to retreat to (a
+URL), which is cut at the limit rather than shown whole. An empty `rest` is the
+signal that there is no control to render, so the component never compares
+lengths itself; expanding renders the **original string** rather than
+`head + rest`, because the split trims the seam and re-joining would eat a
+space. "less" collapses it again — a feed of expanded notes is a feed you
+cannot skim. The clamp applies in the preview sheet too, keeping one template.
+
+The linked-note row carries **no heading**: a row of 🔗-prefixed chips says
+what it is, and "No linked notes yet" was a line of text reporting the absence
+of something the user had not asked about. Nothing renders when there are none.
+
+**The card shows no title.** `title` is an
 LLM-written one-line summary and the card renders the note's own full text right
 below it, so the heading said the same thing twice and the weaker version came
 first. The field is still read where it is the only thing available — the
@@ -598,6 +621,18 @@ sibling like `Projects/apiv2` survives. A failed roster read costs the
 suggestions, not the ability to move a note — `listPaths` falls back to an
 empty list. `tests/test_path_picker.py` pins the ordering, the empty-root rule,
 the unknown-root tail and the subtree exclusion.
+
+**The sheet's grip stays put while the sheet scrolls.** It is a normal child
+of the scrolling `.sheet`, so it used to scroll out of sight — most visibly on
+a note with a photo, which is the case tall enough to scroll at all. `position:
+sticky` is only half of it: the sheet's own `14px 18px` padding is *inside* the
+scrollport, so content travels through it above and beside a narrow 36px bar.
+So `.sheet .grip` is now the full-width band — negative margins cancel the side
+padding, it carries the sheet's background and rounded top corners, and it
+sticks at `top: -14px` to cover the top padding — with the 36×4 pill drawn as
+its `::after`, centred inside. `tests/test_notecard_layout.py` asserts the
+negative values specifically, since they are the part that looks like
+redundancy worth simplifying away.
 
 **Delete is hard and unconditional.** `DELETE /api/contextmenu/notes/{id}`
 removes the note whatever its state: filed, linked, or carrying a reminder that

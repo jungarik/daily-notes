@@ -164,3 +164,27 @@ export function filterPaths(paths, query) {
 
   return paths.filter((path) => path.toLowerCase().includes(needle));
 }
+
+// How much of a note's text the card shows before "… more".
+export const CLAMP_CHARS = 100;
+
+// Split a note's text into what the card shows and what "more" reveals.
+//
+// Returns `{head, rest}` where `rest` is "" for a note short enough to show
+// whole — which is also the signal that there is no control to render, so the
+// caller never compares lengths itself.
+//
+// The cut moves back to the last space inside the limit rather than landing
+// mid-word: `CLAMP_CHARS` is a budget, not a target, and a word sliced in half
+// reads as a rendering fault. A single long token (a URL) has no space to fall
+// back to, so it is cut at the limit — better a hard break than a 400-character
+// "preview".
+export function clampText(text, limit = CLAMP_CHARS) {
+  const whole = text || "";
+  if (whole.length <= limit) return { head: whole, rest: "" };
+  const slice = whole.slice(0, limit);
+  const space = slice.lastIndexOf(" ");
+  const cut = space > Math.floor(limit / 2) ? space : limit;
+
+  return { head: whole.slice(0, cut).trimEnd(), rest: whole.slice(cut).trimStart() };
+}

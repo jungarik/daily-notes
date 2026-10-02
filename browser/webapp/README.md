@@ -12,7 +12,12 @@ text matching nothing is a new path. Folder mode hides the folder's own
 subtree. On open the current path is selected (one keystroke replaces it) and
 the list is hidden until the input is touched; a `✕` in the field clears it.
 
-The feed/preview card (`NoteCard.jsx`) renders **no title** — the date row, path,
+The feed/preview card (`NoteCard.jsx`) leads with the note's own text (images
+above it), then date + `⋮`, path, tags and linked-note chips. Text over 100
+characters is clamped with an inline "… more" / "less" (`lib/format.clampText`);
+the linked-note row has no heading and renders nothing when empty. The bottom
+sheet's grip is sticky and spans the sheet's padding, so it stays visible while
+a tall card scrolls. It renders **no title** — the date row, path,
 tags, text and linked notes only. `detail.title` is still used for the context
 menu's label and by the map's mini cards.
 
