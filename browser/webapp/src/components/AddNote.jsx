@@ -114,6 +114,13 @@ export default function AddNote({ note_id = null }) {
   // "loading" | "ready" | "failed" for an existing note; always "ready" for a
   // new one, which has nothing to wait for.
   const [status, setStatus] = useState("ready");
+  // The rest of the loaded note — path, tags, attachments, linked ids. Held
+  // but not yet rendered: the side buttons that own these fields are still
+  // `disabled`, because each needs an editor of its own (a path picker in the
+  // overlay, a tag input, a link chooser) and there is no update endpoint to
+  // save any of them to. Keeping it in state is what makes those passes a UI
+  // change rather than a UI change plus another round trip.
+  const [note, setNote] = useState(null);
   // The visible area while the keyboard is up. The whole overlay is sized to
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
@@ -129,6 +136,7 @@ export default function AddNote({ note_id = null }) {
     // body. `note_id` is in the dependencies for the same reason — opening a
     // different note while the page is up has to reset too.
     setText("");
+    setNote(null);
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
     setHelpOpen(false);
@@ -145,12 +153,13 @@ export default function AddNote({ note_id = null }) {
     let live = true;
     setStatus("loading");
     fetchEditableNote(note_id).then(
-      (note) => {
+      (loaded) => {
         if (!live) return;
         // Never clobber what the user has typed in the gap. Their keystrokes
         // are newer than this response, and a textarea that erases itself a
         // second after opening is the worst failure available here.
-        setText((typed) => (typed ? typed : note.text || ""));
+        setText((typed) => (typed ? typed : loaded.text || ""));
+        setNote(loaded);
         setStatus("ready");
       },
       () => { if (live) setStatus("failed"); },

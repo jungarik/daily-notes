@@ -498,17 +498,46 @@ note-update endpoint, so both buttons just close.
 
 **The editor reads its own section.** `GET /api/addnote/{note_id}` (the
 `api/addnote` vertical: `endpoints` → `helper` → `db`, its own SQL, shared
-infra only) returns `{id, text}` — one field beyond the id, matching the one
-control the page has wired. Selecting the path and tags for buttons that are
-`disabled` would read as though they were live, so the section grows when the
-page does, and the writes belong here beside the read when they arrive. The
-owner predicate is **in the query** (`WHERE id = %s AND user_id = %s`) rather
-than a check afterwards, and a miss is a 404 for both "no such note" and "not
-yours", so the endpoint is not an oracle for which ids exist.
-`helper.editable_note` is a strict pure mapper whose whole job is `text or ""`:
-`notes.text` is nullable and the textarea is a *controlled* React input, where
-`null` means uncontrolled — React warns and the field stops tracking its own
-state.
+infra only) returns `{id, text, path, tags, attachments, linked_note_ids}` —
+everything the page's controls own, so wiring one of them later is a UI change
+rather than a UI change plus another round trip. The writes belong here beside
+the read when they arrive. The owner predicate is **in the query** (`WHERE id =
+%s AND user_id = %s`) rather than a check afterwards, a miss is a 404 for both
+"no such note" and "not yours" (so the endpoint is not an oracle for which ids
+exist), and the attachment and link reads happen only *after* that check
+passes — an id that is not the caller's never reaches them.
+
+`path` and `tags` ride along in the note's own row; a second query for two
+columns already in hand would be a query for nothing. `attachments` are
+`{id, kind, mime, url}` where `url` is the **signed notecard proxy path**,
+relative, minted per request — the bucket is private, an `<img>` cannot send
+the initData header, and `note_attachments.storage_key` is neither selected nor
+mapped, because a bucket key in a payload is one someone will try to fetch
+directly. The URL template and the `media_token.sign` call are duplicated from
+the feed section rather than shared, which is this codebase's deliberate trade;
+signing reads the clock and a secret, so it happens in the endpoint and its
+result is passed *into* the mapper. `linked_note_ids` is the **union of links
+and backlinks** — directed edges, backlinks being the reverse query, so a
+note's neighbours are both directions, the same set the card's chips show — and
+the `user_id` predicate sits on the *far* endpoint of each edge so a link into
+someone else's note cannot leak its id. They come back `sorted`, because
+`UNION` promises no order and an unordered payload makes two reads
+undiffable.
+
+The response is built **in the endpoint**, not through a mapper. Three
+columns are nullable where the client needs a value — `text` and `path` feed
+*controlled* React inputs (where `null` means uncontrolled: React warns and the
+field stops tracking its own state) and `tags` is a nullable jsonb rendered
+with `.map`, which throws on `null` — so each passes through one `or` at the
+place that already owns the reads. A helper for `value or ""` would be a name
+to read past; `helper` keeps only `attachment_views`, which earns its place by
+being impure. The row is **not** spread into the model (`EditableNote(**row)`
+would hand the coercion to whatever the row happens to hold); Pydantic ignores
+the unlisted columns and copies the lists, so nothing is smuggled into the
+payload and nothing the caller still holds can change it afterwards. On the
+client the extra fields are held in state and **not rendered**: the
+path/link/tags buttons stay `disabled` until each has an editor and there is
+somewhere to save it.
 
 The read happens **after** the page is open, and that order is forced rather
 than lazy: the keyboard rises only for a `focus()` inside the opening gesture,

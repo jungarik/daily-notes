@@ -8,9 +8,11 @@ to get wrong and invisible once it works:
   no path can forget it. A caller who does not own the note gets the same 404
   as one asking for a note that never existed — it must not become an oracle
   for which ids exist.
-* **The null body.** `notes.text` is nullable and the textarea is a controlled
-  React input, where `null` means "uncontrolled": React warns and the field
-  stops tracking its own state. The mapper exists for that one conversion.
+* **The nullable columns.** `text`, `path` and `tags` are nullable, and the
+  client needs a value: the first two feed controlled React inputs (where
+  `null` means uncontrolled — React warns and the field stops tracking its own
+  state) and `tags` is rendered with `.map`, which throws on `null`. The
+  coercion is three `or` expressions in the endpoint, so it is checked there.
 * **The surface.** One field beyond the id, matching the one control the page
   has wired. Selecting data for the disabled path/tags buttons would read as
   though they were live.
@@ -65,36 +67,100 @@ def _import_helper():
 helper = _import_helper()
 
 
-class MapperTests(unittest.TestCase):
-    def test_a_null_body_becomes_the_empty_string(self):
-        """The reason this mapper exists. `null` into a controlled textarea
-        makes React warn and the field stop tracking its own state."""
-        self.assertEqual("", helper.editable_note({"id": 3, "text": None})["text"])
+class NullCoercionTests(unittest.TestCase):
+    """`text`, `path` and `tags` are nullable in the database and must not
+    arrive as `null` on the client.
 
-    def test_a_missing_key_is_treated_the_same(self):
-        self.assertEqual("", helper.editable_note({"id": 3})["text"])
+    There is no mapper to unit-test: the coercion is three `or` expressions in
+    the endpoint, beside the reads that produce the row. So these read the
+    source — the question is whether each nullable column passes through one,
+    and that is a property of the file. The schema's defaults are checked too,
+    because a field that lost its `or` would otherwise be caught only by a
+    note that happens to have a null column.
+    """
 
-    def test_the_text_is_passed_through_untouched(self):
-        """No trimming, no collapsing: this is the body the user is about to
-        edit, and a stripped trailing newline is an edit they did not make."""
-        body = "  line one\n\n  line two  \n"
+    def test_every_nullable_column_is_coerced(self):
+        for field in ("text", "path"):
+            with self.subTest(field=field):
+                self.assertIn(f'{field}=row["{field}"] or ""', ENDPOINTS_SOURCE)
 
-        self.assertEqual(body, helper.editable_note({"id": 3, "text": body})["text"])
+        self.assertIn('tags=row["tags"] or []', ENDPOINTS_SOURCE)
 
-    def test_it_returns_only_what_the_page_has_wired(self):
-        """The path/tags/reminder buttons are disabled; shipping their data
-        would suggest otherwise."""
-        shaped = helper.editable_note({"id": 3, "text": "x", "path": "Inbox",
-                                       "tags": ["a"], "priority": "high"})
+    def test_the_schema_defaults_match_those_empties(self):
+        """So a field left out entirely still cannot serialise as `null`."""
+        source = (SECTION / "schemas.py").read_text(encoding="utf-8")
 
-        self.assertEqual({"id", "text"}, set(shaped))
+        self.assertIn('text: str = ""', source)
+        self.assertIn('path: str = ""', source)
+        self.assertIn("tags: list[str] = []", source)
 
-    def test_it_is_a_pure_mapper(self):
-        """The endpoint is the impure boundary (api/README)."""
-        row = {"id": 3, "text": "x"}
+    def test_the_row_is_not_spread_into_the_model(self):
+        """`EditableNote(**row)` would hand the coercion to whatever the row
+        happens to contain, and quietly carry a column nobody chose."""
+        self.assertNotIn("EditableNote(**", ENDPOINTS_SOURCE)
 
-        self.assertEqual(helper.editable_note(row), helper.editable_note(row))
-        self.assertEqual({"id": 3, "text": "x"}, row)
+    def test_no_mapper_was_left_behind(self):
+        """The function this replaced. A dead `editable_note` would still be
+        imported by nothing and read by everyone."""
+        for path in SECTION.glob("*.py"):
+            with self.subTest(file=path.name):
+                self.assertNotIn("editable_note", path.read_text(encoding="utf-8"))
+
+
+class AttachmentTests(unittest.TestCase):
+    def test_each_attachment_gets_a_signed_proxy_url(self):
+        """The bucket is private: the API reaches it, the browser does not. An
+        `<img>` cannot send the initData header either, so the token in the
+        URL is the auth."""
+        views = helper.attachment_views([{"id": 7, "kind": "image", "mime": "image/jpeg"}])
+
+        self.assertEqual(1, len(views))
+        self.assertTrue(views[0]["url"].startswith("/api/notecard/attachments/7?t="))
+        self.assertTrue(len(views[0]["url"].split("t=")[1]) > 10)
+
+    def test_the_storage_key_never_reaches_the_client(self):
+        """Not selected in SQL and not mapped. A bucket key in a payload is a
+        key someone will try to fetch directly."""
+        self.assertNotIn("storage_key", DB_SOURCE)
+        self.assertNotIn("storage_key", (SECTION / "helper.py").read_text(encoding="utf-8"))
+
+    def test_the_url_is_relative(self):
+        """It resolves against whatever origin served the API to this browser;
+        a baked-in host breaks the moment the API moves."""
+        views = helper.attachment_views([{"id": 7, "kind": "image", "mime": "image/png"}])
+
+        self.assertFalse(views[0]["url"].startswith("http"))
+
+    def test_the_order_the_rows_arrive_in_is_kept(self):
+        """Carousel order is the DB's `position, id`; re-sorting here would
+        silently disagree with the feed."""
+        rows = [{"id": 9, "kind": "image", "mime": "image/png"},
+                {"id": 4, "kind": "image", "mime": "image/png"}]
+
+        self.assertEqual([9, 4], [view["id"] for view in helper.attachment_views(rows)])
+
+    def test_the_attachment_read_is_ordered_like_the_carousel(self):
+        self.assertIn("ORDER BY position, id", DB_SOURCE)
+
+
+class LinkedIdTests(unittest.TestCase):
+    def test_both_directions_are_read(self):
+        """Links are directed and backlinks are the reverse query, so a note's
+        neighbours are the union — the set the card's chips already show."""
+        self.assertIn("UNION", DB_SOURCE)
+        self.assertIn("WHERE l.from_note_id = %s", DB_SOURCE)
+        self.assertIn("WHERE l.to_note_id = %s", DB_SOURCE)
+
+    def test_the_far_endpoint_is_owner_checked(self):
+        """A link whose other side belongs to someone else must not leak that
+        note's id — and the row is reachable, because this note's owner wrote
+        the edge."""
+        self.assertEqual(2, DB_SOURCE.count("n.user_id = %s"))
+
+    def test_the_ids_come_back_sorted(self):
+        """A stable payload: an unordered list makes a diff between two reads
+        unreadable, and `UNION` promises no order."""
+        self.assertIn("return sorted(", DB_SOURCE)
 
 
 class TenancyTests(unittest.TestCase):
@@ -120,8 +186,18 @@ class TenancyTests(unittest.TestCase):
         self.assertNotIn("user_id: int,", ENDPOINTS_SOURCE)
 
     def test_the_select_is_narrow(self):
-        """Only the columns the response carries."""
-        self.assertIn("SELECT id, text FROM notes", DB_SOURCE)
+        """Only the columns the response carries — the row read is the note's
+        own four fields, and nothing does `SELECT *`."""
+        self.assertIn("SELECT id, text, path, tags FROM notes", DB_SOURCE)
+        self.assertNotIn("SELECT *", DB_SOURCE)
+
+    def test_the_follow_up_reads_happen_after_the_ownership_check(self):
+        """An id that is not the caller's must never reach the links or
+        attachments queries at all."""
+        guard = ENDPOINTS_SOURCE.index("raise HTTPException(status_code=404")
+
+        self.assertLess(guard, ENDPOINTS_SOURCE.index("db.attachments(note_id)"))
+        self.assertLess(guard, ENDPOINTS_SOURCE.index("db.linked_note_ids("))
 
 
 class SectionShapeTests(unittest.TestCase):

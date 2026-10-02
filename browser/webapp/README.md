@@ -24,8 +24,9 @@ menu's label and by the map's mini cards.
 The note context menu offers **Edit** above **Path** (notes only); its items
 use the app's inline-SVG glyphs, not emoji. Edit opens the Add Note overlay
 with `note_id` and immediately focuses its textarea to open the mobile
-keyboard; the overlay then reads the note from `GET /api/addnote/{id}` and
-fills the field — showing a "Loading…" placeholder meanwhile, never
+keyboard; the overlay then reads the note from `GET /api/addnote/{id}`
+(`{id, text, path, tags, attachments, linked_note_ids}` — the extra fields are
+held in state for the still-disabled side buttons) and fills the field — showing a "Loading…" placeholder meanwhile, never
 overwriting text typed in the gap, and leaving the page open with an inline
 message if the read fails. The header's plus opens it with no note ID and an
 empty field, and closing clears the ID. **Saving is still not wired** — there

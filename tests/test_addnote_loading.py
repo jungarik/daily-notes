@@ -56,7 +56,7 @@ class TypedTextTests(unittest.TestCase):
         typing while it is in flight. Their keystrokes are newer than the
         response; a textarea that erases itself a second after opening is the
         worst failure available here."""
-        self.assertIn("setText((typed) => (typed ? typed : note.text || \"\"))",
+        self.assertIn("setText((typed) => (typed ? typed : loaded.text || \"\"))",
                       PAGE_CODE)
 
     def test_a_stale_response_is_dropped(self):
@@ -108,6 +108,30 @@ class FeedbackTests(unittest.TestCase):
         """A new note has nothing to wait for, so the page must not open
         showing "Loading…" at the one moment it is most often used."""
         self.assertIn('const [status, setStatus] = useState("ready");', PAGE_CODE)
+
+
+class LoadedFieldsTests(unittest.TestCase):
+    """The rest of the payload — path, tags, attachments, linked ids.
+
+    Held in state and not yet rendered: each belongs to a side button that is
+    still `disabled`, because each needs an editor of its own and there is no
+    update endpoint to save it to. Keeping it makes those passes a UI change
+    rather than a UI change plus another round trip.
+    """
+
+    def test_the_whole_note_is_kept(self):
+        self.assertIn("const [note, setNote] = useState(null);", PAGE_CODE)
+        self.assertIn("setNote(loaded);", PAGE_CODE)
+
+    def test_it_is_cleared_on_every_open(self):
+        """Or the next note opens holding the last one's photos."""
+        self.assertIn("setNote(null);", PAGE_CODE)
+
+    def test_the_metadata_buttons_are_still_disabled(self):
+        """Having the data is not having an editor for it, and nothing saves."""
+        buttons = PAGE_CODE[PAGE_CODE.index("METADATA_FIELDS.map"):]
+
+        self.assertIn("disabled", buttons[:buttons.index("</button>")])
 
 
 class SaveNotWiredTests(unittest.TestCase):
