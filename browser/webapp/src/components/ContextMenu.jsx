@@ -117,14 +117,33 @@ function PathSheet({ target, onClose, onSaved }) {
   const [val, setVal] = useState("");
   const [err, setErr] = useState("");
   const [paths, setPaths] = useState([]);
+  // Whether the user has touched the input since the sheet opened. The list
+  // stays hidden until they have: on open the input holds the current path,
+  // and a list filtered by it would show that path and its children — the one
+  // place the note already is. Hiding it keeps the sheet the size it was and
+  // makes the list appear as an answer to typing rather than as furniture.
+  const [touched, setTouched] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (target) {
-      setVal(target.path || ""); setErr("");
-      setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
+      setVal(target.path || ""); setErr(""); setTouched(false);
+      // Focus *and select*: the path is usually being replaced rather than
+      // edited, so the first keystroke or Backspace should clear the whole
+      // thing. `select()` keeps it readable until then, where clearing the
+      // input on open would throw away the only reference to where the note
+      // currently lives. The 60ms wait is the sheet's slide-in — focusing
+      // mid-transition lands the caret in a moving element on iOS.
+      setTimeout(() => {
+        const input = inputRef.current;
+        if (!input) return;
+        input.focus();
+        input.select();
+      }, 60);
     }
   }, [target]);
+
+  const edit = (next) => { setVal(next); setErr(""); setTouched(true); };
 
   // Read on open, not on mount: the vault changes while the app is up, and a
   // roster fetched once at boot goes stale exactly when the user has just
@@ -140,7 +159,9 @@ function PathSheet({ target, onClose, onSaved }) {
   const options = filterPaths(selectablePaths(paths, target), val);
   // The typed path is already the input's value, so a row repeating it back
   // is a tap that changes nothing.
-  const suggestions = options.filter((path) => path !== (val || "").trim());
+  const suggestions = touched
+    ? options.filter((path) => path !== (val || "").trim())
+    : [];
 
   const save = async () => {
     if (!target) return;
@@ -164,10 +185,22 @@ function PathSheet({ target, onClose, onSaved }) {
       <div className={"sheet" + (open ? " show" : "")} id="pathSheet">
         <div className="grip" />
         <div className="card-title">{target && target.type === "folder" ? "Rename folder path" : "Change note path"}</div>
-        <input ref={inputRef} className="path-input" type="text" value={val}
-          autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Projects/idea"
-          onChange={(e) => setVal(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+        <div className="path-field">
+          <input ref={inputRef} className="path-input" type="text" value={val}
+            autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Projects/idea"
+            onChange={(e) => edit(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+          {/* Not a `type="reset"`, and not hidden when the field is empty: a
+              control that disappears under your thumb is one the user stops
+              trusting. It empties the field and refocuses, which also opens
+              the list — an empty query is every path. */}
+          {val !== "" && (
+            <button className="path-clear" aria-label="Clear path" onClick={() => {
+              edit("");
+              if (inputRef.current) inputRef.current.focus();
+            }}>✕</button>
+          )}
+        </div>
         {suggestions.length > 0 && (
           <div className="path-list">
             {suggestions.map((path) => (

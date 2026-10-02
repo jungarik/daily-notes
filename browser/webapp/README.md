@@ -9,7 +9,8 @@ The **change-path sheet** is a combobox: its input filters a scrollable list of
 existing paths (`GET /api/contextmenu/paths` — every root plus every path in
 use, ordered by root), tapping a row fills the input so you can extend it, and
 text matching nothing is a new path. Folder mode hides the folder's own
-subtree.
+subtree. On open the current path is selected (one keystroke replaces it) and
+the list is hidden until the input is touched; a `✕` in the field clears it.
 
 The feed/preview card (`NoteCard.jsx`) renders **no title** — the date row, path,
 tags, text and linked notes only. `detail.title` is still used for the context

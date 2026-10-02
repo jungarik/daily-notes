@@ -350,7 +350,12 @@
      above, and the two sit one tap apart, so it uses the text-safe red rather
      than the fill red — see --danger-text. */
   .ctx-item.danger { color: var(--danger-text); }
-  #pathSheet .path-input { margin-top: 14px; width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--text); background: var(--bg, #1e1e1e); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; }
+  /* The input and its clear button share a row; the input keeps the padding
+     so text never runs under the ✕. */
+  #pathSheet .path-field { position: relative; }
+  #pathSheet .path-clear { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; font: inherit; font-size: 13px; color: var(--text-faint); background: transparent; border: none; border-radius: 16px; cursor: pointer; }
+  #pathSheet .path-clear:active { background: var(--border); }
+  #pathSheet .path-input { margin-top: 14px; width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--text); background: var(--bg, #1e1e1e); border: 1px solid var(--border); border-radius: 10px; padding: 11px 40px 11px 12px; }
   #pathSheet .path-input:focus { outline: none; border-color: var(--accent); }
   /* The combobox's list. A fixed max-height rather than a count limit: the
      sheet itself scrolls, so an unbounded list would push Save off-screen and

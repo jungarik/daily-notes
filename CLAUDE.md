@@ -571,10 +571,24 @@ and reads the rows; `helper.known_paths` is a strict pure mapper over both, per
 (`helper.root_labels`): `clean_root_path` still accepts a root typed in any
 supported language, but four translations of Inbox in a list is noise.
 
-The sheet's single input is both the filter and the answer. Typing narrows the
-scrollable list (`lib/format.filterPaths`, case-insensitive); tapping a row
-*fills the input* rather than saving, because the common move is to pick a
-folder and then extend it (`Projects/api` → `Projects/api/v2`). Text matching
+The sheet's single input is both the filter and the answer. On open it is
+focused **and selected**, not just focused: a path is more often replaced than
+edited, so the first keystroke or Backspace clears the whole thing, while the
+old path stays readable until then — clearing the input on open would throw
+away the only reference to where the note currently lives. The selection waits
+out the sheet's 60ms slide-in, because focusing mid-transition lands the caret
+in a moving element on iOS. **The list stays hidden until the input is
+touched** (`touched`, reset on every open): on open the input holds the current
+path, so a list filtered by it would show that path and its children — the one
+place the note already is — and the sheet would open at its tallest for no
+information. Typing, clearing and picking a row all go through one `edit`
+helper, so no route can set the value while leaving the list hidden. A `✕`
+inside the field empties it in one tap (which opens the list: an empty query is
+every path) and is rendered only when there is something to clear, never hidden
+*under* the thumb that is reaching for it. Typing narrows the scrollable list
+(`lib/format.filterPaths`, case-insensitive); tapping a row *fills the input*
+rather than saving, because the common move is to pick a folder and then extend
+it (`Projects/api` → `Projects/api/v2`). Text matching
 no row is simply a new path — the server validates the root either way, so
 there is no "new folder" mode to switch into. In folder mode the target's own
 path and its descendants are filtered out (`lib/format.selectablePaths`): a

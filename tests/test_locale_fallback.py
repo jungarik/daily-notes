@@ -80,6 +80,11 @@ class SingleSourceTests(unittest.TestCase):
             "api/explorer/helper.py",
             "common/helper.py",
             "tools/finder/list_paths.py",
+            # The odd one out, and deliberately: `GET /api/contextmenu/paths`
+            # keeps `helper.known_paths` a strict pure mapper (api/README), so
+            # the locale is resolved at the endpoint — the impure boundary —
+            # rather than inside the helper the way the older verticals do.
+            "api/contextmenu/endpoints.py",
         }
         found = {
             str(path.relative_to(ROOT)).replace("\\", "/")

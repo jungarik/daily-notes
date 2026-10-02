@@ -25,28 +25,49 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 FORMAT_JS = ROOT / "browser" / "webapp" / "src" / "lib" / "format.js"
 
-# `api.*.db` imports the shared psycopg pool at module load, which is absent
-# here. Stub it just long enough to import, then take it back out — leaving a
-# fake `db` in `sys.modules` changes how other test modules import.
-_had_db = "db" in sys.modules
+def _import_helper():
+    """`api.contextmenu.helper` with the modules it pulls in put back.
 
-if not _had_db:
-    _stub = types.ModuleType("db")
-    _stub.cursor = lambda: None
-    sys.modules["db"] = _stub
+    Two things have to be undone, not one. `api.*.db` imports the shared
+    psycopg pool at module load and it is absent here, so `db` and
+    `file_store` are stubbed for the duration of the import. But the import
+    also *leaves* `api.contextmenu.db` and `.helper` in `sys.modules` and as
+    attributes of their package — and `tests/test_contextmenu_delete.py`
+    re-imports `helper` against a fake `db` to test the delete order. An
+    `import a.b.c as x` resolves through the package attribute, so a module
+    left behind here hands that file the real `db` and its four tests fail
+    with no change to the code they cover.
 
-_had_store = "file_store" in sys.modules
+    So: import, keep the module object, and remove every trace. The returned
+    module keeps working — it is only unreachable by name.
+    """
+    stubbed = {}
 
-if not _had_store:
-    sys.modules["file_store"] = types.ModuleType("file_store")
+    for name in ("db", "file_store"):
+        if name not in sys.modules:
+            stub = types.ModuleType(name)
+            stub.cursor = lambda: None
+            sys.modules[name] = stub
+            stubbed[name] = stub
 
-from api.contextmenu import helper            # noqa: E402
+    try:
+        from api.contextmenu import helper as imported
+    finally:
+        for name in stubbed:
+            sys.modules.pop(name, None)
 
-if not _had_db:
-    del sys.modules["db"]
+    import api.contextmenu as section
 
-if not _had_store:
-    del sys.modules["file_store"]
+    for name in ("helper", "db"):
+        sys.modules.pop("api.contextmenu." + name, None)
+
+        if hasattr(section, name):
+            delattr(section, name)
+
+    return imported
+
+
+helper = _import_helper()
 
 ROOTS = ["Inbox", "Projects", "Areas", "Resources", "Archive"]
 
@@ -197,6 +218,76 @@ class PathFilterTests(unittest.TestCase):
         """Which is the new-path case: no rows, and the typed text is the
         answer. There is no mode to switch into."""
         self.assertEqual([], _offered(PATHS, NOTE, "Projects/brand-new"))
+
+
+SHEET = (ROOT / "browser" / "webapp" / "src" / "components"
+         / "ContextMenu.jsx").read_text(encoding="utf-8")
+SHEET_CSS = (ROOT / "browser" / "webapp" / "src"
+             / "styles.css").read_text(encoding="utf-8")
+
+
+class SheetOnOpenTests(unittest.TestCase):
+    """What the sheet does the moment it opens.
+
+    Component state rather than a pure helper, so this reads the source — the
+    same trade `tests/test_addnote_keyboard.py` makes. The assertions are
+    deliberately about the three decisions, not the syntax around them.
+    """
+
+    def test_the_path_is_selected_not_just_focused(self):
+        """The path is usually being replaced, not edited: selecting it makes
+        the first keystroke or Backspace clear the whole thing."""
+        self.assertIn("input.select()", SHEET)
+
+    def test_the_input_is_not_cleared_on_open(self):
+        """Selecting keeps the path readable until the user types. Clearing it
+        would throw away the only reference to where the note lives now."""
+        self.assertIn('setVal(target.path || "")', SHEET)
+
+    def test_the_selection_waits_for_the_slide_in(self):
+        """Focusing mid-transition lands the caret in a moving element on iOS,
+        which is why the focus is already deferred."""
+        self.assertIn("}, 60);", SHEET)
+
+    def test_the_list_is_hidden_until_the_input_is_touched(self):
+        """On open the input holds the current path, so a list filtered by it
+        shows that path and its children — the one place the note already is.
+        `touched` is what keeps it out of the way until it has an answer."""
+        self.assertIn("const [touched, setTouched] = useState(false);", SHEET)
+        self.assertIn("const suggestions = touched", SHEET)
+
+    def test_touched_resets_every_time_the_sheet_opens(self):
+        """The sheet is reused for the next note. Without the reset the second
+        open would start with yesterday's list showing."""
+        self.assertIn("setTouched(false);", SHEET)
+
+    def test_every_route_into_the_input_marks_it_touched(self):
+        """Typing, clearing and picking a row all go through `edit`, so none of
+        them can set the value while leaving the list hidden."""
+        self.assertIn("const edit = (next) =>", SHEET)
+        self.assertIn("onChange={(e) => edit(e.target.value)}", SHEET)
+        self.assertNotIn("setVal(e.target.value)", SHEET)
+
+    def test_the_clear_button_exists_and_is_scoped_to_the_sheet(self):
+        self.assertIn('className="path-clear"', SHEET)
+        self.assertIn("#pathSheet .path-clear {", SHEET_CSS)
+
+    def test_the_clear_button_is_labelled(self):
+        """Its glyph is a bare ✕, which a screen reader reads as nothing."""
+        self.assertIn('aria-label="Clear path"', SHEET)
+
+    def test_the_clear_button_goes_through_edit_too(self):
+        """Clearing opens the list, and an empty query is every path — which
+        is the point of reaching for it."""
+        self.assertIn('edit("");', SHEET)
+
+    def test_the_input_leaves_room_for_the_clear_button(self):
+        """Absolutely positioned over the field: without the right padding the
+        path's tail runs under the glyph."""
+        start = SHEET_CSS.index("#pathSheet .path-input {")
+        rule = SHEET_CSS[start:SHEET_CSS.index("}", start)]
+
+        self.assertIn("padding: 11px 40px 11px 12px", rule)
 
 
 if __name__ == "__main__":
