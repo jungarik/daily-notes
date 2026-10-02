@@ -3,6 +3,7 @@ import { useApp } from "../store/AppContext.jsx";
 import { visibleViewport } from "../lib/format.js";
 import { fetchEditableNote } from "../lib/api.js";
 import MarkdownHelp from "./MarkdownHelp.jsx";
+import PathWheel from "./PathWheel.jsx";
 
 // The three capture kinds the bar offers alongside typing — the same three the
 // bot already accepts (text, voice, photo), plus the one piece of metadata
@@ -121,6 +122,11 @@ export default function AddNote({ note_id = null }) {
   // save any of them to. Keeping it in state is what makes those passes a UI
   // change rather than a UI change plus another round trip.
   const [note, setNote] = useState(null);
+  // The note's folder. "" means the user has not chosen and the note has none
+  // — it will be filed under the API's `default_root` on save, so the button
+  // stays unlit rather than claiming a choice nobody made.
+  const [path, setPath] = useState("");
+  const [pathOpen, setPathOpen] = useState(false);
   // The visible area while the keyboard is up. The whole overlay is sized to
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
@@ -137,6 +143,8 @@ export default function AddNote({ note_id = null }) {
     // different note while the page is up has to reset too.
     setText("");
     setNote(null);
+    setPath("");
+    setPathOpen(false);
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
     setHelpOpen(false);
@@ -160,6 +168,9 @@ export default function AddNote({ note_id = null }) {
         // second after opening is the worst failure available here.
         setText((typed) => (typed ? typed : loaded.text || ""));
         setNote(loaded);
+        // The note's own folder, pre-selected: opening Edit on a filed note
+        // should show where it already lives, not an empty field.
+        setPath((chosen) => (chosen ? chosen : loaded.path || ""));
         setStatus("ready");
       },
       () => { if (live) setStatus("failed"); },
@@ -261,15 +272,41 @@ export default function AddNote({ note_id = null }) {
         </button>
 
         {METADATA_FIELDS.map((meta) => (
-          <button
-            key={meta.field}
-            className="fab"
-            aria-label={meta.label}
-            title={meta.label}
-            disabled
-          >
-            {meta.icon}
-          </button>
+          meta.field === "path" ? (
+            // The one live metadata control. Its wheel is anchored here rather
+            // than at the page level so it is positioned by the button it
+            // belongs to — `right: 100%` on this wrapper is "just left of the
+            // circle", which stays true wherever the column ends up.
+            <div className="path-anchor" key={meta.field}>
+              <button
+                className={"fab" + (path ? " set" : "")}
+                aria-label={path ? "Folder: " + path : meta.label}
+                title={path || meta.label}
+                aria-expanded={pathOpen}
+                onClick={() => setPathOpen((wheel) => !wheel)}
+              >
+                {meta.icon}
+              </button>
+
+              {pathOpen && (
+                <PathWheel
+                  value={path}
+                  onPick={(picked) => { setPath(picked); setPathOpen(false); }}
+                  onClose={() => setPathOpen(false)}
+                />
+              )}
+            </div>
+          ) : (
+            <button
+              key={meta.field}
+              className="fab"
+              aria-label={meta.label}
+              title={meta.label}
+              disabled
+            >
+              {meta.icon}
+            </button>
+          )
         ))}
       </div>
 

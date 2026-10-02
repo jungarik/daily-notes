@@ -74,3 +74,37 @@ def linked_note_ids(user_id: int, note_id: int) -> list[int]:
             (user_id, note_id, user_id, note_id),
         )
         return sorted(row[0] for row in cur.fetchall())
+
+
+def get_language(user_id: int) -> str | None:
+    """The user's chosen language, or None when they have never set one.
+
+    Duplicated from the other verticals on purpose — this section owns its SQL.
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the caller resolves the default.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+        return row[0] if row else None
+
+
+def list_paths(user_id: int) -> list[str]:
+    """Every distinct path the user has filed a note under, alphabetically.
+
+    The same read the contextmenu section makes, duplicated rather than
+    imported: a section owns its SQL, so the editor's picker cannot break
+    because the ⋮ menu's changed. Ordering into root groups is the caller's
+    job — this returns a stable list, not a presentation.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT path FROM notes
+            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
+            ORDER BY path;
+            """,
+            (user_id,),
+        )
+        return [row[0] for row in cur.fetchall()]

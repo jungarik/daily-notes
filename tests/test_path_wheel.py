@@ -1,0 +1,311 @@
+"""The Add-note page's path wheel: its geometry, its roster, and its colour.
+
+The geometry is the part worth real tests. `wheelItem` is the circle's own
+equation — one value `t = √(1 − (dy/r)²)` driving offset, scale and opacity —
+and the properties that matter are easy to break by "simplifying" it into a
+linear ramp: the falloff must be *circular* (shallow near the centre, steep at
+the rim), it must reach exactly 0 at the rim and stay there beyond it, and it
+must be symmetric. Those run under node against the real module.
+
+The roster endpoint is a deliberate duplicate of the contextmenu section's, so
+what is pinned here is that it exists, behaves the same, and reports the
+default destination — plus the one thing duplication cannot protect against: a
+route order that makes `/paths` unreachable.
+"""
+
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1]
+WEBAPP = ROOT / "browser" / "webapp" / "src"
+FORMAT_JS = WEBAPP / "lib" / "format.js"
+SECTION = ROOT / "api" / "addnote"
+ENDPOINTS = (SECTION / "endpoints.py").read_text(encoding="utf-8")
+DB_SOURCE = (SECTION / "db.py").read_text(encoding="utf-8")
+WHEEL = (WEBAPP / "components" / "PathWheel.jsx").read_text(encoding="utf-8")
+PAGE = (WEBAPP / "components" / "AddNote.jsx").read_text(encoding="utf-8")
+CSS = (WEBAPP / "styles.css").read_text(encoding="utf-8")
+
+SCRIPT = """
+import { wheelItem, wheelOffset, wheelIndexAt, ellipsisPath } from %s;
+const [fn, args] = JSON.parse(process.argv[2]);
+const call = { wheelItem, wheelOffset, wheelIndexAt, ellipsisPath }[fn];
+console.log(JSON.stringify(call(...args)));
+"""
+
+
+def _js(fn, *args):
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "wheel.mjs"
+        script.write_text(SCRIPT % json.dumps(FORMAT_JS.as_posix()), encoding="utf-8")
+        out = subprocess.run(
+            ["node", str(script), json.dumps([fn, list(args)])],
+            capture_output=True, text=True, check=True)
+
+    return json.loads(out.stdout)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not available")
+class WheelGeometryTests(unittest.TestCase):
+    def test_the_centre_item_is_whole(self):
+        """Full opacity, full scale, and the furthest out along the arc."""
+        item = _js("wheelItem", 0, 120, 26)
+
+        self.assertAlmostEqual(1.0, item["opacity"])
+        self.assertAlmostEqual(1.0, item["scale"])
+        self.assertAlmostEqual(26.0, item["x"])
+
+    def test_an_item_at_the_rim_is_invisible_and_flush(self):
+        """`t` reaches exactly 0 there — the fade ends where the circle does,
+        with no clipped half-visible row."""
+        item = _js("wheelItem", 120, 120, 26)
+
+        self.assertEqual(0, item["opacity"])
+        self.assertEqual(0, item["x"])
+
+    def test_beyond_the_rim_stays_at_zero(self):
+        """`√` of a negative is NaN, which renders as a blank style and an
+        item that never disappears. The clamp is the whole reason `t` is
+        computed with a guard."""
+        for dy in (121, 400, -400):
+            with self.subTest(dy=dy):
+                item = _js("wheelItem", dy, 120, 26)
+
+                self.assertEqual(0, item["opacity"])
+                self.assertEqual(0, item["x"])
+
+    def test_the_falloff_is_circular_not_linear(self):
+        """The property that makes it a wheel. Half way to the rim a linear
+        ramp would be at .5; a circle is at √(1−.25) ≈ .87 — it holds its
+        brightness near the centre and dives at the edge."""
+        half = _js("wheelItem", 60, 120, 26)["opacity"]
+
+        self.assertGreater(half, 0.8)
+        self.assertAlmostEqual(0.866, half, places=2)
+
+    def test_the_falloff_steepens_toward_the_rim(self):
+        """Stated as a property rather than a number: each equal step costs
+        more opacity than the one before it."""
+        steps = [_js("wheelItem", dy, 120, 26)["opacity"]
+                 for dy in (0, 30, 60, 90, 120)]
+        drops = [steps[i] - steps[i + 1] for i in range(len(steps) - 1)]
+
+        self.assertEqual(drops, sorted(drops))
+
+    def test_it_is_symmetric(self):
+        """An item above the centre and its mirror below must look identical,
+        or the wheel leans."""
+        above = _js("wheelItem", -45, 120, 26)
+        below = _js("wheelItem", 45, 120, 26)
+
+        self.assertEqual(above, below)
+
+    def test_scale_never_collapses(self):
+        """A floor of .78: an item scaled to nothing is a gap in the drum
+        while still taking its row's height."""
+        self.assertGreaterEqual(_js("wheelItem", 119, 120, 26)["scale"], 0.78)
+
+    def test_the_reach_is_independent_of_the_radius(self):
+        """Why they are two parameters: at `reach = radius` the centre item
+        would shift 120px, off the side of a phone."""
+        self.assertAlmostEqual(26.0, _js("wheelItem", 0, 120, 26)["x"])
+        self.assertAlmostEqual(8.0, _js("wheelItem", 0, 120, 8)["x"])
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not available")
+class WheelScrollTests(unittest.TestCase):
+    def test_an_unscrolled_wheel_centres_its_first_item(self):
+        """The list is padded by half its height, so index 0 can reach the
+        middle — its offset at `scrollTop` 0 is half an item, not half a
+        wheel."""
+        self.assertEqual(20, _js("wheelOffset", 0, 0, 40, 240))
+
+    def test_scrolling_moves_an_item_toward_the_centre(self):
+        """Offset shrinks to 0 as its own row is scrolled to."""
+        self.assertEqual(0, _js("wheelOffset", 3, 140, 40, 240))
+
+    def test_the_centred_index_rounds_to_the_nearest_row(self):
+        """A snap lands on a row, but a flick read mid-animation must not
+        report a fractional index."""
+        self.assertEqual(3, _js("wheelIndexAt", 125, 40))
+        self.assertEqual(3, _js("wheelIndexAt", 135, 40))
+
+    def test_a_negative_scroll_is_the_first_item(self):
+        """iOS rubber-banding reports negative scrollTop."""
+        self.assertEqual(0, _js("wheelIndexAt", -60, 40))
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not available")
+class PathLabelTests(unittest.TestCase):
+    def test_a_short_path_is_untouched(self):
+        self.assertEqual("Inbox", _js("ellipsisPath", "Inbox", 22))
+
+    def test_a_long_path_loses_its_front(self):
+        """The leaf distinguishes two paths under one root; the root is what
+        the wheel's ordering already tells you."""
+        label = _js("ellipsisPath", "Projects/telegram-bot/api/v2", 22)
+
+        self.assertTrue(label.startswith("…"), label)
+        self.assertTrue(label.endswith("api/v2"), label)
+        self.assertEqual(22, len(label))
+
+    def test_empty_is_safe(self):
+        self.assertEqual("", _js("ellipsisPath", None, 22))
+
+
+class RosterEndpointTests(unittest.TestCase):
+    def test_paths_is_declared_before_the_note_route(self):
+        """FastAPI matches in declaration order. With `/{note_id}` first,
+        `GET /api/addnote/paths` is answered 422 by the note handler — a
+        broken feature with a correct endpoint behind it, which is exactly how
+        `DELETE /api/contextmenu/notes/{id}` once shipped dead."""
+        self.assertLess(ENDPOINTS.index('@router.get("/paths"'),
+                        ENDPOINTS.index('@router.get("/{note_id}"'))
+
+    def test_the_section_owns_its_roster_read(self):
+        """Duplicated from the contextmenu section rather than imported, so
+        the editor's picker cannot break because the ⋮ menu's changed."""
+        self.assertIn("def list_paths(user_id: int) -> list[str]:", DB_SOURCE)
+        self.assertNotIn("api.contextmenu", ENDPOINTS)
+
+    def test_the_roster_is_owner_scoped(self):
+        self.assertIn("WHERE user_id = %s AND path IS NOT NULL", DB_SOURCE)
+
+    def test_the_default_root_comes_from_config_not_from_position(self):
+        """Reading the roster's first entry would work until the day the
+        order and the default disagree, and then file notes somewhere else
+        silently."""
+        helper_source = (SECTION / "helper.py").read_text(encoding="utf-8")
+
+        self.assertIn("config.DEFAULT_ROOT_FOLDER_KEY", helper_source)
+        self.assertIn("default_root=helper.default_root(locale)", ENDPOINTS)
+
+    def test_the_default_is_part_of_the_payload(self):
+        """The page shows where an unpicked note will go, rather than an empty
+        control that files it somewhere anyway."""
+        self.assertIn("default_root", (SECTION / "schemas.py").read_text(encoding="utf-8"))
+
+
+class ButtonStateTests(unittest.TestCase):
+    def test_a_set_folder_lights_the_ring_and_the_glyph_only(self):
+        """Not the fill. `--commit` as a *fill* is the app's one
+        affirmative-action colour (Send, Confirm, the tick, the plus); a filled
+        blue circle here would read as a button that does something rather than
+        a field holding a value."""
+        start = CSS.index("  .addnote-side .fab.set {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("color: var(--commit)", rule)
+        self.assertIn("border-color: var(--commit)", rule)
+        self.assertNotIn("background", rule)
+
+    def test_the_glyph_inherits_that_colour(self):
+        """The icons stroke `currentColor`, which is why the ring rule is
+        enough — there is no second rule for the svg."""
+        self.assertIn('stroke="currentColor"', PAGE)
+
+    def test_the_button_is_lit_only_by_an_actual_choice(self):
+        """`path` is "" until the user picks or the note arrives with one. The
+        default destination does not light it: nobody chose."""
+        self.assertIn('className={"fab" + (path ? " set" : "")}', PAGE)
+        self.assertIn('const [path, setPath] = useState("");', PAGE)
+
+    def test_the_path_button_is_no_longer_disabled(self):
+        """The other two still are."""
+        anchor = PAGE.index('<div className="path-anchor"')
+        button = PAGE[anchor:PAGE.index("</button>", anchor)]
+
+        self.assertNotIn("disabled", button)
+
+    def test_the_other_metadata_buttons_are_still_disabled(self):
+        branch = PAGE[PAGE.index('meta.field === "path" ?'):]
+
+        self.assertIn("disabled", branch)
+
+    def test_the_label_says_which_folder(self):
+        """A circle that has changed colour does not say what it holds; the
+        accessible name and the tooltip do."""
+        self.assertIn('aria-label={path ? "Folder: " + path : meta.label}', PAGE)
+
+
+class WheelStructureTests(unittest.TestCase):
+    def test_the_wheel_is_anchored_to_the_button(self):
+        """Positioned by the control it belongs to — `right: 100%` on the
+        wrapper is "just left of the circle", which stays true wherever the
+        column ends up."""
+        self.assertIn("  .path-anchor { position: relative;", CSS)
+        start = CSS.index("  .path-wheel {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("right: 100%", rule)
+        self.assertIn("top: 50%", rule)
+
+    def test_the_wheel_wears_the_floating_bar_material(self):
+        """Same tint, blur and hairline as `.fab` and `.tabbar`. A new glass
+        recipe here would read as a panel from another app."""
+        start = CSS.index("  .path-wheel {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("background: rgba(48,48,48,.55)", rule)
+        self.assertIn("backdrop-filter: blur(22px) saturate(180%)", rule)
+        self.assertIn("border: 1px solid rgba(255,255,255,.14)", rule)
+
+    def test_the_options_snap(self):
+        """So a flick settles on an option rather than between two."""
+        self.assertIn("scroll-snap-type: y mandatory", CSS)
+        self.assertIn("scroll-snap-align: center", CSS)
+
+    def test_the_pills_scale_away_from_the_button(self):
+        """`transform-origin: 100% 50%`: they are anchored to the button's
+        side, so scaling must not drift them sideways."""
+        start = CSS.index("  .path-wheel-opt {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("transform-origin: 100% 50%", rule)
+
+    def test_the_fade_is_per_item_not_a_mask_on_the_panel(self):
+        """A mask would dim the glass too, and the fade has to follow the
+        items along the arc rather than the box they scroll in."""
+        self.assertIn("opacity,", WHEEL)
+        start = CSS.index("  .path-wheel-track {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertNotIn("mask", rule)
+
+    def test_a_faded_item_cannot_be_tapped(self):
+        """It is invisible; keeping its hit zone makes the wheel's dead space
+        tappable."""
+        self.assertIn('pointerEvents: opacity < 0.15 ? "none" : "auto"', WHEEL)
+
+    def test_the_wheel_opens_on_the_notes_own_path(self):
+        """Or on the default destination when it has none, so it starts where
+        the note would actually go."""
+        self.assertIn("const target = value || defaultPath;", WHEEL)
+
+    def test_a_typed_path_is_offered_as_a_row(self):
+        """Not a mode to switch into — the same bargain the ⋮ menu's combobox
+        strikes."""
+        self.assertIn("path-wheel-new", WHEEL)
+        self.assertIn('e.key === "Enter" && typed', WHEEL)
+
+    def test_it_dismisses_on_an_outside_tap(self):
+        """Deferred, so the opening tap does not close it — the same trick as
+        the ⋮ menu's."""
+        self.assertIn("setTimeout(() => document.addEventListener", WHEEL)
+
+    def test_picking_closes_the_wheel(self):
+        self.assertIn("onPick={(picked) => { setPath(picked); setPathOpen(false); }}", PAGE)
+
+    def test_the_choice_is_cleared_with_the_page(self):
+        """Nothing saves it yet, so it must not survive into the next note."""
+        self.assertIn('setPath("");', PAGE)
+
+
+if __name__ == "__main__":
+    unittest.main()

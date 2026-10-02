@@ -328,6 +328,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
   `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
   `POST /api/contextmenu/notes/{id}/path`, `GET /api/addnote/{id}`,
+  `GET /api/addnote/paths`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
@@ -699,6 +700,57 @@ sibling like `Projects/apiv2` survives. A failed roster read costs the
 suggestions, not the ability to move a note — `listPaths` falls back to an
 empty list. `tests/test_path_picker.py` pins the ordering, the empty-root rule,
 the unknown-root tail and the subtree exclusion.
+
+**The path wheel.** The Add-note page's folder control is the first of its
+three metadata buttons to go live. `GET /api/addnote/paths` serves its roster —
+roots plus paths in use, ordered by root — **duplicated from
+`api/contextmenu`** rather than imported, so the editor's picker cannot break
+because the ⋮ menu's did; same trade as the duplicated `db.py`. It is
+**declared before `/{note_id}`**, and that is load-bearing: FastAPI matches in
+declaration order, so the other way round `GET /api/addnote/paths` is answered
+422 by the note handler — a broken feature with a correct endpoint behind it,
+exactly how `DELETE /api/contextmenu/notes/{id}` once shipped dead. The payload
+also carries `default_root`: `config.DEFAULT_ROOT_FOLDER_KEY` localised, read
+from the *key* rather than from the roster's first entry, because the order and
+the default are two decisions and the day they disagree, position 0 would file
+notes somewhere else in silence.
+
+**A drum, not a dropdown.** The side column is pinned to the screen's right
+edge, so a menu has one direction to grow and a flat list there reads as a
+panel that happened to land beside a circle. `PathWheel.jsx` curves it on a
+wheel whose centre *is* the button: `lib/format.wheelItem` computes
+`t = √(1 − (dy/r)²)` — the circle's own equation — and one value drives the
+whole look. Each pill bows out by `t * WHEEL_REACH`, scales between .78 and 1,
+and takes `t` as its opacity, so the fade is **circular rather than linear**:
+an option holds its brightness near the centre and dives at the rim, where `t`
+reaches exactly 0 and stays there (the `ratio >= 1` guard — `√` of a negative
+is `NaN`, a blank style and an item that never disappears). `reach` and
+`radius` are separate parameters because at `reach = radius` the centre pill
+would shift half a phone. The fade is **per item, not a mask on the panel**: a
+mask would dim the glass too, and the fade has to follow the pills along the
+arc. Beyond-the-rim pills drop their `pointer-events`, or the wheel's dead
+space stays tappable. The panel itself wears the floating-bar material
+unchanged — same tint, blur, hairline and shadow as `.fab` and `.tabbar` — and
+`.path-wheel-opt` scales from `transform-origin: 100% 50%` so it grows away
+from the button rather than drifting sideways. Snap-scrolling settles a flick
+on an option; tapping one picks it and closes the wheel; the input at the head
+filters, and text matching nothing becomes a new path on Enter or its own row,
+the same bargain the ⋮ menu's combobox strikes. Long labels ellipsise from the
+**front** (`…/api/v2`): the leaf distinguishes two paths under one root, and
+the root is what the ordering already tells you.
+
+**A set folder lights the ring and the glyph, not the fill.** `--commit` as a
+*fill* is the app's one affirmative-action colour, so a filled blue circle here
+would read as a button that does something rather than a field holding a value;
+`.addnote-side .fab.set` takes it as `color` + `border-color` only, and the
+glyph follows because the icons stroke `currentColor`. The button lights only
+for an **actual choice** — the note's own path, or one the user picked. The
+default destination does not light it: nobody chose, `path` stays `""`, and the
+save (when it exists) applies `default_root`. Nothing persists yet, so the
+choice is cleared with the page. `link` and `tags` stay `disabled`: they now
+have their data from the note read, which is not the same as having an editor
+for it. `tests/test_path_wheel.py` pins the geometry's properties — circular
+falloff, zero at the rim, symmetry, the scale floor — rather than its formula.
 
 **The sheet's grip stays put while the sheet scrolls.** It is a normal child
 of the scrolling `.sheet`, so it used to scroll out of sight — most visibly on

@@ -32,6 +32,13 @@ message if the read fails. The header's plus opens it with no note ID and an
 empty field, and closing clears the ID. **Saving is still not wired** — there
 is no update endpoint and both bottom buttons just close.
 
+The page's **path** button is live: it opens `PathWheel.jsx`, a glass drum
+anchored to the button whose options bow along a circle and fade with it
+(`lib/format.wheelItem`), fed by `GET /api/addnote/paths` (roster +
+`default_root`). Tapping an option picks it and closes the wheel; the input at
+the top filters or accepts a new path. A chosen folder turns the button's ring
+and glyph blue — not its fill. `link` and `tags` are still disabled.
+
 ## Layout
 
 ```

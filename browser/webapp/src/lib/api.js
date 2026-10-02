@@ -56,6 +56,12 @@ export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(i
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
 export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
+// The path wheel's roster, plus where a note goes when nobody picks. Its own
+// endpoint rather than the ⋮ menu's: the editor's section owns its reads.
+export const listAddNotePaths = () =>
+  apiGet("/api/addnote/paths")
+    .then((r) => ({ paths: (r && r.paths) || [], default_root: (r && r.default_root) || "" }))
+    .catch(() => ({ paths: [], default_root: "" }));
 // The note the Add note page opens for editing. No `.catch` — the page tells
 // the user it could not load rather than opening a blank editor that looks
 // like an empty note.

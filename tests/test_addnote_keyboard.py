@@ -169,7 +169,9 @@ class BarTests(unittest.TestCase):
         buttons = [name for name in classes
                    if "fab" in name or "addnote-help-btn" in name]
 
-        self.assertEqual(5, len(buttons))
+        # Six since the path field got its own branch: ✕, ✓, AI, the path
+        # circle, the shared disabled circle, and the bare help button.
+        self.assertEqual(6, len(buttons))
         self.assertEqual(1, sum("addnote-help-btn" in name for name in buttons))
 
     def test_only_the_tick_is_the_commit_colour(self):
@@ -261,15 +263,20 @@ class SideBarTests(unittest.TestCase):
         self.assertEqual(["path", "link", "tags"],
                          re.findall(r'field: "(\w+)"', self.addnote))
 
-    def test_the_metadata_buttons_are_disabled(self):
-        """No note-create endpoint, so a path picker would set a field on a
-        note that is never saved."""
+    def test_only_the_path_field_is_live(self):
+        """Path has a picker and somewhere to put the answer (the page's own
+        state); link and tags have neither, and a live-looking button that
+        swallows the tap reads as a bug where a dimmed one reads as not-yet.
+
+        The map therefore holds two button literals — the path branch and the
+        shared disabled one — and exactly one `disabled`."""
         fields = self.addnote.split("const METADATA_FIELDS = [", 1)[1].split("\n];", 1)[0]
-        mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("))}", 1)[0]
+        mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("\n        ))}", 1)[0]
 
         self.assertEqual(3, len(re.findall(r'label: "[^"]+"', fields)))
-        self.assertEqual(1, mapped.count("<button"))
+        self.assertEqual(2, mapped.count("<button"))
         self.assertEqual(1, mapped.count("disabled"))
+        self.assertIn('meta.field === "path" ?', mapped)
 
     def test_the_reminder_button_stayed_in_the_bottom_pill(self):
         """It is metadata too, but it was left where it was rather than churn

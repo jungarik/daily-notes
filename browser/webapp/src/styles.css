@@ -615,6 +615,82 @@
   /* Not yet built, and saying so — same treatment as the capture pill. */
   .addnote-side .fab:disabled { opacity: .45; cursor: default; }
 
+  /* A set folder: blue ring and blue glyph, glass fill untouched. The fill
+     stays grey deliberately — `--commit` as a *fill* is the app's one
+     affirmative-action colour (Send, Confirm, the tick, the plus), and a
+     filled blue circle here would read as a button that does something rather
+     than a field holding a value. The outline and the glyph borrow the hue
+     without borrowing that meaning. */
+  .addnote-side .fab.set { color: var(--commit); border-color: var(--commit); }
+
+  /* The wheel is positioned by the button it belongs to, so the button gets a
+     wrapper to anchor it. The wrapper is the flex item now; the circle inside
+     keeps its own 46px. */
+  .path-anchor { position: relative; display: flex; }
+
+  /* Just left of the circle and centred on it — the wheel's centre *is* the
+     button, which is what makes the arc read as one object with it. Right edge
+     at `right: 100%` so it grows leftward, the only direction with room. */
+  .path-wheel {
+    position: absolute; right: 100%; top: 50%;
+    transform: translateY(-50%);
+    margin-right: 12px; width: 212px;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px; border-radius: 22px;
+    /* The floating-bar material, unchanged: same tint, same blur, same
+       hairline, same shadow as `.fab` and `.tabbar`. */
+    background: rgba(48,48,48,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+  }
+  .path-wheel-input {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
+    color: var(--text); background: rgba(0,0,0,.25);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 999px;
+    padding: 9px 14px;
+  }
+  .path-wheel-input:focus { outline: none; border-color: var(--commit); }
+  .path-wheel-input::placeholder { color: var(--text-faint); }
+
+  /* The typed-path row. Blue text, not a blue fill: it is an affirmative, but
+     a filled pill at the top of a wheel of grey pills would out-shout the
+     options it sits above. */
+  .path-wheel-new {
+    font: inherit; font-size: 12.5px; color: var(--commit);
+    background: transparent; border: none; border-radius: 999px;
+    padding: 6px 12px; text-align: left; cursor: pointer;
+  }
+
+  /* The drum. Snap-scrolling so a flick settles on an option rather than
+     between two. The circular fade is per-item opacity from
+     `lib/format.wheelItem`, not a mask on this box: a mask would also dim the
+     glass, and the fade has to follow the *items* along the arc. */
+  .path-wheel-track {
+    overflow-y: auto; overscroll-behavior: contain;
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .path-wheel-track::-webkit-scrollbar { display: none; }
+  .path-wheel-opt {
+    display: flex; align-items: center; width: 100%;
+    scroll-snap-align: center;
+    font: inherit; font-size: 13.5px; color: var(--text);
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 999px; padding: 0 14px; margin-bottom: 0;
+    white-space: nowrap; cursor: pointer;
+    /* `transform-origin` on the right edge: the pills are anchored to the
+       button's side, so they should grow and shrink away from it rather than
+       drifting sideways as they scale. */
+    transform-origin: 100% 50%;
+  }
+  .path-wheel-opt.on { color: var(--commit); border-color: var(--commit); }
+  .path-wheel-empty { color: var(--text-faint); font-size: 12.5px; padding: 6px 12px; }
+
+
   /* Help, top right. No glass and no ring of its own — the glyph is already a
      circled `?`, so drawing another circle around it would be two. Muted like
      the filter dots: it explains the page rather than acting on it.

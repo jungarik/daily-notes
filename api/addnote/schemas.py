@@ -27,3 +27,16 @@ class EditableNote(BaseModel):
     tags: list[str] = []
     attachments: list[EditableAttachment] = []
     linked_note_ids: list[int] = []
+
+
+class PathsPayload(BaseModel):
+    """The path wheel's roster, already ordered by root — the client renders it
+    as given rather than re-deriving an order it would need
+    `config.ROOT_FOLDERS` to know.
+
+    `default_root` is where a note goes when the user picks nothing, so the
+    page can show that destination instead of an empty control that saves
+    somewhere anyway.
+    """
+    paths: list[str] = []
+    default_root: str = ""

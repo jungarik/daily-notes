@@ -7,11 +7,38 @@ arrive they belong here, beside this read.
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import i18n
 from api.deps import current_user
 from api.addnote import db, helper
-from api.addnote.schemas import EditableNote
+from api.addnote.schemas import EditableNote, PathsPayload
 
 router = APIRouter(prefix="/api/addnote", tags=["addnote"])
+
+
+@router.get("/paths", response_model=PathsPayload)
+def list_paths(user_id: int = Depends(current_user)) -> PathsPayload:
+    """The paths the editor's path wheel offers, plus the default destination.
+
+    **Declared before `/{note_id}`, and that is load-bearing.** FastAPI matches
+    routes in declaration order, so with this second, `GET /api/addnote/paths`
+    would try `{note_id}` first and answer 422 for a perfectly good URL —
+    a broken feature with a correct handler behind it.
+
+    Duplicated from `api/contextmenu` rather than imported: a section owns its
+    reads, so the editor's picker cannot break because the ⋮ menu's changed.
+    The endpoint is the impure boundary — it resolves the locale and reads the
+    rows; `helper.known_paths` only maps them.
+
+    `default_root` is where a note with no chosen path goes
+    (`config.DEFAULT_ROOT_FOLDER_KEY`, localised). The page shows it rather
+    than leaving an empty control that will quietly file the note somewhere.
+    """
+    locale = i18n.resolve_locale(db.get_language(user_id))
+
+    return PathsPayload(
+        paths=helper.known_paths(helper.root_labels(locale), db.list_paths(user_id)),
+        default_root=helper.default_root(locale),
+    )
 
 
 @router.get("/{note_id}", response_model=EditableNote)

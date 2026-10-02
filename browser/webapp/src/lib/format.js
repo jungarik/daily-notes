@@ -188,3 +188,64 @@ export function clampText(text, limit = CLAMP_CHARS) {
 
   return { head: whole.slice(0, cut).trimEnd(), rest: whole.slice(cut).trimStart() };
 }
+
+// The path wheel's geometry.
+//
+// One number drives everything: `t`, how far along the circle an item sits.
+// With `dy` the item's distance from the wheel's centre and `r` the wheel's
+// radius, `t = √(1 − (dy/r)²)` — the circle's own equation. It is 1 dead
+// centre and 0 at the rim, which is what makes the fade *circular* rather than
+// linear: an item does not dim at a constant rate as it travels, it dims the
+// way the edge of a wheel turns away from you, slowly at first and then all at
+// once.
+//
+// From that one value: the item bows out by `t * reach` (so the column's
+// middle protrudes and its ends tuck back), scales between 0.78 and 1, and
+// takes `t` as its opacity. Beyond the rim `t` is 0 and the item is invisible
+// but still laid out, so the scroll length never changes.
+//
+// Pure and parameterised rather than reading the DOM: the caller measures the
+// scroll once and asks this per item, which is also what makes it testable
+// without a browser.
+export const WHEEL_ITEM_HEIGHT = 40;
+export const WHEEL_HEIGHT = 240;
+// How far the middle of the wheel protrudes, in px. Deliberately much smaller
+// than the radius: at `reach = r` the centre item would shift half the screen.
+export const WHEEL_REACH = 26;
+const WHEEL_MIN_SCALE = 0.78;
+
+export function wheelItem(dy, radius = WHEEL_HEIGHT / 2, reach = WHEEL_REACH) {
+  const ratio = radius > 0 ? Math.abs(dy) / radius : 1;
+  const t = ratio >= 1 ? 0 : Math.sqrt(1 - ratio * ratio);
+
+  return {
+    t,
+    x: t * reach,
+    scale: WHEEL_MIN_SCALE + (1 - WHEEL_MIN_SCALE) * t,
+    opacity: t,
+  };
+}
+
+// Where item `index` sits relative to the wheel's centre, given how far the
+// list has been scrolled. The list is padded by half its height top and
+// bottom, so the first and last item can both reach the middle.
+export function wheelOffset(index, scrollTop, itemHeight = WHEEL_ITEM_HEIGHT,
+                            height = WHEEL_HEIGHT) {
+  return index * itemHeight + itemHeight / 2 - scrollTop;
+}
+
+// Which item the wheel is centred on — the one a snap has landed in.
+export function wheelIndexAt(scrollTop, itemHeight = WHEEL_ITEM_HEIGHT) {
+  return Math.max(0, Math.round(scrollTop / itemHeight));
+}
+
+// Long paths lose their *front*, not their tail: `Projects/api/v2` reads as
+// `…/api/v2`. The leaf is what distinguishes two paths under one root, and the
+// root is the part the wheel's ordering already tells you.
+export function ellipsisPath(path, limit = 22) {
+  const whole = path || "";
+  if (whole.length <= limit) return whole;
+
+  return "…" + whole.slice(whole.length - (limit - 1));
+}
+

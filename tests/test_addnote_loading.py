@@ -127,11 +127,12 @@ class LoadedFieldsTests(unittest.TestCase):
         """Or the next note opens holding the last one's photos."""
         self.assertIn("setNote(null);", PAGE_CODE)
 
-    def test_the_metadata_buttons_are_still_disabled(self):
-        """Having the data is not having an editor for it, and nothing saves."""
-        buttons = PAGE_CODE[PAGE_CODE.index("METADATA_FIELDS.map"):]
+    def test_link_and_tags_are_still_disabled(self):
+        """Path has a picker now; these two have the data and no editor for
+        it, which is not the same as being ready."""
+        mapped = PAGE_CODE[PAGE_CODE.index("METADATA_FIELDS.map"):]
 
-        self.assertIn("disabled", buttons[:buttons.index("</button>")])
+        self.assertIn("disabled", mapped[:mapped.index("))}")])
 
 
 class SaveNotWiredTests(unittest.TestCase):
