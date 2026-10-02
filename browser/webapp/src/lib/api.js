@@ -56,6 +56,12 @@ export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(i
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
 export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
+// The change-path picker's roster: every root folder plus every path in use,
+// already ordered by root. Falls back to an empty list — the sheet's input
+// still accepts a typed path, so a failed read costs the suggestions, not the
+// ability to move a note.
+export const listPaths = () =>
+  apiGet("/api/contextmenu/paths").then((r) => (r && r.paths) || []).catch(() => []);
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
 // No `.catch` here, unlike the reads above: a delete that quietly resolved

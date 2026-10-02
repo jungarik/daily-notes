@@ -23,3 +23,10 @@ class MoveFolderRequest(BaseModel):
 class MoveFolderResponse(BaseModel):
     count: int
     new_path: str
+
+
+class PathsPayload(BaseModel):
+    """The change-path picker's roster. Flat and already ordered — the client
+    renders it as given rather than re-deriving the root order it would need
+    `config.ROOT_FOLDERS` to know."""
+    paths: list[str] = []

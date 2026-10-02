@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { setNotePath, moveFolder } from "../lib/api.js";
+import { setNotePath, moveFolder, listPaths } from "../lib/api.js";
+import { selectablePaths, filterPaths } from "../lib/format.js";
 
 // The ⋮ context menu (positioned at the tapped element) + its two sheets:
 // change-path, and the delete confirmation.
@@ -104,9 +105,18 @@ function DeleteSheet({ target, onClose, onConfirm }) {
   );
 }
 
+// The change-path sheet: a combobox, not a dropdown beside a text field.
+//
+// The input is both the filter and the answer. Typing narrows the list below;
+// tapping a row fills the input rather than saving, because the common move is
+// to pick an existing folder and then extend it (`Projects/api` →
+// `Projects/api/v2`), which a save-on-tap list makes impossible. Anything typed
+// that matches no row is simply a new path — the server validates the root
+// either way, so there is no "new folder" mode to switch into.
 function PathSheet({ target, onClose, onSaved }) {
   const [val, setVal] = useState("");
   const [err, setErr] = useState("");
+  const [paths, setPaths] = useState([]);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -115,6 +125,22 @@ function PathSheet({ target, onClose, onSaved }) {
       setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
     }
   }, [target]);
+
+  // Read on open, not on mount: the vault changes while the app is up, and a
+  // roster fetched once at boot goes stale exactly when the user has just
+  // filed something new and reaches for it.
+  useEffect(() => {
+    if (!target) return;
+    let live = true;
+    listPaths().then((list) => { if (live) setPaths(list); });
+
+    return () => { live = false; };
+  }, [target]);
+
+  const options = filterPaths(selectablePaths(paths, target), val);
+  // The typed path is already the input's value, so a row repeating it back
+  // is a tap that changes nothing.
+  const suggestions = options.filter((path) => path !== (val || "").trim());
 
   const save = async () => {
     if (!target) return;
@@ -142,6 +168,17 @@ function PathSheet({ target, onClose, onSaved }) {
           autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Projects/idea"
           onChange={(e) => setVal(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+        {suggestions.length > 0 && (
+          <div className="path-list">
+            {suggestions.map((path) => (
+              <button key={path} className="path-opt" onClick={() => {
+                setVal(path);
+                setErr("");
+                if (inputRef.current) inputRef.current.focus();
+              }}>{path}</button>
+            ))}
+          </div>
+        )}
         <div className="path-error">{err}</div>
         <div className="path-actions">
           <button className="path-btn ghost" onClick={onClose}>Cancel</button>

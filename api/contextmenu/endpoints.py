@@ -3,16 +3,35 @@ folder, delete a note."""
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import i18n
 from api.deps import current_user
-from api.contextmenu import helper
+from api.contextmenu import db, helper
 from api.contextmenu.schemas import (
     SetPathRequest,
     NoteMeta,
     MoveFolderRequest,
     MoveFolderResponse,
+    PathsPayload,
 )
 
 router = APIRouter(prefix="/api/contextmenu", tags=["contextmenu"])
+
+
+@router.get("/paths", response_model=PathsPayload)
+def list_paths(user_id: int = Depends(current_user)) -> PathsPayload:
+    """The paths the change-path sheet offers: every root folder plus every
+    path the user already files notes under, ordered by root.
+
+    The endpoint is the impure boundary — it resolves the locale and reads the
+    rows; `helper.known_paths` only maps them. The route sits above the
+    `/notes/{note_id}/path` writes because it serves them: without it the only
+    way to file a note somewhere that exists is to remember the spelling.
+    """
+    locale = i18n.resolve_locale(db.get_language(user_id))
+
+    return PathsPayload(
+        paths=helper.known_paths(helper.root_labels(locale), db.list_paths(user_id))
+    )
 
 
 @router.post("/notes/{note_id}/path", response_model=NoteMeta)

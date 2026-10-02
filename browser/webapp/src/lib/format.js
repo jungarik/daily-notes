@@ -140,3 +140,27 @@ export function compareRoots(roots) {
     return a.localeCompare(b);
   };
 }
+
+// Which of the offered paths this target may actually move to.
+//
+// A note may go anywhere. A folder may not go into itself or into its own
+// descendants: renaming `Projects/api` to `Projects/api` does nothing, and to
+// `Projects/api/v2` asks for a folder to become a child of itself. Pure, and
+// given the list rather than fetching it, so the filter is testable on plain
+// strings.
+export function selectablePaths(paths, target) {
+  if (!target || target.type !== "folder") return paths;
+  const own = target.path || "";
+
+  return paths.filter((path) => path !== own && !path.startsWith(own + "/"));
+}
+
+// Rows whose path contains the typed text, case-insensitively. An empty query
+// matches everything rather than nothing — the list's job when the sheet opens
+// is to show what exists.
+export function filterPaths(paths, query) {
+  const needle = (query || "").trim().toLowerCase();
+  if (!needle) return paths;
+
+  return paths.filter((path) => path.toLowerCase().includes(needle));
+}

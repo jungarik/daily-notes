@@ -352,6 +352,13 @@
   .ctx-item.danger { color: var(--danger-text); }
   #pathSheet .path-input { margin-top: 14px; width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--text); background: var(--bg, #1e1e1e); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; }
   #pathSheet .path-input:focus { outline: none; border-color: var(--accent); }
+  /* The combobox's list. A fixed max-height rather than a count limit: the
+     sheet itself scrolls, so an unbounded list would push Save off-screen and
+     the user would scroll past every folder to reach it. */
+  #pathSheet .path-list { margin-top: 8px; max-height: 180px; overflow-y: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: var(--bg, #1e1e1e); }
+  #pathSheet .path-opt { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text); background: transparent; border: none; padding: 10px 12px; cursor: pointer; word-break: break-word; }
+  #pathSheet .path-opt + .path-opt { border-top: 1px solid var(--border); }
+  #pathSheet .path-opt:active { background: var(--border); }
   #pathSheet .path-error { min-height: 16px; margin-top: 6px; color: #e5736b; font-size: 12px; }
   #pathSheet .path-actions { margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end; }
 

@@ -325,7 +325,8 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   fully isolated — they import only shared *infra* (`db`, `api.deps` for auth,
   `api.media_token`, `file_store`). Each serves its own URL prefix
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
-  `GET /api/mapview/graph`, `POST /api/contextmenu/notes/{id}/path`,
+  `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
+  `POST /api/contextmenu/notes/{id}/path`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
@@ -419,7 +420,8 @@ user to an internal `user_id` and return only that user's data:
 (`{notes, roots}` — the tree's notes plus the vault's root folders,
 localised and in `config.ROOT_FOLDERS` order, which is how the client
 orders a top level it only knows as localised path strings) +
-`GET /api/notesheet/{id}` (preview), `POST /api/contextmenu/notes/{id}/path` and
+`GET /api/notesheet/{id}` (preview), `GET /api/contextmenu/paths` (the
+change-path picker's roster), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
 folders can't be moved), `DELETE /api/contextmenu/notes/{id}` (hard delete),
 `GET /api/mapview/graph` (connections map),
@@ -554,6 +556,34 @@ pins both the absence and those two survivors. Path/localised-root names are wri
 into the note path and stored localised (not translated at display time). The `⋮`
 menu on a card/folder opens a context menu to change its path, and — **on notes
 only** — to delete.
+
+**Change path is a combobox, not a dropdown.** `GET
+/api/contextmenu/paths` returns every root folder — **including the empty
+ones**, since an empty root is exactly where a note gets moved and typing it by
+hand is what the picker exists to avoid — plus every path the user already
+files notes under, ordered by `config.ROOT_FOLDERS` and then alphabetically,
+with a root sorting above its own children. A path under an unrecognised root
+(one left behind by a language switch) sorts last rather than being dropped,
+which would hide the only route back to those notes — the same choice
+`lib/format.compareRoots` makes client-side. The endpoint resolves the locale
+and reads the rows; `helper.known_paths` is a strict pure mapper over both, per
+`api/README.md`. Root labels are **one language at a time**
+(`helper.root_labels`): `clean_root_path` still accepts a root typed in any
+supported language, but four translations of Inbox in a list is noise.
+
+The sheet's single input is both the filter and the answer. Typing narrows the
+scrollable list (`lib/format.filterPaths`, case-insensitive); tapping a row
+*fills the input* rather than saving, because the common move is to pick a
+folder and then extend it (`Projects/api` → `Projects/api/v2`). Text matching
+no row is simply a new path — the server validates the root either way, so
+there is no "new folder" mode to switch into. In folder mode the target's own
+path and its descendants are filtered out (`lib/format.selectablePaths`): a
+folder cannot become a child of itself, and renaming it to itself is a tap that
+reports success and changes nothing. The exclusion tests for the slash, so a
+sibling like `Projects/apiv2` survives. A failed roster read costs the
+suggestions, not the ability to move a note — `listPaths` falls back to an
+empty list. `tests/test_path_picker.py` pins the ordering, the empty-root rule,
+the unknown-root tail and the subtree exclusion.
 
 **Delete is hard and unconditional.** `DELETE /api/contextmenu/notes/{id}`
 removes the note whatever its state: filed, linked, or carrying a reminder that

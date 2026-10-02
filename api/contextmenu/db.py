@@ -83,3 +83,36 @@ def move_folder_paths(user_id: int, old_path: str, new_path: str) -> int:
             (new_path, user_id, old_path),
         )
         return cur.rowcount
+
+def get_language(user_id: int) -> str | None:
+    """The user's chosen language, or None when they have never set one.
+
+    Duplicated from the other verticals on purpose — this section owns its SQL.
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the caller resolves the default.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+        return row[0] if row else None
+
+
+def list_paths(user_id: int) -> list[str]:
+    """Every distinct path the user has filed a note under, alphabetically.
+
+    No limit and no popularity ordering, unlike the finder's namesake: this is
+    the roster the change-path picker offers, and a folder missing from it is a
+    folder the user cannot reach without retyping it. Ordering into root groups
+    is the caller's job — this returns a stable list, not a presentation.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT path FROM notes
+            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
+            ORDER BY path;
+            """,
+            (user_id,),
+        )
+        return [row[0] for row in cur.fetchall()]

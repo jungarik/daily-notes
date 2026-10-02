@@ -10,6 +10,7 @@ import config
 import file_store
 import i18n
 from api.contextmenu import db
+from common import helper
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,44 @@ def clean_root_path(path: str) -> str | None:
     if canonical is None:
         return None
     return "/".join([canonical] + parts[1:])
+
+
+def root_labels(locale: str) -> list[str]:
+    """The vault's root folders in canonical order, in one language.
+
+    `common.helper.order_root_keys()` is the single source of that order, so
+    this does not restate it. One locale rather than all of them because this
+    list is shown to a user: `clean_root_path` still accepts a root typed in
+    any supported language, but offering four translations of Inbox in a
+    dropdown would be noise.
+    """
+    return [i18n.t(locale, key) for key in helper.order_root_keys()]
+
+
+def known_paths(roots: list[str], note_paths: list[str]) -> list[str]:
+    """Every path the picker offers: the roots plus whatever is in use.
+
+    A strict pure mapper — the endpoint reads the language and the rows and
+    hands both in. Called twice with equal arguments it returns equal output.
+
+    Roots are included even when empty, because an empty root is exactly where
+    a user wants to move a note to and typing it by hand is the thing the
+    picker exists to avoid. They sort into their canonical order from
+    `roots`; a path under an unrecognised root — one left behind by a language
+    switch, say — sorts alphabetically after the known ones rather than being
+    dropped, which would hide the only route back to those notes. The client's
+    `compareRoots` makes the same choice for the same reason.
+    """
+    rank = {label: index for index, label in enumerate(roots)}
+    seen = list(dict.fromkeys(path for path in list(roots) + list(note_paths)
+                              if path and path.strip()))
+
+    def sort_key(path: str) -> tuple:
+        root = path.split("/")[0]
+
+        return (rank.get(root, len(rank)), path if root in rank else root, path)
+
+    return sorted(seen, key=sort_key)
 
 
 def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | None]:
