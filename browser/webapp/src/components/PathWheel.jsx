@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   WHEEL_HEIGHT,
   WHEEL_ITEM_HEIGHT,
-  ellipsisPath,
-  wheelIndexAt,
   wheelItem,
   wheelOffset,
 } from "../lib/format.js";
@@ -11,16 +9,17 @@ import { listAddNotePaths } from "../lib/api.js";
 
 // The path wheel: the Add-note page's folder picker, anchored to its button.
 //
-// A drum rather than a dropdown. The column is pinned to the screen's right
-// edge, so a menu has only one direction to grow — leftward — and a plain list
-// there reads as a panel that happened to land beside a circle. Curving it on
-// a wheel whose centre *is* the button makes the two one object: the items
-// nearest the button are nearest the user, and the ones furthest along the arc
-// turn away and vanish. `lib/format.wheelItem` is that arc, and the fade is
-// the circle's own equation rather than a linear ramp.
+// There is no panel. The options scroll in a transparent column beside the
+// button — a container would have been a second floating object competing with
+// the bar it hangs off, and the page is already glass over the note's text. So
+// the rows are the whole UI: a flat dark tint, no blur, no shadow, no hairline.
+// The only thing left of the old chrome is the arc: each row bows out along a
+// circle whose centre is the button (`lib/format.wheelItem`) and fades with the
+// circle's own equation, so the column reads as attached to the control rather
+// than parked next to it.
 //
-// The glass is the same recipe as `.fab` and `.tabbar` — same tint, same blur,
-// same hairline — because this is the floating-bar material, not a new one.
+// The filter is the first row, not a header above the list. It is the same pill
+// as every option, so "type something new" is an option rather than a mode.
 export default function PathWheel({ value, onPick, onClose }) {
   const [paths, setPaths] = useState([]);
   // Where an unpicked note goes, as the API reports it. Named for the
@@ -56,52 +55,53 @@ export default function PathWheel({ value, onPick, onClose }) {
     return () => { clearTimeout(id); document.removeEventListener("click", onDoc); };
   }, [onClose]);
 
+  const typed = query.trim();
+
+  // Row 0 is always the filter. A typed path that matches nothing follows it
+  // as an ordinary option row — selecting it is how you use it, so there is no
+  // separate "create" control to explain.
   const options = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const all = needle
+    const needle = typed.toLowerCase();
+    const matching = needle
       ? paths.filter((path) => path.toLowerCase().includes(needle))
       : paths;
+    const isNew = typed !== "" && !paths.includes(typed);
 
-    return all;
-  }, [paths, query]);
+    return isNew ? [typed, ...matching] : matching;
+  }, [paths, typed]);
 
   // Open centred on the note's own path — or on the default destination when
-  // it has none, so the wheel starts where the note would actually go.
+  // it has none, so the wheel starts where the note would actually go. The
+  // filter's row offsets every option by one.
   useEffect(() => {
     const track = trackRef.current;
     if (!track || !options.length) return;
-    const target = value || defaultPath;
-    const index = Math.max(0, options.indexOf(target));
+    const found = options.indexOf(value || defaultPath);
 
-    track.scrollTop = index * WHEEL_ITEM_HEIGHT;
+    track.scrollTop = (found < 0 ? 0 : found + 1) * WHEEL_ITEM_HEIGHT;
     setScrollTop(track.scrollTop);
   }, [options, value, defaultPath]);
 
-  const typed = query.trim();
-  // Text matching nothing is a new path, offered as its own row rather than a
-  // mode to switch into — the same bargain the ⋮ menu's combobox strikes.
-  const isNew = typed !== "" && !paths.some((path) => path === typed);
+  const row = (index) => {
+    const { x, scale, opacity } = wheelItem(wheelOffset(index, scrollTop));
+
+    return {
+      // No height here: `.path-wheel-opt` owns it (44px pill + 6px margins =
+      // the 56px row pitch `WHEEL_ITEM_HEIGHT` assumes, which
+      // `tests/test_path_wheel.py` checks adds up). Setting it inline would
+      // mean an `!important` in the stylesheet to win it back.
+      transform: `translateX(${-x}px) scale(${scale})`,
+      opacity,
+      // A row past the rim is invisible; letting it keep its hit zone would
+      // make the wheel's dead space tappable.
+      pointerEvents: opacity < 0.15 ? "none" : "auto",
+    };
+  };
+
+  const filterStyle = row(0);
 
   return (
     <div className="path-wheel" ref={panelRef}>
-      <input
-        className="path-wheel-input"
-        type="text"
-        value={query}
-        placeholder="Filter or type a new path…"
-        autoComplete="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && typed) onPick(typed); }}
-      />
-
-      {isNew && (
-        <button className="path-wheel-new" onClick={() => onPick(typed)}>
-          {"Use “" + ellipsisPath(typed, 18) + "”"}
-        </button>
-      )}
-
       <div
         className="path-wheel-track"
         ref={trackRef}
@@ -109,42 +109,51 @@ export default function PathWheel({ value, onPick, onClose }) {
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
         {/* Half the wheel's height of padding at each end, so the first and
-            last option can both reach the centre. */}
+            last row can both reach the centre. */}
         <div style={{ height: WHEEL_HEIGHT / 2 - WHEEL_ITEM_HEIGHT / 2 }} />
 
-        {options.map((path, index) => {
-          const { x, scale, opacity } = wheelItem(wheelOffset(index, scrollTop));
+        <div
+          className="path-wheel-opt filter"
+          style={{
+            ...filterStyle,
+            // The filter keeps a floor on both: faded to nothing at the rim it
+            // would be a control the user cannot find, and one they cannot tap
+            // is worse than one that is merely dim.
+            opacity: Math.max(filterStyle.opacity, 0.45),
+            pointerEvents: "auto",
+          }}
+        >
+          <input
+            type="text"
+            value={query}
+            placeholder="Filter or new path…"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && typed) onPick(typed); }}
+          />
+        </div>
 
-          return (
-            <button
-              key={path}
-              className={"path-wheel-opt" + (path === value ? " on" : "")}
-              style={{
-                height: WHEEL_ITEM_HEIGHT,
-                transform: `translateX(${-x}px) scale(${scale})`,
-                opacity,
-                // An item past the rim is invisible; letting it keep its hit
-                // zone would make the wheel's dead space tappable.
-                pointerEvents: opacity < 0.15 ? "none" : "auto",
-              }}
-              onClick={() => onPick(path)}
-            >
-              {ellipsisPath(path)}
-            </button>
-          );
-        })}
+        {options.map((path, index) => (
+          <button
+            key={path}
+            className={"path-wheel-opt" + (path === value ? " on" : "")}
+            style={row(index + 1)}
+            onClick={() => onPick(path)}
+          >
+            {/* `direction: rtl` on the label puts the overflow — and the
+                ellipsis — on the *left*, so a long path keeps its leaf (the
+                part that distinguishes two folders under one root) and loses
+                its stem. `<bdi>` isolates the text so the bidi algorithm
+                still lays "Projects/api" out left to right inside it; without
+                it the slashes are neutral characters and migrate. */}
+            <span className="path-wheel-label"><bdi>{path}</bdi></span>
+          </button>
+        ))}
 
         <div style={{ height: WHEEL_HEIGHT / 2 - WHEEL_ITEM_HEIGHT / 2 }} />
       </div>
-
-      {!options.length && !isNew && (
-        <div className="path-wheel-empty">No folders yet.</div>
-      )}
     </div>
   );
 }
-
-// Exported for the page's aria label and for tests: which option a snap has
-// settled on, given the scroll position.
-export const centredPath = (options, scrollTop) =>
-  options[wheelIndexAt(scrollTop)] || "";

@@ -14,6 +14,7 @@ route order that makes `/paths` unreachable.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -33,9 +34,10 @@ PAGE = (WEBAPP / "components" / "AddNote.jsx").read_text(encoding="utf-8")
 CSS = (WEBAPP / "styles.css").read_text(encoding="utf-8")
 
 SCRIPT = """
-import { wheelItem, wheelOffset, wheelIndexAt, ellipsisPath } from %s;
+import { wheelItem, wheelOffset, wheelIndexAt, WHEEL_ITEM_HEIGHT, WHEEL_HEIGHT } from %s;
 const [fn, args] = JSON.parse(process.argv[2]);
-const call = { wheelItem, wheelOffset, wheelIndexAt, ellipsisPath }[fn];
+const sizes = () => ({ item: WHEEL_ITEM_HEIGHT, wheel: WHEEL_HEIGHT });
+const call = { wheelItem, wheelOffset, wheelIndexAt, sizes }[fn];
 console.log(JSON.stringify(call(...args)));
 """
 
@@ -142,21 +144,86 @@ class WheelScrollTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not available")
-class PathLabelTests(unittest.TestCase):
-    def test_a_short_path_is_untouched(self):
-        self.assertEqual("Inbox", _js("ellipsisPath", "Inbox", 22))
+class RowPitchTests(unittest.TestCase):
+    """The pill's height lives in CSS, the row pitch in JS. They have to add
+    up, and nothing at runtime notices if they stop: the wheel would simply
+    drift out of step with its own scroll positions.
+    """
 
-    def test_a_long_path_loses_its_front(self):
-        """The leaf distinguishes two paths under one root; the root is what
-        the wheel's ordering already tells you."""
-        label = _js("ellipsisPath", "Projects/telegram-bot/api/v2", 22)
+    def test_the_css_pill_and_margins_make_the_js_row_pitch(self):
+        start = CSS.index("  .path-wheel-opt {")
+        rule = CSS[start:CSS.index("}", start)]
+        height = int(re.search(r"height: (\d+)px", rule).group(1))
+        margin = int(re.search(r"margin: (\d+)px 0", rule).group(1))
 
-        self.assertTrue(label.startswith("…"), label)
-        self.assertTrue(label.endswith("api/v2"), label)
-        self.assertEqual(22, len(label))
+        self.assertEqual(_js("sizes")["item"], height + margin * 2)
 
-    def test_empty_is_safe(self):
-        self.assertEqual("", _js("ellipsisPath", None, 22))
+    def test_the_wheel_shows_five_rows(self):
+        """56px rows over a 280px run — the spacing the picker was widened
+        for."""
+        sizes = _js("sizes")
+
+        self.assertEqual(56, sizes["item"])
+        self.assertEqual(5, sizes["wheel"] / sizes["item"])
+
+    def test_the_rows_cannot_collapse_their_margins(self):
+        """Adjacent block siblings merge their vertical margins — 6px + 6px
+        would become 6px and every row would sit 50px apart while the maths
+        assumed 56. A flex column is what prevents it."""
+        start = CSS.index("  .path-wheel-track {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("display: flex", rule)
+        self.assertIn("flex-direction: column", rule)
+        self.assertIn("  .path-wheel-track > * { flex: none; }", CSS)
+
+    def test_the_row_height_is_not_set_inline(self):
+        """It would need an `!important` in the stylesheet to win it back."""
+        self.assertNotIn("height: WHEEL_ITEM_HEIGHT,", WHEEL)
+
+
+class LabelClipTests(unittest.TestCase):
+    """A long path must not reach the pill's right edge, and must lose its
+    *stem* rather than its leaf — the leaf is what tells two folders under one
+    root apart. Done in CSS so it follows the pill's real width, where the
+    character cap this replaced could only guess at it.
+    """
+
+    def _label_rule(self) -> str:
+        start = CSS.index("  .path-wheel-label {")
+
+        return CSS[start:CSS.index("}", start)]
+
+    def test_the_overflow_is_moved_to_the_left(self):
+        """`direction: rtl` is the only thing that puts the ellipsis at the
+        start of a line."""
+        rule = self._label_rule()
+
+        self.assertIn("direction: rtl", rule)
+        self.assertIn("text-overflow: ellipsis", rule)
+        self.assertIn("white-space: nowrap", rule)
+
+    def test_the_text_still_reads_left_to_right(self):
+        """Inside an rtl box the `/` characters are neutral and migrate.
+        `<bdi>` isolates the run so "Projects/api" stays itself."""
+        self.assertIn("<bdi>{path}</bdi>", WHEEL)
+
+    def test_the_label_can_actually_shrink(self):
+        """`min-width: 0` — a flex child's default `min-width: auto` is its
+        content, so the pill would grow instead of the text clipping."""
+        self.assertIn("min-width: 0", self._label_rule())
+
+    def test_the_pill_clips_what_escapes(self):
+        start = CSS.index("  .path-wheel-opt {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("overflow: hidden", rule)
+
+    def test_the_character_cap_is_gone(self):
+        """A guess at pixel width, in two places, now that CSS does it."""
+        self.assertNotIn("ellipsisPath", (WEBAPP / "lib" / "format.js")
+                         .read_text(encoding="utf-8"))
+        self.assertNotIn("ellipsisPath", WHEEL)
 
 
 class RosterEndpointTests(unittest.TestCase):
@@ -246,15 +313,27 @@ class WheelStructureTests(unittest.TestCase):
         self.assertIn("right: 100%", rule)
         self.assertIn("top: 50%", rule)
 
-    def test_the_wheel_wears_the_floating_bar_material(self):
-        """Same tint, blur and hairline as `.fab` and `.tabbar`. A new glass
-        recipe here would read as a panel from another app."""
+    def test_there_is_no_panel(self):
+        """A container would be a second floating object competing with the
+        bar the wheel hangs off, over a page that is already glass over the
+        note's text. The rows are the whole control."""
         start = CSS.index("  .path-wheel {")
         rule = CSS[start:CSS.index("}", start)]
 
-        self.assertIn("background: rgba(48,48,48,.55)", rule)
-        self.assertIn("backdrop-filter: blur(22px) saturate(180%)", rule)
-        self.assertIn("border: 1px solid rgba(255,255,255,.14)", rule)
+        for property_name in ("background", "backdrop-filter", "border", "box-shadow"):
+            with self.subTest(property=property_name):
+                self.assertNotIn(property_name, rule)
+
+    def test_the_rows_are_flat_not_glass(self):
+        """They are rows, not floating objects: a tint, and none of the blur,
+        shadow or hairline the dock's circles wear."""
+        start = CSS.index("  .path-wheel-opt {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("background: rgba(20,20,20,.72)", rule)
+        self.assertNotIn("backdrop-filter", rule)
+        self.assertNotIn("box-shadow", rule)
+        self.assertIn("border: none", rule)
 
     def test_the_options_snap(self):
         """So a flick settles on an option rather than between two."""
@@ -286,13 +365,33 @@ class WheelStructureTests(unittest.TestCase):
     def test_the_wheel_opens_on_the_notes_own_path(self):
         """Or on the default destination when it has none, so it starts where
         the note would actually go."""
-        self.assertIn("const target = value || defaultPath;", WHEEL)
+        self.assertIn("options.indexOf(value || defaultPath)", WHEEL)
 
-    def test_a_typed_path_is_offered_as_a_row(self):
-        """Not a mode to switch into — the same bargain the ⋮ menu's combobox
-        strikes."""
-        self.assertIn("path-wheel-new", WHEEL)
+    def test_the_filter_is_the_first_row(self):
+        """Not a header above the list: it wears the same pill as every
+        option, so "type something new" is an option rather than a mode."""
+        self.assertIn('className="path-wheel-opt filter"', WHEEL)
+        self.assertIn("  .path-wheel-opt.filter {", CSS)
+        self.assertLess(WHEEL.index("path-wheel-opt filter"),
+                        WHEEL.index("options.map("))
+
+    def test_the_filter_stays_findable_and_tappable(self):
+        """Faded to nothing at the rim it would be a control the user cannot
+        find, and one they cannot tap is worse than one that is merely dim."""
+        self.assertIn("Math.max(filterStyle.opacity, 0.45)", WHEEL)
+        self.assertIn('pointerEvents: "auto"', WHEEL)
+
+    def test_a_typed_path_is_an_ordinary_option_row(self):
+        """Selecting it is how you use it, so there is no separate "create"
+        control to explain."""
+        self.assertIn("return isNew ? [typed, ...matching] : matching;", WHEEL)
         self.assertIn('e.key === "Enter" && typed', WHEEL)
+
+    def test_the_options_are_offset_by_the_filters_row(self):
+        """Row 0 is the filter, so option `i` is row `i + 1` — and the scroll
+        that centres the current path has to account for it."""
+        self.assertIn("style={row(index + 1)}", WHEEL)
+        self.assertIn("(found < 0 ? 0 : found + 1) * WHEEL_ITEM_HEIGHT", WHEEL)
 
     def test_it_dismisses_on_an_outside_tap(self):
         """Deferred, so the opening tap does not close it — the same trick as

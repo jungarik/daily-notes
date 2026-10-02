@@ -715,29 +715,51 @@ from the *key* rather than from the roster's first entry, because the order and
 the default are two decisions and the day they disagree, position 0 would file
 notes somewhere else in silence.
 
-**A drum, not a dropdown.** The side column is pinned to the screen's right
-edge, so a menu has one direction to grow and a flat list there reads as a
-panel that happened to land beside a circle. `PathWheel.jsx` curves it on a
-wheel whose centre *is* the button: `lib/format.wheelItem` computes
-`t = √(1 − (dy/r)²)` — the circle's own equation — and one value drives the
-whole look. Each pill bows out by `t * WHEEL_REACH`, scales between .78 and 1,
-and takes `t` as its opacity, so the fade is **circular rather than linear**:
-an option holds its brightness near the centre and dives at the rim, where `t`
-reaches exactly 0 and stays there (the `ratio >= 1` guard — `√` of a negative
-is `NaN`, a blank style and an item that never disappears). `reach` and
-`radius` are separate parameters because at `reach = radius` the centre pill
-would shift half a phone. The fade is **per item, not a mask on the panel**: a
-mask would dim the glass too, and the fade has to follow the pills along the
-arc. Beyond-the-rim pills drop their `pointer-events`, or the wheel's dead
-space stays tappable. The panel itself wears the floating-bar material
-unchanged — same tint, blur, hairline and shadow as `.fab` and `.tabbar` — and
+**A drum with no panel.** The options scroll in a transparent column beside
+the button. There is deliberately **no container** — a panel would be a second
+floating object competing with the bar the wheel hangs off, over a page that is
+already glass over the note's text — so the rows are the whole control: a flat
+dark tint, no blur, no shadow, no hairline. What survives of the old chrome is
+the arc. `lib/format.wheelItem` computes `t = √(1 − (dy/r)²)` — the circle's
+own equation — and that one value drives everything: each row bows out by
+`t * WHEEL_REACH`, scales between .78 and 1, and takes `t` as its opacity, so
+the fade is **circular rather than linear** (bright near the centre, diving at
+the rim, where `t` reaches exactly 0 and stays — the `ratio >= 1` guard, since
+`√` of a negative is `NaN`, a blank style and a row that never disappears).
+`reach` and `radius` are separate parameters because at `reach = radius` the
+centre row would shift half a phone. The fade is **per row, not a mask on the
+column**: it has to follow the rows along the arc. Rows past the rim drop their
+`pointer-events`, or the wheel's dead space stays tappable, and
 `.path-wheel-opt` scales from `transform-origin: 100% 50%` so it grows away
-from the button rather than drifting sideways. Snap-scrolling settles a flick
-on an option; tapping one picks it and closes the wheel; the input at the head
-filters, and text matching nothing becomes a new path on Enter or its own row,
-the same bargain the ⋮ menu's combobox strikes. Long labels ellipsise from the
-**front** (`…/api/v2`): the leaf distinguishes two paths under one root, and
-the root is what the ordering already tells you.
+from the button rather than drifting sideways.
+
+**The filter is row 0**, wearing the same pill as every option, so typing a new
+path is an *option* rather than a mode — text matching nothing appears as an
+ordinary row above the matches and selecting it is how you use it (Enter does
+the same). It keeps an opacity floor of .45 and stays tappable at any scroll
+position: faded to nothing at the rim it would be a control nobody can find,
+and one they cannot tap is worse than one that is merely dim. Because row 0 is
+the filter, option `i` is row `i + 1` — including in the scroll that centres
+the current path.
+
+**Row pitch is split across two files and has to add up.** `WHEEL_ITEM_HEIGHT`
+is 56 in JS; the CSS pill is 44px with 6px margins. Nothing at runtime notices
+if they diverge — the wheel just drifts out of step with its own scroll
+positions — so `tests/test_path_wheel.py` adds them up. The height is *not* set
+inline, which would force an `!important` in the stylesheet to win it back.
+And `.path-wheel-track` is a **flex column** for a non-cosmetic reason:
+adjacent block siblings collapse their vertical margins, so 6px + 6px would
+become 6px and every row would sit 50px apart while the maths assumed 56.
+
+**Labels clip on the left.** `direction: rtl` on `.path-wheel-label` moves the
+overflow and the ellipsis to the *start* of the line, so a long path keeps its
+leaf — the part that tells two folders under one root apart — and loses its
+stem. The text sits in a `<bdi>` so the bidi algorithm still lays
+"Projects/api" out left to right; without it the `/` characters are neutral and
+migrate. `min-width: 0` lets the flex child shrink at all (its default
+`min-width: auto` is its content, so the pill would grow instead of the text
+clipping), and the pill's `overflow: hidden` catches the rest. This replaced a
+22-character cap in JS, which could only guess at pixel width.
 
 **A set folder lights the ring and the glyph, not the fill.** `--commit` as a
 *fill* is the app's one affirmative-action colour, so a filled blue circle here

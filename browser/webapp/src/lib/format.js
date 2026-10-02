@@ -207,8 +207,8 @@ export function clampText(text, limit = CLAMP_CHARS) {
 // Pure and parameterised rather than reading the DOM: the caller measures the
 // scroll once and asks this per item, which is also what makes it testable
 // without a browser.
-export const WHEEL_ITEM_HEIGHT = 40;
-export const WHEEL_HEIGHT = 240;
+export const WHEEL_ITEM_HEIGHT = 56;
+export const WHEEL_HEIGHT = 280;
 // How far the middle of the wheel protrudes, in px. Deliberately much smaller
 // than the radius: at `reach = r` the centre item would shift half the screen.
 export const WHEEL_REACH = 26;
@@ -229,8 +229,7 @@ export function wheelItem(dy, radius = WHEEL_HEIGHT / 2, reach = WHEEL_REACH) {
 // Where item `index` sits relative to the wheel's centre, given how far the
 // list has been scrolled. The list is padded by half its height top and
 // bottom, so the first and last item can both reach the middle.
-export function wheelOffset(index, scrollTop, itemHeight = WHEEL_ITEM_HEIGHT,
-                            height = WHEEL_HEIGHT) {
+export function wheelOffset(index, scrollTop, itemHeight = WHEEL_ITEM_HEIGHT) {
   return index * itemHeight + itemHeight / 2 - scrollTop;
 }
 
@@ -238,14 +237,3 @@ export function wheelOffset(index, scrollTop, itemHeight = WHEEL_ITEM_HEIGHT,
 export function wheelIndexAt(scrollTop, itemHeight = WHEEL_ITEM_HEIGHT) {
   return Math.max(0, Math.round(scrollTop / itemHeight));
 }
-
-// Long paths lose their *front*, not their tail: `Projects/api/v2` reads as
-// `…/api/v2`. The leaf is what distinguishes two paths under one root, and the
-// root is the part the wheel's ordering already tells you.
-export function ellipsisPath(path, limit = 22) {
-  const whole = path || "";
-  if (whole.length <= limit) return whole;
-
-  return "…" + whole.slice(whole.length - (limit - 1));
-}
-
