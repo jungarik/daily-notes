@@ -370,7 +370,12 @@
   /* ⋮ context menu (dropdown at the dots) + change-path input */
   .ctx-menu { position: fixed; z-index: 30; min-width: 150px; padding: 4px; background: var(--bg-elev, #262626); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
   .ctx-menu.show { display: block; }
-  .ctx-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--text); background: transparent; border: none; border-radius: 6px; padding: 9px 12px; cursor: pointer; }
+  /* A flex row rather than an emoji glued to the label: the glyph keeps its
+     own box, so every item's text starts on the same x and a two-line label
+     would not wrap under the icon. 17px matches the Add-note page's side
+     buttons — the other place a glyph sits beside 14px text. */
+  .ctx-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--text); background: transparent; border: none; border-radius: 6px; padding: 9px 12px; cursor: pointer; }
+  .ctx-item svg { flex: none; width: 17px; height: 17px; }
   .ctx-item:active { background: var(--border); }
   /* Destructive entry. Colour is the only thing separating it from the item
      above, and the two sit one tap apart, so it uses the text-safe red rather

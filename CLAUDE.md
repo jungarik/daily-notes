@@ -580,6 +580,22 @@ into the note path and stored localised (not translated at display time). The `�
 menu on a card/folder opens a context menu to change its path, and — **on notes
 only** — to delete.
 
+**One icon style, including in the `⋮` menu.** Every glyph in the app is a
+24-viewBox inline SVG with `fill: none`, `stroke: currentColor` and a 1.8
+stroke — the dock's tabs, the pill's Send, the Add-note page's side buttons,
+and now the context menu's Edit / Change path / Delete, which used emoji
+(✏️ 📁 🗑). Emoji fail three ways here: they render in a different style on
+every platform, so one menu looked imported from elsewhere; they carry their
+own colour, which left the Delete item's label red and its glyph grey; and they
+sit on the text baseline rather than in a box, a few pixels off centre beside a
+14px label. `currentColor` fixes the second for free — the danger row colours
+the whole item and the glyph follows. `.ctx-item` is a flex row with the glyph
+at `flex: none` so labels all start on the same x and a long one can't squeeze
+the icon. The folder glyph is deliberately the same path as `AddNote`'s path
+button: the same object is not drawn two ways.
+`tests/test_contextmenu_icons.py` pins the recipe, the shared folder path and
+the absence of emoji.
+
 **Change path is a combobox, not a dropdown.** `GET
 /api/contextmenu/paths` returns every root folder — **including the empty
 ones**, since an empty root is exactly where a note gets moved and typing it by

@@ -3,6 +3,36 @@ import { useApp } from "../store/AppContext.jsx";
 import { setNotePath, moveFolder, listPaths } from "../lib/api.js";
 import { selectablePaths, filterPaths } from "../lib/format.js";
 
+// The menu's icons, in the app's one icon style: a 24-viewBox inline SVG,
+// `fill: none`, `stroke: currentColor`, 1.8 stroke, round caps — the same
+// recipe the dock's tabs and the Add-note page's side buttons use, so a
+// control reads as part of this app wherever it appears. They replaced emoji
+// (✏️ 📁 🗑), which render in a different style on every platform, carry their
+// own colour no matter what the item is doing, and sat a few pixels off the
+// text baseline. `currentColor` is what lets the Delete item's glyph go red
+// with its label instead of needing a second rule.
+//
+// The folder path is deliberately the same one as `AddNote`'s path button:
+// the same object should not be drawn two ways.
+const EditGlyph = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+    <path d="M14.5 6.5l3 3" />
+  </svg>
+);
+const FolderGlyph = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
+  </svg>
+);
+const TrashGlyph = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 7h16M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7" />
+    <path d="M6 7l1 12a1.5 1.5 0 0 0 1.5 1.4h7A1.5 1.5 0 0 0 17 19L18 7" />
+    <path d="M10.5 11v6M13.5 11v6" />
+  </svg>
+);
+
 // The ⋮ context menu (positioned at the tapped element) + its two sheets:
 // change-path, and the delete confirmation.
 export default function ContextMenu() {
@@ -37,16 +67,20 @@ export default function ContextMenu() {
       {ctx && (
         <div className="ctx-menu show" ref={menuRef} style={{ left: pos.left, top: pos.top }}>
           {ctx.target.type === "note" && (
-            <button className="ctx-item" onClick={() => openAddNote(ctx.target.id)}>✏️ Edit</button>
+            <button className="ctx-item" onClick={() => openAddNote(ctx.target.id)}>
+              <EditGlyph />Edit
+            </button>
           )}
-          <button className="ctx-item" onClick={() => openPath(ctx.target)}>📁 Change path</button>
+          <button className="ctx-item" onClick={() => openPath(ctx.target)}>
+            <FolderGlyph />Change path
+          </button>
           {/* Notes only. A folder here is not an object — it is a path prefix
               on some set of notes — so a folder Delete would silently mean
               "destroy everything filed under this", which is far too much to
               sit one tap away in the same menu as a rename. */}
           {ctx.target.type === "note" && (
             <button className="ctx-item danger" onClick={() => openDelete(ctx.target)}>
-              🗑 Delete
+              <TrashGlyph />Delete
             </button>
           )}
         </div>

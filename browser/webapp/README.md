@@ -21,7 +21,7 @@ a tall card scrolls. It renders **no title** — the date row, path,
 tags, text and linked notes only. `detail.title` is still used for the context
 menu's label and by the map's mini cards.
 
-The note context menu offers **Edit** above **Change path** (notes only). It
+The note context menu offers **Edit** above **Change path** (notes only); its items use the app's inline-SVG glyphs, not emoji. It
 opens the Add Note overlay with `note_id` and immediately focuses its textarea
 to open the mobile keyboard. The header's plus opens it with no note ID, and
 closing clears the ID. Loading existing content and saving edits are not wired
