@@ -5,6 +5,10 @@ Dock, Feed, Explorer, MapView, Search, Chat, NoteSheet, ContextMenu,
 FolderFilter) over a small `AppContext` store, with a single reused `styles.css`.
 It is deployed as its own static host and calls the API cross-origin.
 
+The feed/preview card (`NoteCard.jsx`) renders **no title** — the date row, path,
+tags, text and linked notes only. `detail.title` is still used for the context
+menu's label and by the map's mini cards.
+
 The note context menu offers **Edit** above **Change path** (notes only). It
 opens the Add Note overlay with `note_id` and immediately focuses its textarea
 to open the mobile keyboard. The header's plus opens it with no note ID, and

@@ -337,8 +337,7 @@
   /* Notes feed — each note as a full-preview post */
   .post { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 14px; padding: 14px 14px 16px; }
   .post-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-  .post-head .card-title { flex: 1; min-width: 0; }
-  .card-title .card-date { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 8px; white-space: nowrap; }
+  .post-head .card-date { flex: 1; min-width: 0; color: var(--text-muted); font-weight: 400; font-size: 12px; white-space: nowrap; }
   .post .post-dots { flex: none; color: var(--text-faint); cursor: pointer; padding: 0 4px; line-height: 1.2; }
   /* In the preview sheet the card fills the sheet (no nested card chrome). */
   .sheet .post { background: transparent; border: none; border-radius: 0; padding: 0; }

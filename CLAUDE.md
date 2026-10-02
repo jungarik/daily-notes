@@ -542,9 +542,15 @@ note cards), **Explorer** (folder tree), **Map** (canvas force-directed graph),
 **Search** (client-side filter over loaded notes), **Chat** (conversation view
 over the `/api/chat/v2` seam). One card template (`buildPost`) is shared by the
 feed and the bottom-sheet preview (opened from the explorer/search/graph): image
-carousel on top, then title (date at the end of the title line), path, tags, full
-text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping one
-navigates without recursion). Path/localised-root names are written by the LLM
+carousel on top, then the date row (sharing its line with the `⋮`), path, tags,
+full text, and a de-duplicated "Linked notes" list (depth-1 neighbours; tapping
+one navigates without recursion). **The card shows no title.** `title` is an
+LLM-written one-line summary and the card renders the note's own full text right
+below it, so the heading said the same thing twice and the weaker version came
+first. The field is still read where it is the only thing available — the
+context menu's `name` (so the delete sheet quotes the note back) and the map's
+mini cards, which have no body to fall back on. `tests/test_notecard_title.py`
+pins both the absence and those two survivors. Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
 menu on a card/folder opens a context menu to change its path, and — **on notes
 only** — to delete.

@@ -41,10 +41,12 @@ export default function NoteCard({ detail }) {
     <div className="post">
       <Carousel atts={detail.attachments} />
       <div className="post-head">
-        <div className="card-title">
-          {(detail.title || "untitled") + ".md"}
-          {dt && <span className="card-date">{dt}</span>}
-        </div>
+        {/* The title is deliberately not rendered: an LLM-written summary sat
+            above the note's own first words and said the same thing twice. The
+            date keeps its row so the dots have something to sit beside, and
+            `card-date` carries the right margin so an absent date still leaves
+            the dots in the corner. */}
+        <div className="card-date">{dt}</div>
         <span
           className="post-dots"
           role="button"
