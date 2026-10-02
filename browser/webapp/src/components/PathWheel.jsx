@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   WHEEL_HEIGHT,
   WHEEL_ITEM_HEIGHT,
+  pathColor,
   wheelItem,
   wheelOffset,
 } from "../lib/format.js";
@@ -148,6 +149,12 @@ export default function PathWheel({ value, onPick, onClose }) {
                 its stem. `<bdi>` isolates the text so the bidi algorithm
                 still lays "Projects/api" out left to right inside it; without
                 it the slashes are neutral characters and migrate. */}
+            {/* The folder's own colour, the same stable hue
+                `lib/format.pathColor` gives the map's dots and node cards. It
+                is the app's existing word for "which folder", and it gives a
+                column of otherwise identical rows something to recognise at a
+                glance — without inventing a palette. */}
+            <i className="path-wheel-dot" style={{ background: pathColor(path) }} />
             <span className="path-wheel-label"><bdi>{path}</bdi></span>
           </button>
         ))}

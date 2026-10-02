@@ -33,7 +33,8 @@ empty field, and closing clears the ID. **Saving is still not wired** — there
 is no update endpoint and both bottom buttons just close.
 
 The page's **path** button is live: it opens `PathWheel.jsx`, a panel-less drum
-anchored to the button — flat pill rows that bow along a circle and fade with it
+anchored to the button — raised pill rows, each with its folder's colour dot,
+that bow along a circle and fade with it
 (`lib/format.wheelItem`), fed by `GET /api/addnote/paths` (roster +
 `default_root`). Row 0 is the filter, which also accepts a new path; tapping a
 row picks it and closes the wheel. Long labels clip on the left (`direction:

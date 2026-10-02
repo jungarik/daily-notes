@@ -324,16 +324,74 @@ class WheelStructureTests(unittest.TestCase):
             with self.subTest(property=property_name):
                 self.assertNotIn(property_name, rule)
 
-    def test_the_rows_are_flat_not_glass(self):
-        """They are rows, not floating objects: a tint, and none of the blur,
-        shadow or hairline the dock's circles wear."""
+    def test_a_row_sits_above_the_page_without_being_glass(self):
+        """The elevated surface the sheets use, a hairline so the note's text
+        behind it does not bleed through the edge, and a lift. No blur: a row
+        is not a floating bar, and the panel-as-glass version is the one that
+        looked wrong."""
         start = CSS.index("  .path-wheel-opt {")
         rule = CSS[start:CSS.index("}", start)]
 
-        self.assertIn("background: rgba(20,20,20,.72)", rule)
+        self.assertIn("background: var(--bg-elev)", rule)
+        self.assertIn("border: 1px solid rgba(255,255,255,.12)", rule)
+        self.assertIn("box-shadow", rule)
         self.assertNotIn("backdrop-filter", rule)
-        self.assertNotIn("box-shadow", rule)
-        self.assertIn("border: none", rule)
+
+    def test_a_row_is_as_wide_as_its_name(self):
+        """What makes the column read as a list of folders rather than a stack
+        of bars — and what "the whole option should be visible" asks for. The
+        cap plus the label's left-side ellipsis handle the long ones."""
+        start = CSS.index("  .path-wheel-opt {")
+        rule = CSS[start:CSS.index("}", start)]
+        start = CSS.index("  .path-wheel-track {")
+        track = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("width: auto", rule)
+        self.assertIn("max-width: 100%", rule)
+        self.assertIn("align-items: flex-end", track)
+
+    def test_the_arc_has_room_inside_the_scrollport(self):
+        """The frame that was cutting the rows. `overflow-y: auto` computes
+        `overflow-x: auto` too, so the leftward bow was clipped by the scroll
+        box's own left edge — the padding is the bow's room, and it has to
+        exceed `WHEEL_REACH`."""
+        start = CSS.index("  .path-wheel-track {")
+        track = CSS[start:CSS.index("}", start)]
+        padding = int(re.search(r"padding-left: (\d+)px", track).group(1))
+
+        self.assertGreater(padding, 26)
+        self.assertIn("box-sizing: border-box", track)
+
+    def test_each_row_carries_its_folders_colour(self):
+        """`lib/format.pathColor` is the map's language for which folder a
+        thing is in; reusing it here means no new palette, and a column of
+        near-identical names gains something to recognise."""
+        self.assertIn("pathColor(path)", WHEEL)
+        self.assertIn("  .path-wheel-dot {", CSS)
+
+    def test_the_dot_cannot_be_squeezed_away(self):
+        start = CSS.index("  .path-wheel-dot {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("flex: none", rule)
+
+    def test_the_chosen_folder_is_filled_blue(self):
+        """A deliberate exception to "`--commit` as a fill means an
+        affirmative action": in a list where every row is a candidate, the one
+        that is already the answer has to be unmissable, and a hairline would
+        be lost among rows that have borders of their own."""
+        start = CSS.index("  .path-wheel-opt.on {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("background: var(--commit)", rule)
+        self.assertIn("color: #fff", rule)
+
+    def test_the_filter_is_the_one_full_width_row(self):
+        """A text field that grew as you type would move its own caret."""
+        start = CSS.index("  .path-wheel-opt.filter {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("align-self: stretch", rule)
 
     def test_the_options_snap(self):
         """So a flick settles on an option rather than between two."""

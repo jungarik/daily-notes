@@ -639,7 +639,7 @@
   .path-wheel {
     position: absolute; right: 100%; top: 50%;
     transform: translateY(-50%);
-    margin-right: 14px; width: 196px;
+    margin-right: 14px; width: 278px;
   }
 
   /* Snap-scrolling so a flick settles on a row rather than between two. The
@@ -654,7 +654,14 @@
        block siblings collapse their vertical margins, so the rows' 6px
        top and bottom would merge into 6px and every row would sit 50px apart
        while the scroll maths assumed 56. Flex items do not collapse. */
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; align-items: flex-end;
+    /* Room for the arc *inside* the scrollport. `overflow-y: auto` computes
+       `overflow-x: auto` as well, so the leftward bow — up to `WHEEL_REACH`
+       plus what the 0.78 scale leaves — was being clipped by the scroll box's
+       own left edge, which is the frame that appeared to cut the rows. The
+       padding is the bow's room; the box sizing keeps the column the width it
+       says it is. */
+    padding-left: 34px; box-sizing: border-box;
   }
   .path-wheel-track > * { flex: none; }
   .path-wheel-track::-webkit-scrollbar { display: none; }
@@ -663,20 +670,46 @@
      (the pill is shorter than its row — the gap is the row height minus the
      pill, which keeps the arc's spacing honest without a `gap` the scroll
      maths would have to know about). */
+  /* A row sits *above* the page rather than being a dark hole in it: the
+     elevated surface the sheets use, a hairline to separate it from the note's
+     text behind, and a soft lift. Not glass — no blur — because a row is not a
+     floating bar.
+
+     Width is the content's, not the column's (`align-items: flex-end` on the
+     track): a short folder is a short pill, which is what makes the column
+     read as a list of names rather than a stack of bars. `max-width` is what
+     keeps a very long path inside the column, and the label's left-side
+     ellipsis takes over from there. */
   .path-wheel-opt {
-    display: flex; align-items: center; width: 100%;
+    display: flex; align-items: center; gap: 9px;
+    width: auto; max-width: 100%;
     scroll-snap-align: center;
     font: inherit; font-size: 13.5px; color: var(--text);
-    background: rgba(20,20,20,.72);
-    border: none; border-radius: 999px; padding: 0 16px;
-    cursor: pointer; overflow: hidden;
+    background: var(--bg-elev);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 999px;
+    padding: 0 16px; cursor: pointer; overflow: hidden;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
     /* The pill fills 44 of its 56px row; the rest is the air between them. */
     height: 44px; margin: 6px 0;
     /* Anchored to the button's side, so scaling must not drift them
        sideways. */
     transform-origin: 100% 50%;
   }
-  .path-wheel-opt.on { color: var(--commit); }
+  /* The folder already chosen. A filled blue, which is a deliberate exception
+     to "`--commit` as a fill means an affirmative action": in a list where
+     every row is a candidate, the one that is already the answer has to be
+     unmissable, and a hairline would be lost among rows that now have borders
+     of their own. White on this blue clears 4.5:1 —
+     `tests/test_commit_colour.py` checks that. */
+  .path-wheel-opt.on {
+    background: var(--commit); border-color: var(--commit); color: #fff;
+  }
+  /* The folder's own hue (`lib/format.pathColor`), the map's language for
+     which folder a thing is in. `flex: none` so a long label cannot squeeze
+     it away. */
+  .path-wheel-dot {
+    flex: none; width: 7px; height: 7px; border-radius: 50%;
+  }
 
   /* The label is clipped to the pill's own width, with the ellipsis on the
      *left*: a long path keeps its leaf — the part that tells two folders under
@@ -692,7 +725,9 @@
 
   /* The filter is row 0, wearing the same pill as the options — typing a new
      path is an option, not a mode. */
-  .path-wheel-opt.filter { cursor: text; background: rgba(20,20,20,.86); }
+  /* The filter is the one row that spans the column: it is a text field, and
+     a field that grows as you type would move its own caret. */
+  .path-wheel-opt.filter { cursor: text; align-self: stretch; width: auto; }
   .path-wheel-opt.filter input {
     width: 100%; min-width: 0; font: inherit; font-size: 13px;
     color: var(--text); background: transparent; border: none; padding: 0;

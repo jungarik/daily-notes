@@ -718,9 +718,28 @@ notes somewhere else in silence.
 **A drum with no panel.** The options scroll in a transparent column beside
 the button. There is deliberately **no container** — a panel would be a second
 floating object competing with the bar the wheel hangs off, over a page that is
-already glass over the note's text — so the rows are the whole control: a flat
-dark tint, no blur, no shadow, no hairline. What survives of the old chrome is
-the arc. `lib/format.wheelItem` computes `t = √(1 − (dy/r)²)` — the circle's
+already glass over the note's text — so the rows are the whole control. Each
+sits *above* the page rather than being a dark hole in it: `--bg-elev`, a
+`rgba(255,255,255,.12)` hairline so the note's text behind cannot bleed through
+the edge, and a soft lift. No blur, because a row is not a floating bar. A row
+is **as wide as its name** (`width: auto` with `align-items: flex-end` on the
+track), which is what makes the column read as a list of folders rather than a
+stack of bars; `max-width` keeps the long ones in the column and the label's
+left-side ellipsis takes over from there. Each carries a 7px dot in its
+folder's own hue from `lib/format.pathColor` — the map's existing language for
+which folder a thing is in, so a column of near-identical names gains
+something to recognise without inventing a palette. The chosen folder is
+**filled blue**, a deliberate exception to "`--commit` as a fill means an
+affirmative action": in a list where every row is a candidate, the one that is
+already the answer has to be unmissable, and a hairline would be lost among
+rows that have borders of their own (white on that blue clears 4.5:1, which
+`tests/test_commit_colour.py` checks).
+
+A trap worth knowing: `overflow-y: auto` on the track computes **`overflow-x:
+auto` as well**, so the arc's leftward bow was clipped by the scroll box's own
+left edge — which looked like a frame cutting the rows off. `padding-left` on
+the track (greater than `WHEEL_REACH`, with `box-sizing: border-box`) is the
+bow's room inside the scrollport. What survives of the old chrome is the arc. `lib/format.wheelItem` computes `t = √(1 − (dy/r)²)` — the circle's
 own equation — and that one value drives everything: each row bows out by
 `t * WHEEL_REACH`, scales between .78 and 1, and takes `t` as its opacity, so
 the fade is **circular rather than linear** (bright near the centre, diving at
