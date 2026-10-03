@@ -247,5 +247,65 @@ class SectionShapeTests(unittest.TestCase):
         self.assertIn('"GET"', listed)
 
 
+class ClientContractTests(unittest.TestCase):
+    """The two sides of the save, checked against each other.
+
+    The schema and the page are edited in different files by different
+    reasoning, and nothing at runtime notices when they drift until a save
+    answers 422. These are the three ways they can disagree.
+    """
+
+    API_JS = (ROOT / "browser" / "webapp" / "src" / "lib"
+              / "api.js").read_text(encoding="utf-8")
+    PAGE = (ROOT / "browser" / "webapp" / "src" / "components"
+            / "AddNote.jsx").read_text(encoding="utf-8")
+
+    def test_the_client_calls_both_verbs_at_the_right_paths(self):
+        self.assertIn('apiPost("/api/addnote", body)', self.API_JS)
+        self.assertIn('apiPut("/api/addnote/" + encodeURIComponent(id), body)',
+                      self.API_JS)
+
+    def test_the_client_has_a_put_helper_at_all(self):
+        """`apiPut` did not exist — only GET, POST and DELETE. A save calling
+        a helper that is not there is a `TypeError` at the first tap."""
+        self.assertIn("export async function apiPut(", self.API_JS)
+        self.assertIn('method: "PUT"', self.API_JS)
+
+    def test_the_client_sends_every_field_the_model_requires(self):
+        """`text` is required; `path` and `tags` have defaults but the page
+        sends them explicitly, so a changed default cannot change a save."""
+        fields = SCHEMAS = (SECTION / "schemas.py").read_text(encoding="utf-8")
+        request = fields[fields.index("class SaveNoteRequest"):]
+        sent = self.PAGE[self.PAGE.index("const body = {"):]
+        sent = sent[:sent.index("};")]
+
+        for field in ("text", "path", "tags"):
+            with self.subTest(field=field):
+                self.assertIn(field + ":", request)
+                self.assertIn(field, sent)
+
+    def test_the_client_sends_nothing_the_model_would_reject(self):
+        """Pydantic ignores extras, so a stray field is silent rather than
+        loud — which is worse: the page would look like it saved something it
+        did not."""
+        sent = self.PAGE[self.PAGE.index("const body = {"):]
+        sent = sent[:sent.index("};")]
+
+        for absent in ("linked_note_ids", "attachments", "title"):
+            with self.subTest(field=absent):
+                self.assertNotIn(absent, sent)
+
+    def test_neither_save_call_swallows_its_errors(self):
+        """Every read in `api.js` degrades to an empty value on failure. A
+        save must not: a quietly resolved save closes the page over text that
+        never reached the server."""
+        for name in ("export const createNote", "export const saveNote"):
+            with self.subTest(call=name):
+                start = self.API_JS.index(name)
+                declaration = self.API_JS[start:self.API_JS.index(";", start)]
+
+                self.assertNotIn(".catch", declaration)
+
+
 if __name__ == "__main__":
     unittest.main()

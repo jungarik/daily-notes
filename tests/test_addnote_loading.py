@@ -135,21 +135,85 @@ class LoadedFieldsTests(unittest.TestCase):
         self.assertIn("disabled", mapped[:mapped.index("))}")])
 
 
-class SaveNotWiredTests(unittest.TestCase):
-    def test_the_tick_still_only_closes(self):
-        """This round is the read. There is no update endpoint, so ✓ does what
-        it did before — closes — and this is what will fail when someone wires
-        a save without also revisiting the docs that say it is not wired."""
+class SaveTests(unittest.TestCase):
+    """The ✓, wired.
+
+    The decisions worth pinning are the ones that cost the user something when
+    they go wrong: a double-tap that creates two notes, a failure that closes
+    the page over the text it is failing to save, and an empty save the API can
+    only answer with a 422 nobody can act on.
+    """
+
+    def test_the_verb_depends_on_whether_there_is_an_id(self):
+        """Not one "upsert": a POST that silently updated, or a PUT that
+        silently created, is an endpoint nobody can reason about from the call
+        site."""
+        self.assertIn("if (note_id == null) await createNote(body);", PAGE_CODE)
+        self.assertIn("else await saveNote(note_id, body);", PAGE_CODE)
+
+    def test_the_tick_saves_rather_than_closing(self):
         tick = PAGE_CODE[PAGE_CODE.index("fab commit"):]
         tick = tick[:tick.index("</button>")]
 
-        self.assertIn("onClick={closeAddNote}", tick)
+        self.assertIn("onClick={save}", tick)
+        self.assertNotIn("onClick={closeAddNote}", tick)
 
-    def test_the_page_sends_nothing(self):
-        """No POST, PUT or PATCH anywhere on the page yet."""
-        for verb in ("apiPost", "apiPut", "apiPatch", "saveNote"):
-            with self.subTest(verb=verb):
-                self.assertNotIn(verb, PAGE_CODE)
+    def test_a_second_tap_cannot_save_twice(self):
+        """`disabled` is the visible half; the guard inside the handler is the
+        one that holds, because a tap already dispatched before the re-render
+        would otherwise run the whole sequence again."""
+        tick = PAGE_CODE[PAGE_CODE.index("fab commit"):]
+        tick = tick[:tick.index("</button>")]
+
+        self.assertIn("disabled={!canSave}", tick)
+        self.assertIn("if (!canSave) return;", PAGE_CODE)
+
+    def test_an_empty_note_cannot_be_saved(self):
+        """The API requires one character, so an empty save is a 422 the user
+        cannot act on. A dimmed tick says "not yet" instead."""
+        self.assertIn('const canSave = text.trim() !== "" && !saving;', PAGE_CODE)
+
+    def test_the_tick_is_dimmed_while_saving(self):
+        self.assertIn("  .addnote-bar .fab:disabled {", CSS)
+
+    def test_tags_go_as_an_empty_list(self):
+        """Their button is still disabled, so there is nothing to send."""
+        self.assertIn("tags: [] }", PAGE_CODE)
+
+    def test_an_unset_path_is_sent_empty_rather_than_guessed(self):
+        """The API files it under the configured default root. A client that
+        invented a folder name here would be the retired `defaultRoot`
+        behaviour by another route."""
+        self.assertIn("path, tags: []", PAGE_CODE)
+
+    def test_a_failure_keeps_the_page_and_the_text(self):
+        """Closing on a failure discards what the user wrote in order to tell
+        them it was not saved."""
+        body = PAGE_CODE[PAGE_CODE.index("const save = async"):]
+        body = body[:body.index("closeAddNote()")]
+
+        self.assertIn("catch (err)", body)
+        self.assertIn("return;", body)
+        self.assertNotIn("closeAddNote", body)
+
+    def test_a_422_says_what_is_wrong(self):
+        """The only failure the user can fix from here is the folder."""
+        self.assertIn('String(err).includes("422")', PAGE_CODE)
+
+    def test_the_vault_is_reloaded_after_a_save(self):
+        """Feed, explorer, map and the header counts all derive from the boot
+        fetch, so `reload` is the one path that means "the vault changed" —
+        the same one the ⋮ menu's path change and delete take."""
+        self.assertIn("closeAddNote();\n    reload();", PAGE_CODE)
+
+    def test_the_save_state_resets_on_every_open(self):
+        """Or the next note opens showing the last one's error."""
+        self.assertIn('setSaveState("");', PAGE_CODE)
+
+    def test_the_error_line_is_shared_with_the_failed_read(self):
+        """Two messages, one place to look — and they cannot both apply: a
+        note that failed to load has nothing to save."""
+        self.assertIn('status === "failed" || (saveState && !saving)', PAGE_CODE)
 
 
 if __name__ == "__main__":

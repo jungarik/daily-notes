@@ -494,9 +494,34 @@ difference came out near a full page height and threw the bar off the top of
 the screen on iPhone. Reading one source removes the class of bug; a test
 asserts the helper touches no `window`, `document` or `innerHeight`. Null
 viewport (older webviews) leaves the overlay full-screen.
-**Saving.** `POST /api/addnote` writes a note typed on the page and
-`PUT /api/addnote/{note_id}` saves an edited one; both carry `{text, path,
-tags}` and answer with the stored note. The payload deliberately has **no
+**Saving.** The page's ✓ is wired: `POST /api/addnote` writes a note typed on
+the page and `PUT /api/addnote/{note_id}` saves an edited one, chosen on the
+client by whether it has a `note_id` — two verbs rather than one "upsert",
+because a POST that silently updated (or a PUT that silently created) is an
+endpoint nobody can reason about from the call site. Both carry `{text, path,
+tags}` and answer with the stored note. `tags` is always `[]` for now (its
+button is still disabled) and `path` is sent as the user left it: empty means
+the API files the note under the default root, which is why the button lights
+only for an actual choice and why the client must not invent a folder name
+here — that was the retired `defaultRoot` behaviour.
+
+On the client the tick is `disabled` while a save is in flight **and** when
+there is nothing to save, with the same `canSave` guard inside the handler:
+`disabled` is the visible half, but a tap already dispatched before the
+re-render would otherwise run the sequence again and create the note twice.
+An empty note cannot be saved at all — the API requires one character, so that
+would be a 422 the user cannot act on, and a dimmed tick says "not yet" where
+an error says "something went wrong". A **failure keeps the page open** with
+the text still in the field and reports itself on the same `.addnote-error`
+line the failed *read* uses (the two cannot both apply: a note that failed to
+load has nothing to save); only a 422 gets a specific message, since the
+folder is the one thing the user can fix from here. On success the page closes
+and `reload()` runs — the feed, explorer, map and header counts all derive
+from the boot fetch, so that is the one path meaning "the vault changed", the
+same one the ⋮ menu's path change and delete take. `tests/test_addnote_api.py`
+also checks the two sides against each other: the fields the page sends, the
+fields it must not, and that neither save call carries the `.catch` every read
+in `api.js` has. The payload deliberately has **no
 `linked_note_ids` and no attachments**: the page displays a note's neighbours
 and has no control for changing them, so a save that rewrote the link graph
 from a read-only list would be the worst kind of surprise, and there is still

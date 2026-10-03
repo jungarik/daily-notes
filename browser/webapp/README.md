@@ -29,10 +29,11 @@ keyboard; the overlay then reads the note from `GET /api/addnote/{id}`
 held in state for the still-disabled side buttons) and fills the field — showing a "Loading…" placeholder meanwhile, never
 overwriting text typed in the gap, and leaving the page open with an inline
 message if the read fails. The header's plus opens it with no note ID and an
-empty field, and closing clears the ID. The API can now save: `POST /api/addnote`
-(create) and `PUT /api/addnote/{id}` (edit) take `{text, path, tags}`, default
-an empty path to the configured root, and rebuild the note's embeddings. **The
-page's ✓ is not wired to them yet** — both bottom buttons still just close.
+empty field, and closing clears the ID. Saving works: ✓ calls `POST /api/addnote`
+(new) or `PUT /api/addnote/{id}` (edit) with `{text, path, tags}`, then closes
+and `reload()`s the vault. The tick is dimmed while saving and while the text
+is empty; a failure keeps the page open with an inline message. ✕ still
+discards. `tags` is sent empty until its editor exists.
 
 The page's **path** button is live: it opens `PathWheel.jsx`, a panel-less drum
 anchored to the button — raised pill rows, each with its folder's colour dot,

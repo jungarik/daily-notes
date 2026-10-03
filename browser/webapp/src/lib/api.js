@@ -30,6 +30,14 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
+export async function apiPut(path, body) {
+  const res = await fetch(API_BASE + path, {
+    method: "PUT", headers: headers(true), body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
 // Separate from apiPost because a 204 has no body to parse: `res.json()` on an
 // empty response rejects, which would report a successful delete as a failure.
 export async function apiDelete(path) {
@@ -62,6 +70,18 @@ export const listAddNotePaths = () =>
   apiGet("/api/addnote/paths")
     .then((r) => ({ paths: (r && r.paths) || [], default_root: (r && r.default_root) || "" }))
     .catch(() => ({ paths: [], default_root: "" }));
+// Saving from the Add note page. Two verbs for two situations, chosen by the
+// caller on whether it has an id — not merged into one "upsert", because a
+// POST that silently updated (or a PUT that silently created) is the kind of
+// endpoint nobody can reason about from the call site.
+//
+// Both answer with the stored note, which is not what was sent: an empty path
+// came back as the default folder and a typed one came back normalised.
+// Neither has a `.catch` — a save that quietly resolved would close the page
+// over text that never reached the server.
+export const createNote = (body) => apiPost("/api/addnote", body);
+export const saveNote = (id, body) =>
+  apiPut("/api/addnote/" + encodeURIComponent(id), body);
 // The note the Add note page opens for editing. No `.catch` — the page tells
 // the user it could not load rather than opening a blank editor that looks
 // like an empty note.

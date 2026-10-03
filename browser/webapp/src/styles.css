@@ -843,6 +843,11 @@
   /* Not yet built, and saying so. A control that looks live and does nothing
      reads as a broken app; a dimmed one reads as a promise. */
   .addnote-bar .tab:disabled { opacity: .45; cursor: default; }
+  /* The tick, dimmed while a save is in flight or while there is nothing to
+     save. Same treatment as every other not-yet control on this page, rather
+     than a separate "saving" colour: the blue still says which button commits,
+     the opacity says it cannot be pressed right now. */
+  .addnote-bar .fab:disabled { opacity: .45; cursor: default; }
 
   /* The tick commits, so it is blue like every other affirmative control. The
      glass is dropped rather than tinted: a backdrop blur does nothing beneath

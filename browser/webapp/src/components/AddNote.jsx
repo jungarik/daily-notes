@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { visibleViewport } from "../lib/format.js";
-import { fetchEditableNote } from "../lib/api.js";
+import { createNote, fetchEditableNote, saveNote } from "../lib/api.js";
 import MarkdownHelp from "./MarkdownHelp.jsx";
 import PathWheel from "./PathWheel.jsx";
 
@@ -110,7 +110,7 @@ const METADATA_FIELDS = [
 // up — see the fetch below for why it cannot be awaited first. Saving has no
 // endpoint yet, so both modes still close without persisting.
 export default function AddNote({ note_id = null }) {
-  const { state, closeAddNote, addNoteInputRef } = useApp();
+  const { state, closeAddNote, addNoteInputRef, reload } = useApp();
   const [text, setText] = useState("");
   // "loading" | "ready" | "failed" for an existing note; always "ready" for a
   // new one, which has nothing to wait for.
@@ -127,6 +127,10 @@ export default function AddNote({ note_id = null }) {
   // stays unlit rather than claiming a choice nobody made.
   const [path, setPath] = useState("");
   const [pathOpen, setPathOpen] = useState(false);
+  // "" | "saving" | an error line. One value rather than a boolean plus a
+  // string: the page is never saving *and* reporting a failure, and two flags
+  // that cannot both be true are two chances to leave one of them stale.
+  const [saveState, setSaveState] = useState("");
   // The visible area while the keyboard is up. The whole overlay is sized to
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
@@ -145,6 +149,7 @@ export default function AddNote({ note_id = null }) {
     setNote(null);
     setPath("");
     setPathOpen(false);
+    setSaveState("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
     setHelpOpen(false);
@@ -198,6 +203,45 @@ export default function AddNote({ note_id = null }) {
     };
   }, [open]);
 
+  const saving = saveState === "saving";
+  // The API requires at least one character, so an empty save is a 422 the
+  // user cannot act on. A dimmed tick says "not yet" where an error message
+  // would say "something went wrong".
+  const canSave = text.trim() !== "" && !saving;
+
+  const save = async () => {
+    if (!canSave) return;
+
+    setSaveState("saving");
+    // Tags go as an empty list: their button is still disabled, so there is
+    // nothing to send. `path` empty is not a gap either — the API files the
+    // note under the configured default root, which is why the button is only
+    // lit for an actual choice.
+    const body = { text: text.trim(), path, tags: [] };
+
+    try {
+      if (note_id == null) await createNote(body);
+      else await saveNote(note_id, body);
+    } catch (err) {
+      // The page stays open with the text still in the field. Closing on a
+      // failure would discard what the user wrote in order to report that it
+      // was not saved.
+      setSaveState(String(err).includes("422")
+        ? "That folder isn’t valid. Pick another."
+        : "Couldn’t save. Try again.");
+
+      return;
+    }
+
+    // Close first, then refresh: the vault's own views (feed, explorer, map,
+    // header counts) all derive from the boot fetch, so `reload` is the one
+    // path that means "the vault changed" — the same one the ⋮ menu's path
+    // change and delete already take. Awaiting it before closing would hold
+    // the editor open over a round trip that has nothing to do with the save.
+    closeAddNote();
+    reload();
+  };
+
   return (
     <div
       className={"addnote" + (open ? " show" : "")}
@@ -229,8 +273,10 @@ export default function AddNote({ note_id = null }) {
           to the feed mid-gesture reads as a crash, and nothing is saved here
           anyway. An empty editor with no message would be indistinguishable
           from a note whose body really is empty. */}
-      {status === "failed" && (
-        <div className="addnote-error">Couldn’t load this note.</div>
+      {(status === "failed" || (saveState && !saving)) && (
+        <div className="addnote-error">
+          {status === "failed" ? "Couldn’t load this note." : saveState}
+        </div>
       )}
       {/* Help, in the top-right corner. No glass: the glyph is already a
           circled `?`, so out of the capsule it *is* "just a question icon and
@@ -337,7 +383,11 @@ export default function AddNote({ note_id = null }) {
           </div>
         </nav>
 
-        <button className="fab commit" aria-label="Done" onClick={closeAddNote}>
+        {/* Dimmed while the request is in flight *and* when there is nothing
+            to save, and `canSave` guards the handler too: a second tap on a
+            slow connection would otherwise create the same note twice. */}
+        <button className="fab commit" aria-label={saving ? "Saving…" : "Save"}
+          onClick={save} disabled={!canSave}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 13l4 4L19 7" />
           </svg>
