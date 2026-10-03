@@ -1,5 +1,7 @@
 """Persistence for the addnote section (isolated): the note being edited."""
 
+from psycopg.types.json import Json
+
 from db import cursor
 
 
@@ -108,3 +110,73 @@ def list_paths(user_id: int) -> list[str]:
             (user_id,),
         )
         return [row[0] for row in cur.fetchall()]
+
+
+def create_note(user_id: int, text: str, path: str, tags: list[str]) -> int:
+    """Insert a note written in the editor and return its id.
+
+    `title` is left NULL on purpose. It is the enrichment agent's field — an
+    LLM's one-line summary — and a title the user never wrote would be a
+    guess presented as theirs. Every section that displays a note already
+    falls back to a text snippet when it is absent (`_display_title` in feed,
+    explorer, notesheet, mapview and search), so an untitled note reads as its
+    own first words everywhere.
+
+    `source_type` is 'text': this is typed, like the bot's text capture, and
+    the voice/photo kinds have no editor yet.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO notes (user_id, text, source_type, path, tags)
+            VALUES (%s, %s, 'text', %s, %s) RETURNING id;
+            """,
+            (user_id, text, path, Json(tags)),
+        )
+        return cur.fetchone()[0]
+
+
+def update_note(user_id: int, note_id: int, text: str, path: str,
+                tags: list[str]) -> bool:
+    """Owner-scoped update of the three fields the editor owns. True if a row
+    went.
+
+    The `user_id` predicate is the tenancy guard, in the statement rather than
+    a check before it, so no path can forget it. Nothing else on the row is
+    touched: `title`, `note_type` and `priority` belong to enrichment, and
+    blanking them here would undo work the user asked an agent for.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            UPDATE notes SET text = %s, path = %s, tags = %s
+            WHERE id = %s AND user_id = %s RETURNING id;
+            """,
+            (text, path, Json(tags), note_id, user_id),
+        )
+        return cur.fetchone() is not None
+
+
+def replace_chunks(note_id: int, chunks: list[dict]) -> None:
+    """Swap the note's embedded chunks for a freshly built set, in one
+    transaction.
+
+    One `cursor()` for both statements is the point: a delete that commits
+    without its insert leaves the note invisible to search and RAG, which is
+    worse than leaving the old chunks in place. The caller builds the chunks
+    *before* calling this, so the embedding round trip cannot fail between the
+    two.
+    """
+    with cursor() as cur:
+        cur.execute("DELETE FROM note_chunks WHERE note_id = %s;", (note_id,))
+
+        for chunk in chunks:
+            cur.execute(
+                """
+                INSERT INTO note_chunks
+                    (note_id, chunk_index, content, token_count, metadata, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s::vector);
+                """,
+                (note_id, chunk["index"], chunk["content"], chunk["token_count"],
+                 Json(chunk["metadata"]), chunk["embedding"]),
+            )

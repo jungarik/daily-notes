@@ -328,7 +328,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
   `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
   `POST /api/contextmenu/notes/{id}/path`, `GET /api/addnote/{id}`,
-  `GET /api/addnote/paths`,
+  `GET /api/addnote/paths`, `POST /api/addnote`, `PUT /api/addnote/{id}`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
@@ -494,8 +494,54 @@ difference came out near a full page height and threw the bar off the top of
 the screen on iPhone. Reading one source removes the class of bug; a test
 asserts the helper touches no `window`, `document` or `innerHeight`. Null
 viewport (older webviews) leaves the overlay full-screen.
-Nothing is captured or saved yet — the Mini App has no note-create and no
-note-update endpoint, so both buttons just close.
+**Saving.** `POST /api/addnote` writes a note typed on the page and
+`PUT /api/addnote/{note_id}` saves an edited one; both carry `{text, path,
+tags}` and answer with the stored note. The payload deliberately has **no
+`linked_note_ids` and no attachments**: the page displays a note's neighbours
+and has no control for changing them, so a save that rewrote the link graph
+from a read-only list would be the worst kind of surprise, and there is still
+no way to add a photo. `PUT` is a new verb for this API, so it had to join
+`allow_methods` in `api/main.py` — the Mini App is a separate origin and
+`CORSMiddleware` answers an unlisted method's preflight with 400 before the
+route is reached.
+
+**Both writes rebuild the note's chunks.** `note_chunks` is what search, RAG
+and the link suggestions actually match on, so text saved without them is a
+note that reads correctly everywhere and cannot be found by what it now says —
+and nothing reports that. It runs on every save rather than only on a text
+change: the editor has no reliable dirty signal, and a redundant re-embed is
+cheaper than a silent mismatch. **Two orderings carry the correctness**, and
+both exist so the step that can fail cannot take the user's writing with it.
+The row is written *before* the embedding round trip, so an OpenAI failure
+costs the note its searchability and not its text (logged, swallowed —
+reporting an error would tell the user their text did not save when it did).
+And inside `helper.rebuild_chunks` the chunks are **built before** the delete
+that replaces them, with the delete and the inserts sharing one `cursor()`:
+deleting first and failing to insert leaves the note invisible to search,
+which is worse than leaving it matching its old wording.
+
+An empty `path` is **not an error** — it is "wherever notes go", resolved to
+`config.DEFAULT_ROOT_FOLDER_KEY` in the caller's language, so a note saved from
+this page always lands somewhere. A path outside every known root is a 422; one
+written in another supported language is accepted, because a user who switched
+languages still has paths in the old one. `helper.clean_tags` trims, drops
+blanks, de-duplicates case-insensitively keeping the **first** spelling (so
+"Work" survives a later "work"), preserves the user's order, and caps at
+`TAGS_MAX` = 5 by truncating rather than refusing.
+
+A saved note is left **untitled**. `title` is enrichment's field — an LLM's
+one-line summary — and a title the user never wrote would be a guess presented
+as theirs; every read vertical already maps an absent title to a text snippet
+(`_display_title` in feed, explorer, notesheet, mapview and search), so an
+untitled note reads as its own first words everywhere.
+`tests/test_addnote_save.py` checks that claim rather than assuming it, along
+with both orderings and the columns the update does *not* write — `title`,
+`note_type` and `priority` stay enrichment's.
+
+The response is read back from the database rather than echoed from the
+request: the path that was sent is not the path that was stored (an empty one
+became the default root, a typed one was normalised), and a client trusting its
+own input would show the wrong folder until the next open.
 
 **The editor reads its own section.** `GET /api/addnote/{note_id}` (the
 `api/addnote` vertical: `endpoints` → `helper` → `db`, its own SQL, shared

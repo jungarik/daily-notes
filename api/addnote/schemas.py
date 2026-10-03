@@ -1,6 +1,6 @@
 """Request/response models for the addnote section."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class EditableAttachment(BaseModel):
@@ -40,3 +40,21 @@ class PathsPayload(BaseModel):
     """
     paths: list[str] = []
     default_root: str = ""
+
+
+class SaveNoteRequest(BaseModel):
+    """What the editor sends on save.
+
+    `linked_note_ids` is deliberately absent: the editor shows a note's
+    neighbours but has no control for changing them, and a save that silently
+    rewrote the link graph from a read-only display would be the worst kind of
+    surprise. Links stay the ⋮ menu's and the bot's business.
+
+    Attachments are absent for the same reason — the page has no way to add or
+    remove one yet.
+    """
+    text: str = Field(min_length=1, max_length=20000)
+    # Empty is not missing: it means "wherever notes go by default", which the
+    # endpoint resolves to the configured root.
+    path: str = Field(default="", max_length=200)
+    tags: list[str] = Field(default_factory=list, max_length=50)

@@ -179,11 +179,17 @@ class TenancyTests(unittest.TestCase):
         self.assertIn("status_code=404", ENDPOINTS_SOURCE)
         self.assertNotIn("403", ENDPOINTS_SOURCE)
 
-    def test_the_endpoint_resolves_the_user_from_auth(self):
+    def test_every_route_resolves_the_user_from_auth(self):
         """`current_user`, never a user id off the request — a browser must
-        not be able to name whose notes it is reading."""
-        self.assertIn("Depends(current_user)", ENDPOINTS_SOURCE)
-        self.assertNotIn("user_id: int,", ENDPOINTS_SOURCE)
+        not be able to name whose notes it reads or writes. Counted against
+        the number of routes, so a new one that takes the id from the client
+        fails here instead of shipping."""
+        routes = len(re.findall(r"@router\.(get|post|put|delete)\(", ENDPOINTS_SOURCE))
+        resolved = ENDPOINTS_SOURCE.count("user_id: int = Depends(current_user)")
+
+        self.assertEqual(routes, resolved)
+        self.assertNotIn("user_id: int = Body", ENDPOINTS_SOURCE)
+        self.assertNotIn("user_id: int = Query", ENDPOINTS_SOURCE)
 
     def test_the_select_is_narrow(self):
         """Only the columns the response carries — the row read is the note's
