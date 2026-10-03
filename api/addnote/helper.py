@@ -1,10 +1,13 @@
-"""Addnote section service: the signed attachment views.
+"""Addnote section service: the signed attachment views and the save rules.
 
-One function, and it earns its place by being *impure*: `media_token.sign`
-reads the clock and a secret, so it cannot live in a response model. The rest
-of the response is assembled in `endpoints.py` — the row's three nullable
-columns are coerced there, inline, rather than through a mapper that would add
-a name to read past for `value or ""`.
+Nothing here touches `db`. `attachment_views` earns its place by being
+*impure* in a way a response model cannot be — `media_token.sign` reads the
+clock and a secret — and `clean_root_path` / `clean_tags` are pure rules the
+endpoint applies to a request. The response itself is assembled in
+`endpoints.py`, and so is every database call and the embedding round trip:
+this module had a `rebuild_chunks` that called `db.replace_chunks` without
+importing `db` at all, which is the shape of mistake that hides in a module
+allowed to reach for I/O it has no business doing.
 
 The URL template and the signing call are duplicated from the feed section
 rather than shared. That is the deliberate trade in this codebase — a vertical
@@ -12,14 +15,10 @@ owns its shaping so one section's change cannot ripple into another's — and
 `media_token` itself is the shared infra both reach for.
 """
 
-import logging
-
 import config
 import i18n
 from api import media_token
-from common import embedings, helper
-
-logger = logging.getLogger(__name__)
+from common import helper
 
 # The proxy lives in the notecard section: an <img> cannot send the initData
 # header, so the signed token in the URL is the auth. Relative, so it resolves
@@ -150,38 +149,3 @@ def clean_tags(tags: list[str] | None) -> list[str]:
         out.append(label)
 
     return out[:TAGS_MAX]
-
-
-def rebuild_chunks(note_id: int, text: str) -> bool:
-    """Re-embed the note and swap its chunks. True if they were replaced.
-
-    The note's `note_chunks` are what search, RAG and the link suggestions
-    actually match on, so text saved without them is a note that reads
-    correctly everywhere and cannot be found by what it now says. Hence this
-    runs on every save, not only when the text changed — the editor has no
-    reliable "dirty" signal and a redundant re-embed is cheaper than a silent
-    mismatch.
-
-    Order is the correctness argument: the chunks are **built first** (the
-    OpenAI round trip, the part that fails) and only then swapped inside one
-    transaction. Deleting first and failing to insert would leave the note
-    invisible to search, which is worse than leaving it matching its old
-    wording.
-
-    A failure is logged and swallowed. The note itself is already saved by
-    then, and the project's rule is to degrade rather than lose the write —
-    reporting an error here would tell the user their text did not save when
-    it did.
-    """
-    try:
-        chunks = embedings.build_chunks(text)
-    except Exception:
-        logger.exception("Embedding failed for note %s; chunks left as they were",
-                         note_id)
-
-        return False
-
-    db.replace_chunks(note_id, chunks)
-    logger.info("Rebuilt %d chunk(s) for note %s", len(chunks), note_id)
-
-    return True

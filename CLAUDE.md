@@ -510,15 +510,36 @@ and the link suggestions actually match on, so text saved without them is a
 note that reads correctly everywhere and cannot be found by what it now says —
 and nothing reports that. It runs on every save rather than only on a text
 change: the editor has no reliable dirty signal, and a redundant re-embed is
-cheaper than a silent mismatch. **Two orderings carry the correctness**, and
-both exist so the step that can fail cannot take the user's writing with it.
-The row is written *before* the embedding round trip, so an OpenAI failure
-costs the note its searchability and not its text (logged, swallowed —
-reporting an error would tell the user their text did not save when it did).
-And inside `helper.rebuild_chunks` the chunks are **built before** the delete
-that replaces them, with the delete and the inserts sharing one `cursor()`:
-deleting first and failing to insert leaves the note invisible to search,
-which is worse than leaving it matching its old wording.
+cheaper than a silent mismatch. The sequence is **spelled out in each route**,
+not shared: every step is I/O, the two routes differ in more than they share
+(one inserts and answers 201, the other updates and can 404), and the helper
+that briefly owned it is the cautionary tale below.
+
+**Two orderings carry the correctness**, and both exist so the step that can
+fail cannot take the user's writing with it. The row is written *before*
+`embedings.build_chunks`, so an OpenAI failure costs the note its
+searchability and not its text — logged and swallowed, since reporting an
+error would tell the user their text did not save when it did. And
+`db.replace_chunks` is called from the `else:` of that `try`, so a failed
+build leaves the **previous** chunks in place (matching the old wording beats
+matching nothing); inside it the delete and the inserts share one `cursor()`,
+because a delete that commits without its insert is the same bug by another
+route.
+
+**A cautionary tale, kept here because the suite did not catch it.** The
+rebuild first lived in `helper.rebuild_chunks`, which called
+`db.replace_chunks` while importing no `db` at all — a guaranteed `NameError`
+on the first save, shipped green. Every assertion around it compared *strings*
+in the source, and the one test that imported the module never called the
+function. Two guards came out of it: `tests/test_section_imports.py` imports
+every section's modules and walks their ASTs for names nothing provides (with
+a probe asserting the check still catches that exact shape), and
+`tests/test_addnote_save.py` **executes** both routes against a recording fake
+`db` and a patched embedder. The architectural half of the lesson is the
+reason it could happen: a `helper` allowed to reach for the database is a
+`helper` that can forget to import it, so this section's `helper.py` now holds
+only `attachment_views` and the pure `clean_root_path` / `clean_tags` rules,
+and every database call and the embedding round trip live in `endpoints.py`.
 
 An empty `path` is **not an error** — it is "wherever notes go", resolved to
 `config.DEFAULT_ROOT_FOLDER_KEY` in the caller's language, so a note saved from

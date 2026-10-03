@@ -6,12 +6,17 @@ being edited. Both writes rebuild the note's embedded chunks, because the text
 they store is what search and RAG are supposed to match on.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 import i18n
 from api.deps import current_user
 from api.addnote import db, helper
+from common import embedings
 from api.addnote.schemas import EditableNote, PathsPayload, SaveNoteRequest
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/addnote", tags=["addnote"])
 
@@ -110,11 +115,17 @@ def create_note(req: SaveNoteRequest,
                 user_id: int = Depends(current_user)) -> EditableNote:
     """Save a note written on the Add note page.
 
-    The row is written first and the chunks rebuilt after, in that order: the
-    text is what the user asked to keep, and an embedding failure must not
-    cost them the note. A note whose chunks never got built reads correctly
-    everywhere and is missing from search until something re-embeds it, which
-    is the lesser of the two failures.
+    The sequence is spelled out here rather than hidden in a helper, because
+    every step of it is I/O and the order between them is the correctness
+    argument:
+
+    * The row is written **before** the embedding round trip. The text is what
+      the user asked to keep, so a failed embedding costs the note its
+      searchability and not its content. It is logged and swallowed —
+      answering with an error would tell them nothing saved when it did.
+    * The chunks are **built before** `replace_chunks` touches the table, and
+      that function deletes and re-inserts inside one `cursor()`. A note with
+      no chunks is invisible to search and RAG.
     """
     locale = i18n.resolve_locale(db.get_language(user_id))
     path = helper.clean_root_path(req.path, locale)
@@ -122,9 +133,17 @@ def create_note(req: SaveNoteRequest,
     if path is None:
         raise HTTPException(status_code=422, detail="path must start with a root folder")
 
-    note_id = db.create_note(user_id, req.text.strip(), path,
-                             helper.clean_tags(req.tags))
-    helper.rebuild_chunks(note_id, req.text.strip())
+    text = req.text.strip()
+    note_id = db.create_note(user_id, text, path, helper.clean_tags(req.tags))
+
+    try:
+        chunks = embedings.build_chunks(text)
+    except Exception:
+        logger.exception("Embedding failed for new note %s; it saved without chunks",
+                         note_id)
+    else:
+        db.replace_chunks(note_id, chunks)
+        logger.info("Stored %d chunk(s) for new note %s", len(chunks), note_id)
 
     return _saved(user_id, note_id)
 
@@ -134,9 +153,16 @@ def save_note(note_id: int, req: SaveNoteRequest,
               user_id: int = Depends(current_user)) -> EditableNote:
     """Save an edited note.
 
-    Same order and the same reasoning as create. The update touches only the
-    three fields the editor owns — `title`, `note_type` and `priority` are
-    enrichment's, and `note_links` is nobody's business here: the page shows a
+    Same sequence as create, spelled out again rather than shared: the two
+    differ in more than they share — one inserts and answers 201, the other
+    updates and can 404 — and `note_chunks` is what search matches on, so an
+    edit that skipped the rebuild would leave the note findable only by its
+    old wording. A failed embedding leaves the previous chunks in place, which
+    is the better of the two wrong states.
+
+    The update touches only the three fields the editor owns — `title`,
+    `note_type` and `priority` are enrichment's, and `note_links` is nobody's
+    business here: the page shows a
     note's neighbours and offers no way to change them, so a save must not
     rewrite that graph.
 
@@ -154,6 +180,13 @@ def save_note(note_id: int, req: SaveNoteRequest,
     if not db.update_note(user_id, note_id, text, path, helper.clean_tags(req.tags)):
         raise HTTPException(status_code=404, detail="note not found")
 
-    helper.rebuild_chunks(note_id, text)
+    try:
+        chunks = embedings.build_chunks(text)
+    except Exception:
+        logger.exception("Embedding failed for note %s; its chunks still match "
+                         "the previous text", note_id)
+    else:
+        db.replace_chunks(note_id, chunks)
+        logger.info("Rebuilt %d chunk(s) for note %s", len(chunks), note_id)
 
     return _saved(user_id, note_id)
