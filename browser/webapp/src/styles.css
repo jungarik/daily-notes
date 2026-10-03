@@ -662,6 +662,16 @@
        padding is the bow's room; the box sizing keeps the column the width it
        says it is. */
     padding-left: 34px; box-sizing: border-box;
+    /* A gradient mask over the last 40px at each end, *on top of* the per-row
+       opacity. The two do different jobs: the per-row fade follows a row along
+       the arc (it is the wheel turning away), while this one is tied to the
+       visible boundary, so a row that happens to sit at the edge dissolves
+       into it whatever the geometry says. Belt and braces, and it is what
+       makes the two ends look like siblings. */
+    -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
+    mask-image: linear-gradient(to bottom,
+      transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
   }
   .path-wheel-track > * { flex: none; }
   .path-wheel-track::-webkit-scrollbar { display: none; }

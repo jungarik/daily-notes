@@ -13,14 +13,17 @@ import { listAddNotePaths } from "../lib/api.js";
 // There is no panel. The options scroll in a transparent column beside the
 // button — a container would have been a second floating object competing with
 // the bar it hangs off, and the page is already glass over the note's text. So
-// the rows are the whole UI: a flat dark tint, no blur, no shadow, no hairline.
-// The only thing left of the old chrome is the arc: each row bows out along a
-// circle whose centre is the button (`lib/format.wheelItem`) and fades with the
-// circle's own equation, so the column reads as attached to the control rather
-// than parked next to it.
+// the rows are the whole UI: raised pills, each carrying its folder's own hue,
+// bowing along a circle whose centre is the button (`lib/format.wheelItem`) and
+// fading with the circle's own equation, so the column reads as attached to the
+// control rather than parked next to it. A gradient mask on the track fades
+// both ends as well — the arc fade follows a row as the wheel turns away from
+// you, the mask is pinned to the visible edge, and it takes both for the two
+// boundaries to look alike.
 //
-// The filter is the first row, not a header above the list. It is the same pill
-// as every option, so "type something new" is an option rather than a mode.
+// The filter is the first row, not a header above the list: the same pill as
+// every option, so "type something new" is an option rather than a mode, and
+// it fades with the rest.
 export default function PathWheel({ value, onPick, onClose }) {
   const [paths, setPaths] = useState([]);
   // Where an unpicked note goes, as the API reports it. Named for the
@@ -99,8 +102,6 @@ export default function PathWheel({ value, onPick, onClose }) {
     };
   };
 
-  const filterStyle = row(0);
-
   return (
     <div className="path-wheel" ref={panelRef}>
       <div
@@ -113,17 +114,12 @@ export default function PathWheel({ value, onPick, onClose }) {
             last row can both reach the centre. */}
         <div style={{ height: WHEEL_HEIGHT / 2 - WHEEL_ITEM_HEIGHT / 2 }} />
 
-        <div
-          className="path-wheel-opt filter"
-          style={{
-            ...filterStyle,
-            // The filter keeps a floor on both: faded to nothing at the rim it
-            // would be a control the user cannot find, and one they cannot tap
-            // is worse than one that is merely dim.
-            opacity: Math.max(filterStyle.opacity, 0.45),
-            pointerEvents: "auto",
-          }}
-        >
+        {/* No opacity floor, and no exemption from the arc. It had one, so it
+            could not be missed — but as the topmost row that made the top of
+            the wheel the one edge where nothing ever disappeared, which read
+            as a broken fade rather than as a helpful control. It is findable
+            the way every other row is: by scrolling to it. */}
+        <div className="path-wheel-opt filter" style={row(0)}>
           <input
             type="text"
             value={query}

@@ -752,14 +752,23 @@ column**: it has to follow the rows along the arc. Rows past the rim drop their
 `.path-wheel-opt` scales from `transform-origin: 100% 50%` so it grows away
 from the button rather than drifting sideways.
 
+**The fade works two ways, and needs to.** The per-row opacity follows a row
+along the arc — it is the wheel turning away from you — while a `mask-image` on
+the track fades the last 40px at each end, pinned to the *visible boundary*. A
+row sitting at the edge therefore dissolves into it whatever the geometry says,
+and the two ends look like siblings. The mask is `-webkit-` prefixed as well,
+since Telegram's webview is WebKit and a missing mask is precisely the bug this
+replaced.
+
 **The filter is row 0**, wearing the same pill as every option, so typing a new
 path is an *option* rather than a mode — text matching nothing appears as an
 ordinary row above the matches and selecting it is how you use it (Enter does
-the same). It keeps an opacity floor of .45 and stays tappable at any scroll
-position: faded to nothing at the rim it would be a control nobody can find,
-and one they cannot tap is worse than one that is merely dim. Because row 0 is
-the filter, option `i` is row `i + 1` — including in the scroll that centres
-the current path.
+the same). It takes the arc unmodified. It used to carry an opacity floor so it
+could not be missed, and because it is the *topmost* row that made the top of
+the wheel the one edge where nothing ever disappeared — which reads as a broken
+fade rather than as a helpful control. It is findable the way every other row
+is: by scrolling to it. Because row 0 is the filter, option `i` is row `i + 1` —
+including in the scroll that centres the current path.
 
 **Row pitch is split across two files and has to add up.** `WHEEL_ITEM_HEIGHT`
 is 56 in JS; the CSS pill is 44px with 6px margins. Nothing at runtime notices

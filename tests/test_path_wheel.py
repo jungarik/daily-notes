@@ -406,14 +406,36 @@ class WheelStructureTests(unittest.TestCase):
 
         self.assertIn("transform-origin: 100% 50%", rule)
 
-    def test_the_fade_is_per_item_not_a_mask_on_the_panel(self):
-        """A mask would dim the glass too, and the fade has to follow the
-        items along the arc rather than the box they scroll in."""
+    def test_the_fade_works_two_ways(self):
+        """Per-row opacity *and* a mask on the track, doing different jobs:
+        the first follows a row along the arc (the wheel turning away), the
+        second is tied to the visible boundary, so a row that happens to sit
+        at the edge dissolves into it whatever the geometry says."""
         self.assertIn("opacity,", WHEEL)
         start = CSS.index("  .path-wheel-track {")
         rule = CSS[start:CSS.index("}", start)]
 
-        self.assertNotIn("mask", rule)
+        self.assertIn("mask-image: linear-gradient(to bottom", rule)
+
+    def test_the_mask_fades_both_ends(self):
+        """The top was the broken one, but masking only there would leave the
+        two edges dissolving by different mechanisms and not looking like
+        siblings."""
+        start = CSS.index("  .path-wheel-track {")
+        rule = CSS[start:CSS.index("}", start)]
+        mask = rule[rule.index("mask-image: linear-gradient(to bottom"):]
+
+        self.assertIn("transparent 0", mask)
+        self.assertIn("transparent 100%", mask)
+        self.assertIn("calc(100% - 40px)", mask)
+
+    def test_the_mask_is_prefixed_for_webkit(self):
+        """Telegram's webview is WebKit, where the unprefixed property is not
+        enough — and a missing mask is exactly the bug this fixes."""
+        start = CSS.index("  .path-wheel-track {")
+        rule = CSS[start:CSS.index("}", start)]
+
+        self.assertIn("-webkit-mask-image:", rule)
 
     def test_a_faded_item_cannot_be_tapped(self):
         """It is invisible; keeping its hit zone makes the wheel's dead space
@@ -433,11 +455,14 @@ class WheelStructureTests(unittest.TestCase):
         self.assertLess(WHEEL.index("path-wheel-opt filter"),
                         WHEEL.index("options.map("))
 
-    def test_the_filter_stays_findable_and_tappable(self):
-        """Faded to nothing at the rim it would be a control the user cannot
-        find, and one they cannot tap is worse than one that is merely dim."""
-        self.assertIn("Math.max(filterStyle.opacity, 0.45)", WHEEL)
-        self.assertIn('pointerEvents: "auto"', WHEEL)
+    def test_the_filter_fades_like_any_other_row(self):
+        """It had an opacity floor so it could not be missed. But as the
+        *topmost* row that made the top of the wheel the one edge where
+        nothing ever disappeared — which reads as a broken fade, not as a
+        helpful control. It takes `row(0)` unmodified now."""
+        self.assertIn('className="path-wheel-opt filter" style={row(0)}', WHEEL)
+        self.assertNotIn("Math.max(", WHEEL)
+        self.assertNotIn("filterStyle", WHEEL)
 
     def test_a_typed_path_is_an_ordinary_option_row(self):
         """Selecting it is how you use it, so there is no separate "create"
