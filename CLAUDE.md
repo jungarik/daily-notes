@@ -770,6 +770,13 @@ fade rather than as a helpful control. It is findable the way every other row
 is: by scrolling to it. Because row 0 is the filter, option `i` is row `i + 1` —
 including in the scroll that centres the current path.
 
+**The box runs one row longer than it reads.** `WHEEL_HEIGHT` is 336 — six
+rows of 56 — for five *legible* ones, because the mask fades 40px at each end
+and leaves the outermost row on either side mid-dissolve. Sizing the box to
+exactly the rows you want to read is what left the fifth permanently
+half-faded. The fade has to stay shorter than one row, or it eats into the
+second row in and the count is wrong again.
+
 **Row pitch is split across two files and has to add up.** `WHEEL_ITEM_HEIGHT`
 is 56 in JS; the CSS pill is 44px with 6px margins. Nothing at runtime notices
 if they diverge — the wheel just drifts out of step with its own scroll

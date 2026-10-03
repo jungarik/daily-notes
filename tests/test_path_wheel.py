@@ -158,13 +158,21 @@ class RowPitchTests(unittest.TestCase):
 
         self.assertEqual(_js("sizes")["item"], height + margin * 2)
 
-    def test_the_wheel_shows_five_rows(self):
-        """56px rows over a 280px run — the spacing the picker was widened
-        for."""
+    def test_the_wheel_runs_one_row_longer_than_it_reads(self):
+        """Five readable rows needs six rows of run. The track's mask fades
+        40px at each end, so the outermost row on either side is mid-dissolve
+        — sizing the box to exactly the rows you want legible leaves the last
+        one permanently half-faded, which is what a 5-row box did."""
         sizes = _js("sizes")
+        start = CSS.index("  .path-wheel-track {")
+        rule = CSS[start:CSS.index("}", start)]
+        fade = int(re.search(r"#000 (\d+)px", rule).group(1))
 
         self.assertEqual(56, sizes["item"])
-        self.assertEqual(5, sizes["wheel"] / sizes["item"])
+        self.assertEqual(6, sizes["wheel"] / sizes["item"])
+        # The fade at each end has to stay inside one row, or it eats into the
+        # second row in and the count is wrong again.
+        self.assertLess(fade, sizes["item"])
 
     def test_the_rows_cannot_collapse_their_margins(self):
         """Adjacent block siblings merge their vertical margins — 6px + 6px

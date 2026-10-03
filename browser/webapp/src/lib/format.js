@@ -208,7 +208,11 @@ export function clampText(text, limit = CLAMP_CHARS) {
 // scroll once and asks this per item, which is also what makes it testable
 // without a browser.
 export const WHEEL_ITEM_HEIGHT = 56;
-export const WHEEL_HEIGHT = 280;
+// Six rows of run for five readable ones: the track's gradient mask eats 40px
+// at each end, so the outermost row on either side is mid-dissolve rather than
+// legible. Sizing the box to exactly the rows you want to read leaves the last
+// one permanently half-faded — which is what 280 (5 × 56) did.
+export const WHEEL_HEIGHT = 336;
 // How far the middle of the wheel protrudes, in px. Deliberately much smaller
 // than the radius: at `reach = r` the centre item would shift half the screen.
 export const WHEEL_REACH = 26;
