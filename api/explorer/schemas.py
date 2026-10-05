@@ -4,8 +4,10 @@ from pydantic import BaseModel
 
 
 class ExplorerNote(BaseModel):
+    """A row in the tree. `label` is the note's opening words (60 chars);
+    `snippet` is the longer 160-char preview under it."""
     id: int
-    title: str
+    label: str
     path: str | None = None
     snippet: str = ""
     created_at: str | None = None

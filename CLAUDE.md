@@ -699,7 +699,7 @@ over the `/api/chat/v2` seam). One card template (`buildPost`) is shared by the
 feed and the bottom-sheet preview (opened from the explorer/search/graph):
 image carousel on top, then **the note's own text**, then the date row (sharing
 its line with the `⋮`), path, tags, and a de-duplicated row of linked-note
-chips (depth-1 neighbours; tapping one navigates without recursion). The text
+chips (each labelled with that neighbour's opening words) (depth-1 neighbours; tapping one navigates without recursion). The text
 leads because it is what the user wrote — the date, path and tags are the
 machine's description of it, so they follow rather than precede it. The dashed
 divider moved with that: it sits above `.post-head`, where the user's words end
@@ -722,13 +722,37 @@ The linked-note row carries **no heading**: a row of 🔗-prefixed chips says
 what it is, and "No linked notes yet" was a line of text reporting the absence
 of something the user had not asked about. Nothing renders when there are none.
 
-**The card shows no title.** `title` is an
-LLM-written one-line summary and the card renders the note's own full text right
-below it, so the heading said the same thing twice and the weaker version came
-first. The field is still read where it is the only thing available — the
-context menu's `name` (so the delete sheet quotes the note back) and the map's
-mini cards, which have no body to fall back on. `tests/test_notecard_title.py`
-pins both the absence and those two survivors. Path/localised-root names are written by the LLM
+**The card shows no title**, and neither does anywhere else in the web app
+bar the map. `notes.title` is an LLM-written one-line summary: enrichment still
+writes it and the bot still shows it, but a *list* of titles is a list of the
+model's words where the user is looking for their own, so every browsing
+surface labels a note with the first 60 characters of its own `text`. Four
+sections do that in a `_note_label(text)` of their own — `feed`, `explorer`,
+`notesheet`, `search` — each with the same `LABEL_CHARS = 60`, so a link chip,
+an explorer row, a search hit and the sheet's linked notes all read alike,
+whatever each then clips to in CSS. The payload field is called **`label`**,
+not `title`, because the value is a cut of the text and a field named `title`
+would be a lie the next reader believes; the `title` column is no longer
+*selected* in those sections' SQL either, since data flowing through a payload
+unread reads as a live field. "untitled" survives as exactly one case: a note
+with no text at all (one that is only photos).
+
+`mapview` is the **deliberate exception** — its cards are a few dozen pixels
+wide, where a 60-character opening is unreadable and a summary is the only
+thing that fits — so it keeps `_display_title` and its `title` key.
+`NoteMiniCard` is shared between the chat (fed by `notesheet`, so `label`) and
+the map (`title`), and reads `note.label || note.title` for exactly that
+reason. One more title remains on screen: the **chat's link picker**, whose
+candidates come from the agent farm rather than a read section.
+`tests/test_note_labels.py` runs each section's label, pins the field name and
+the dropped column, asserts the exemption stays one section wide, and counts
+that remaining `c.title` so it cannot quietly become two.
+
+Two consequences worth stating. The explorer's tree now **sorts by the label**,
+so rows read alphabetically by how each note opens. And `search` still *matches*
+on `title` while never showing it — an enriched title often holds a word the
+note itself does not, and dropping it from the predicate would make those notes
+unfindable — so a hit can match text its row does not display. Path/localised-root names are written by the LLM
 into the note path and stored localised (not translated at display time). The `⋮`
 menu on a card/folder opens a context menu to change its path (**Path**), and — **on notes
 only** — to delete.

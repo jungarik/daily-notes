@@ -157,7 +157,7 @@ export default function Chat({ hidden }) {
       api.fetchNote(id)
         .then((n) => (n ? {
           note_id: id,
-          title: n.title,
+          label: n.label,
           path: n.path,
           date: n.created_at,
           links: linkedItems(n).length,

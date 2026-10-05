@@ -18,8 +18,15 @@ characters is clamped with an inline "… more" / "less" (`lib/format.clampText`
 the linked-note row has no heading and renders nothing when empty. The bottom
 sheet's grip is sticky and spans the sheet's padding, so it stays visible while
 a tall card scrolls. It renders **no title** — the date row, path,
-tags, text and linked notes only. `detail.title` is still used for the context
-menu's label and by the map's mini cards.
+tags, text and linked notes only.
+
+**Nothing in the app shows `notes.title` except the map.** `feed`, `explorer`,
+`notesheet` and `search` label a note with the first 60 characters of its own
+text and send it as `label` (not `title`); the client reads `label` everywhere
+and has no `|| "untitled"` fallbacks left, since the server never sends an
+empty one. `mapview` keeps `title` because its cards are too small for an
+opening sentence, and `NoteMiniCard` accepts either key because it serves both.
+The explorer's rows now sort by that label.
 
 The note context menu offers **Edit** above **Path** (notes only); its items
 use the app's inline-SVG glyphs, not emoji. Edit opens the Add Note overlay

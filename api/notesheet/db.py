@@ -9,7 +9,7 @@ def get_note_for_user(user_id: int, note_id: int) -> dict | None:
     with cursor() as cur:
         cur.execute(
             """
-            SELECT id, text, title, path, tags, note_type, created_at
+            SELECT id, text, path, tags, note_type, created_at
             FROM notes WHERE id = %s AND user_id = %s;
             """,
             (note_id, user_id),
@@ -18,23 +18,26 @@ def get_note_for_user(user_id: int, note_id: int) -> dict | None:
         if not row:
             return None
         return {
-            "id": row[0], "text": row[1], "title": row[2], "path": row[3],
-            "tags": row[4] or [], "type": row[5], "created_at": row[6],
+            "id": row[0], "text": row[1], "path": row[2],
+            "tags": row[3] or [], "type": row[4], "created_at": row[5],
         }
 
 
 def neighbours(user_id: int, note_id: int, limit: int = 100):
-    """Direct neighbours (depth 1 only), owner-scoped: [(id, title, text,
-    direction)] where direction is 'out' (a link) or 'in' (a backlink). A single
-    non-recursive query, so link cycles are harmless."""
+    """Direct neighbours (depth 1 only), owner-scoped: [(id, text, direction)]
+    where direction is 'out' (a link) or 'in' (a backlink). A single
+    non-recursive query, so link cycles are harmless.
+
+    No `title`: a neighbour's chip is labelled with the start of its own text.
+    """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT n.id, n.title, n.text, 'out' AS direction
+            SELECT n.id, n.text, 'out' AS direction
             FROM note_links l JOIN notes n ON n.id = l.to_note_id
             WHERE l.from_note_id = %s AND n.user_id = %s
             UNION
-            SELECT n.id, n.title, n.text, 'in' AS direction
+            SELECT n.id, n.text, 'in' AS direction
             FROM note_links l JOIN notes n ON n.id = l.from_note_id
             WHERE l.to_note_id = %s AND n.user_id = %s
             ORDER BY direction

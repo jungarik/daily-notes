@@ -4,8 +4,9 @@ from pydantic import BaseModel
 
 
 class SheetLink(BaseModel):
+    """A neighbour's chip. `label` is the start of that note's own text."""
     id: int
-    title: str
+    label: str
 
 
 class SheetAttachment(BaseModel):
@@ -16,8 +17,10 @@ class SheetAttachment(BaseModel):
 
 
 class NoteDetail(BaseModel):
+    """The preview sheet's note. `label` is its opening words, not its
+    enriched `title`."""
     id: int
-    title: str
+    label: str
     path: str | None = None
     text: str = ""
     tags: list[str] = []

@@ -84,7 +84,10 @@ export default function NoteCard({ detail }) {
           onClick={(e) => {
             e.stopPropagation();
             openCtx(
-              { type: "note", id: detail.id, path: detail.path, name: detail.title || "untitled" },
+              // The sheet quotes this back ("Delete “…”?"), so it gets the
+              // same label the rest of the app shows — the note's own opening
+              // words rather than an enriched title nothing else displays.
+              { type: "note", id: detail.id, path: detail.path, name: detail.label },
               e.currentTarget.getBoundingClientRect()
             );
           }}
@@ -101,7 +104,7 @@ export default function NoteCard({ detail }) {
           <div className="links-row">
             {links.map((it) => (
               <button key={it.id} className="link-chip" onClick={() => openNote(it.id)}>
-                {"🔗 " + (it.title || "untitled")}
+                {"🔗 " + it.label}
               </button>
             ))}
           </div>

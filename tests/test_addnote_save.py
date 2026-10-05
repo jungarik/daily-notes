@@ -424,13 +424,23 @@ class WhatASaveMustNotTouchTests(unittest.TestCase):
         self.assertNotIn("title", statement)
 
     def test_every_section_can_display_an_untitled_note(self):
-        """The claim the decision above rests on, checked rather than assumed:
-        each read vertical maps an absent title to a text snippet."""
-        for section in ("feed", "explorer", "notesheet", "mapview", "search"):
+        """The claim the decision above rests on, checked rather than assumed.
+
+        Four of the five label a note with its own opening words and never
+        read `title` at all, so "untitled" is only ever the label of a note
+        with no text. `mapview` is the exception — it still shows the enriched
+        title, which is why it keeps `_display_title`.
+        """
+        for section in ("feed", "explorer", "notesheet", "search"):
             with self.subTest(section=section):
                 source = (ROOT / "api" / section / "helper.py").read_text(encoding="utf-8")
 
-                self.assertIn("_display_title", source)
+                self.assertIn("_note_label", source)
+                self.assertNotIn("_display_title", source)
+
+        mapview = (ROOT / "api" / "mapview" / "helper.py").read_text(encoding="utf-8")
+
+        self.assertIn("_display_title", mapview)
 
 
 class TenancyTests(unittest.TestCase):

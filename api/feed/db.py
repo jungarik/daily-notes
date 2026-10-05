@@ -9,13 +9,17 @@ from db import cursor
 
 
 def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
-    """All of a user's notes, newest first: [{id, title, path, text, tags, type,
-    created_at, links}]. `title` may be None (not enriched); the helper supplies a
-    fallback. `links` counts links the note participates in (either direction)."""
+    """All of a user's notes, newest first: [{id, path, text, tags, type,
+    created_at, links}].
+
+    `title` is deliberately not selected: the feed labels a note with the start
+    of its own text, so the column would be read by nothing. `links` counts the
+    links the note participates in, in either direction.
+    """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT n.id, n.title, n.path, n.text, n.tags, n.note_type, n.created_at,
+            SELECT n.id, n.path, n.text, n.tags, n.note_type, n.created_at,
                    (SELECT count(*) FROM note_links l
                     WHERE l.from_note_id = n.id OR l.to_note_id = n.id) AS links
             FROM notes n
@@ -30,8 +34,8 @@ def list_notes(user_id: int, limit: int = 2000) -> list[dict]:
             (user_id, limit),
         )
         return [
-            {"id": r[0], "title": r[1], "path": r[2], "text": r[3],
-             "tags": r[4] or [], "type": r[5], "created_at": r[6], "links": r[7]}
+            {"id": r[0], "path": r[1], "text": r[2],
+             "tags": r[3] or [], "type": r[4], "created_at": r[5], "links": r[6]}
             for r in cur.fetchall()
         ]
 
@@ -55,16 +59,16 @@ def all_links(user_id: int, limit: int = 1000) -> list[tuple[int, int]]:
 
 def notes_brief(user_id: int, ids) -> list[dict]:
     """Minimal fields for a set of the user's notes (for link chips):
-    [{id, title, text}]."""
+    [{id, text}]."""
     ids = list(ids)
     if not ids:
         return []
     with cursor() as cur:
         cur.execute(
-            "SELECT id, title, text FROM notes WHERE user_id = %s AND id = ANY(%s);",
+            "SELECT id, text FROM notes WHERE user_id = %s AND id = ANY(%s);",
             (user_id, ids),
         )
-        return [{"id": r[0], "title": r[1], "text": r[2]} for r in cur.fetchall()]
+        return [{"id": r[0], "text": r[1]} for r in cur.fetchall()]
 
 
 def attachments_for_notes(note_ids) -> dict[int, list[dict]]:

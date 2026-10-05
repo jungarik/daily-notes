@@ -28,13 +28,16 @@ const FileSvg = () => (
 
 function FileRow({ note }) {
   const { openNote, openCtx } = useApp();
-  const title = (note.title && note.title.trim()) || "untitled";
+  // The server labels every row with the note's opening words and never sends
+  // an empty one (it falls back to "untitled" for a note that is only photos),
+  // so there is nothing to default here.
+  const label = note.label;
   return (
     <div className="row file" data-id={note.id} onClick={() => openNote(note.id)}>
       <FileSvg />
-      <span className="name">{title}<span className="ext">.md</span></span>
+      <span className="name">{label}<span className="ext">.md</span></span>
       <span className="dots" role="button" aria-label="menu"
-        onClick={(e) => { e.stopPropagation(); openCtx({ type: "note", id: note.id, path: note.path, name: title }, e.currentTarget.getBoundingClientRect()); }}>⋮</span>
+        onClick={(e) => { e.stopPropagation(); openCtx({ type: "note", id: note.id, path: note.path, name: label }, e.currentTarget.getBoundingClientRect()); }}>⋮</span>
     </div>
   );
 }
@@ -45,7 +48,9 @@ function Folder({ name, node, path }) {
   const [sel, setSel] = useState(false);
   const isRoot = path.indexOf("/") < 0;
   const folderNames = Object.keys(node.folders).sort((a, b) => a.localeCompare(b));
-  const files = node.files.slice().sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  // Sorted by the label, which is now the note's first words rather than an
+  // enriched title — so the tree reads alphabetically by how each note opens.
+  const files = node.files.slice().sort((a, b) => (a.label || "").localeCompare(b.label || ""));
   return (
     <div className={"folder" + (open ? " open" : "")}>
       <div className={"row" + (sel ? " selected" : "")}

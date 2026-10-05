@@ -32,9 +32,10 @@ class NoteCardTitleTests(unittest.TestCase):
         self.assertNotIn('className="card-title"', CARD)
 
     def test_the_card_does_not_render_the_title_field(self):
-        """A heading rebuilt out of `detail.title` under another class name
-        would pass the assertion above while putting the title back."""
-        self.assertNotIn("detail.title ||", CARD.replace("name: detail.title ||", ""))
+        """A heading rebuilt out of the note's label under another class name
+        would pass the assertion above while putting a heading back."""
+        self.assertNotIn("detail.label}</div>", CARD)
+        self.assertNotIn('"card-title"', CARD)
 
     def test_the_filename_suffix_is_gone_with_it(self):
         """The heading read `<title>.md`. Nothing else in the card appends it,
@@ -61,11 +62,13 @@ class NoteCardTitleTests(unittest.TestCase):
 
         self.assertIn("flex: 1", rule)
 
-    def test_the_context_menu_still_names_the_note_by_its_title(self):
-        """The one place the title is still read. The delete sheet quotes this
-        name back at the user, and `"untitled"` for every note would make the
-        confirmation useless."""
-        self.assertIn('name: detail.title || "untitled"', CARD)
+    def test_the_context_menu_names_the_note_by_its_label(self):
+        """The delete sheet quotes this name back at the user, so it gets the
+        same label every other surface shows — the note's own opening words.
+        It used to read `detail.title`, which is the one thing the app no
+        longer displays anywhere outside the map."""
+        self.assertIn("name: detail.label", CARD)
+        self.assertNotIn("detail.title", CARD)
 
     def test_the_shared_title_class_still_exists_for_the_sheets(self):
         """`card-title` is not the card's alone — the change-path and delete

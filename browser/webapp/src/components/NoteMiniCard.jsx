@@ -15,12 +15,15 @@ export const PaperclipIcon = () => (
   <svg {...ico}><path d="M20.5 11.5 12 20a5 5 0 0 1-7-7l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.2-7.2" /></svg>
 );
 
-// A compact reference card for a note: title plus a meta line of folder, date,
+// A compact reference card for a note: its label plus a meta line of folder, date,
 // link count and attachment count. Shared by the chat tab (inline note
 // references, clickable) and the map tab (graph nodes, where the canvas owns
 // input and the card is inert). Omitting `onOpen` renders it non-interactive.
 export default function NoteMiniCard({ id, note, onOpen }) {
-  const title = (note && note.title) || ("Note #" + id);
+  // "Note #id" covers the note not having loaded yet — the chat renders a
+  // card for a `[[note:ID]]` marker before its fetch lands. The map passes its
+  // own `title`, which still comes from the mapview section.
+  const label = (note && (note.label || note.title)) || ("Note #" + id);
   const path = note && note.path;
   const date = note && note.date ? fmtDateShort(note.date) : "";
   const links = note && Number.isFinite(note.links) ? note.links : 0;
@@ -30,7 +33,7 @@ export default function NoteMiniCard({ id, note, onOpen }) {
 
   return (
     <Tag className="note-mini" {...(onOpen ? { onClick: () => onOpen(id) } : {})}>
-      <span className="note-mini-title">{title}</span>
+      <span className="note-mini-title">{label}</span>
       {hasMeta && (
         <span className="note-mini-meta">
           {path && (

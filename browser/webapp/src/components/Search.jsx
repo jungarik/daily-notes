@@ -25,7 +25,7 @@ export default function Search({ hidden }) {
         {q && !hits.length && <div className="empty">No matches.</div>}
         {hits.map((n) => (
           <div className="row file" key={n.id} onClick={() => openNote(n.id)}>
-            <span className="name">{(n.title && n.title.trim()) || "untitled"}<span className="ext">.md</span></span>
+            <span className="name">{n.label}<span className="ext">.md</span></span>
           </div>
         ))}
       </div>
