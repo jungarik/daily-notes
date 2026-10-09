@@ -42,14 +42,20 @@ and `reload()`s the vault. The tick is dimmed while saving and while the text
 is empty; a failure keeps the page open with an inline message. ✕ still
 discards. `tags` is sent empty until its editor exists.
 
-The page's **path** button is live: it opens `PathWheel.jsx`, a panel-less drum
-anchored to the button — raised pill rows, each with its folder's colour dot,
-that bow along a circle and fade with it
-(`lib/format.wheelItem`), fed by `GET /api/addnote/paths` (roster +
-`default_root`). Row 0 is the filter, which also accepts a new path; tapping a
-row picks it and closes the wheel. Long labels clip on the left (`direction:
-rtl` + `<bdi>`), keeping the leaf. A chosen folder turns the button's ring and
-glyph blue — not its fill. `link` and `tags` are still disabled.
+The page's folder is two buttons over one saved `path` string. **Path** (root
+folder) and **sub-folder** (the level below it, nested-folders icon) each open
+`PathWheel.jsx`, a panel-less drum anchored to its button — raised pill rows,
+each with its folder's colour dot, that bow along a circle and fade with it
+(`lib/format.wheelItem`). The root wheel is fed by `GET /api/addnote/roots`
+(root folders + `default_root`) and lists only those; the sub-folder wheel by
+`GET /api/addnote/children?root=` (distinct second-level names already in use,
+filtered in SQL) and is disabled until a root is chosen. Row 0 is the filter;
+on the sub-folder wheel only, it also accepts a new name (slashes are dropped
+as typed). Picking a different root clears the sub-folder; saving is
+unchanged (`path` = `""` | `Root` | `Root/child`). Long labels clip on the
+left (`direction: rtl` + `<bdi>`), keeping the leaf. A chosen folder turns the
+button's ring and glyph blue — not its fill. `tags` is still disabled; the
+`link` button is gone.
 
 ## Layout
 

@@ -64,12 +64,19 @@ export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(i
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
 export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
-// The path wheel's roster, plus where a note goes when nobody picks. Its own
-// endpoint rather than the ⋮ menu's: the editor's section owns its reads.
-export const listAddNotePaths = () =>
-  apiGet("/api/addnote/paths")
-    .then((r) => ({ paths: (r && r.paths) || [], default_root: (r && r.default_root) || "" }))
-    .catch(() => ({ paths: [], default_root: "" }));
+// The two path wheels' rosters, each its own request: the root folders (plus
+// where a note goes when nobody picks), and the sub-folders already in use
+// under one root. Their own endpoints rather than the ⋮ menu's: the editor's
+// section owns its reads. Both resolve to the same `{items, initial}` shape so
+// `PathWheel` does not care which wheel it is.
+export const listAddNoteRoots = () =>
+  apiGet("/api/addnote/roots")
+    .then((r) => ({ items: (r && r.roots) || [], initial: (r && r.default_root) || "" }))
+    .catch(() => ({ items: [], initial: "" }));
+export const listAddNoteChildren = (root) =>
+  apiGet("/api/addnote/children?root=" + encodeURIComponent(root))
+    .then((r) => ({ items: (r && r.children) || [], initial: "" }))
+    .catch(() => ({ items: [], initial: "" }));
 // Saving from the Add note page. Two verbs for two situations, chosen by the
 // caller on whether it has an id — not merged into one "upsert", because a
 // POST that silently updated (or a PUT that silently created) is the kind of

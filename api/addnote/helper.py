@@ -64,30 +64,6 @@ def default_root(locale: str) -> str:
     return i18n.t(locale, config.DEFAULT_ROOT_FOLDER_KEY)
 
 
-def known_paths(roots: list[str], note_paths: list[str]) -> list[str]:
-    """Every path the picker offers: the roots plus whatever is in use.
-
-    A strict pure mapper — the endpoint reads the language and the rows. Roots
-    are included even when empty, because an empty root is exactly where a note
-    gets filed. A path under an unrecognised root — one left behind by a
-    language switch — sorts last rather than being dropped, which would hide
-    the only route back to those notes.
-
-    Duplicated from the contextmenu section, deliberately: same reason as the
-    SQL above.
-    """
-    rank = {label: index for index, label in enumerate(roots)}
-    seen = list(dict.fromkeys(path for path in list(roots) + list(note_paths)
-                              if path and path.strip()))
-
-    def sort_key(path: str) -> tuple:
-        root = path.split("/")[0]
-
-        return (rank.get(root, len(rank)), path if root in rank else root, path)
-
-    return sorted(seen, key=sort_key)
-
-
 # 0–5 topic keywords, the range enrichment produces. A sixth is truncated
 # rather than refused: losing the tag the user typed last is friendlier than
 # failing a save over it.

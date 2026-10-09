@@ -7,10 +7,10 @@ linear ramp: the falloff must be *circular* (shallow near the centre, steep at
 the rim), it must reach exactly 0 at the rim and stay there beyond it, and it
 must be symmetric. Those run under node against the real module.
 
-The roster endpoint is a deliberate duplicate of the contextmenu section's, so
-what is pinned here is that it exists, behaves the same, and reports the
-default destination — plus the one thing duplication cannot protect against: a
-route order that makes `/paths` unreachable.
+The page has two wheels — root folder and the sub-folder under it — each with
+its own endpoint. What is pinned here is that both exist, are owner-scoped and
+filtered in SQL, the root roster reports the default destination, and the one
+thing nothing else protects against: a route order that makes them unreachable.
 """
 
 import json
@@ -214,7 +214,7 @@ class LabelClipTests(unittest.TestCase):
     def test_the_text_still_reads_left_to_right(self):
         """Inside an rtl box the `/` characters are neutral and migrate.
         `<bdi>` isolates the run so "Projects/api" stays itself."""
-        self.assertIn("<bdi>{path}</bdi>", WHEEL)
+        self.assertIn("<bdi>{item}</bdi>", WHEEL)
 
     def test_the_label_can_actually_shrink(self):
         """`min-width: 0` — a flex child's default `min-width: auto` is its
@@ -235,22 +235,39 @@ class LabelClipTests(unittest.TestCase):
 
 
 class RosterEndpointTests(unittest.TestCase):
-    def test_paths_is_declared_before_the_note_route(self):
+    def test_the_rosters_are_declared_before_the_note_route(self):
         """FastAPI matches in declaration order. With `/{note_id}` first,
-        `GET /api/addnote/paths` is answered 422 by the note handler — a
+        `GET /api/addnote/roots` is answered 422 by the note handler — a
         broken feature with a correct endpoint behind it, which is exactly how
         `DELETE /api/contextmenu/notes/{id}` once shipped dead."""
-        self.assertLess(ENDPOINTS.index('@router.get("/paths"'),
-                        ENDPOINTS.index('@router.get("/{note_id}"'))
+        note_route = ENDPOINTS.index('@router.get("/{note_id}"')
 
-    def test_the_section_owns_its_roster_read(self):
+        self.assertLess(ENDPOINTS.index('@router.get("/roots"'), note_route)
+        self.assertLess(ENDPOINTS.index('@router.get("/children"'), note_route)
+
+    def test_the_old_all_paths_roster_is_gone(self):
+        """One request that shipped every path is what the two wheels
+        replaced."""
+        self.assertNotIn('@router.get("/paths"', ENDPOINTS)
+        self.assertNotIn("def list_paths", DB_SOURCE)
+
+    def test_the_section_owns_its_reads(self):
         """Duplicated from the contextmenu section rather than imported, so
         the editor's picker cannot break because the ⋮ menu's changed."""
-        self.assertIn("def list_paths(user_id: int) -> list[str]:", DB_SOURCE)
+        self.assertIn("def list_children(user_id: int, root: str) -> list[str]:", DB_SOURCE)
         self.assertNotIn("api.contextmenu", ENDPOINTS)
 
-    def test_the_roster_is_owner_scoped(self):
-        self.assertIn("WHERE user_id = %s AND path IS NOT NULL", DB_SOURCE)
+    def test_the_children_are_owner_scoped(self):
+        self.assertIn("WHERE user_id = %s AND split_part(path, '/', 1) = %s", DB_SOURCE)
+
+    def test_the_children_are_filtered_in_sql_not_in_python(self):
+        """Choosing a root should read that root's notes, not the vault. And
+        the root is matched as a whole segment: `LIKE 'Projects%'` would also
+        catch `Projects2/x`."""
+        self.assertIn("split_part(path, '/', 2)", DB_SOURCE)
+        statement = DB_SOURCE.split("def list_children", 1)[1].split('"""', 3)[3]
+
+        self.assertNotIn("LIKE", statement)
 
     def test_the_default_root_comes_from_config_not_from_position(self):
         """Reading the roster's first entry would work until the day the
@@ -261,10 +278,13 @@ class RosterEndpointTests(unittest.TestCase):
         self.assertIn("config.DEFAULT_ROOT_FOLDER_KEY", helper_source)
         self.assertIn("default_root=helper.default_root(locale)", ENDPOINTS)
 
-    def test_the_default_is_part_of_the_payload(self):
+    def test_the_default_is_part_of_the_root_payload(self):
         """The page shows where an unpicked note will go, rather than an empty
         control that files it somewhere anyway."""
-        self.assertIn("default_root", (SECTION / "schemas.py").read_text(encoding="utf-8"))
+        schemas = (SECTION / "schemas.py").read_text(encoding="utf-8")
+
+        self.assertIn("default_root", schemas)
+        self.assertIn("class ChildrenPayload", schemas)
 
 
 class ButtonStateTests(unittest.TestCase):
@@ -285,28 +305,57 @@ class ButtonStateTests(unittest.TestCase):
         enough — there is no second rule for the svg."""
         self.assertIn('stroke="currentColor"', PAGE)
 
-    def test_the_button_is_lit_only_by_an_actual_choice(self):
+    def test_a_button_is_lit_only_by_an_actual_choice(self):
         """`path` is "" until the user picks or the note arrives with one. The
         default destination does not light it: nobody chose."""
-        self.assertIn('className={"fab" + (path ? " set" : "")}', PAGE)
+        self.assertIn('className={"fab" + (chosen ? " set" : "")}', PAGE)
         self.assertIn('const [path, setPath] = useState("");', PAGE)
 
-    def test_the_path_button_is_no_longer_disabled(self):
-        """The other two still are."""
-        anchor = PAGE.index('<div className="path-anchor"')
-        button = PAGE[anchor:PAGE.index("</button>", anchor)]
+    def test_the_two_buttons_are_views_of_one_saved_path(self):
+        """The root is the first segment, the sub-folder the second; the save
+        still sends the single `path` string, so the backend is unchanged."""
+        self.assertIn('const [root, child = ""] = path.split("/");', PAGE)
+        self.assertIn("const body = { text: text.trim(), path, tags: [] };", PAGE)
 
-        self.assertNotIn("disabled", button)
+    def test_the_sub_folder_needs_a_root(self):
+        self.assertIn("disabled={!isRoot && !root}", PAGE)
 
-    def test_the_other_metadata_buttons_are_still_disabled(self):
-        branch = PAGE[PAGE.index('meta.field === "path" ?'):]
+    def test_changing_the_root_clears_the_sub_folder(self):
+        """A stale "Projects/api" must not survive a move to Areas — and
+        re-picking the same root must not wipe the sub-folder."""
+        self.assertIn("setPath((current) => (picked === root ? current : picked));", PAGE)
 
-        self.assertIn("disabled", branch)
+    def test_picking_a_sub_folder_appends_it_to_the_root(self):
+        self.assertIn('setPath(root + "/" + picked)', PAGE)
+
+    def test_only_the_sub_folder_wheel_accepts_a_new_name(self):
+        """The server rejects an unknown root, so typing one would only end in
+        a 422."""
+        sub = PAGE[PAGE.index("load={() => listAddNoteChildren(root)}"):]
+
+        self.assertIn("allowNew", sub.split("/>", 1)[0])
+        self.assertNotIn("allowNew", PAGE.split("load={() => listAddNoteChildren(root)}")[0])
+
+    def test_a_typed_slash_is_dropped(self):
+        """A name with a slash would be a second level hiding in the first."""
+        self.assertIn(r'.replace(/[\\/]/g, "")', WHEEL)
+
+    def test_only_one_wheel_is_open_at_a_time(self):
+        self.assertIn('const [openWheel, setOpenWheel] = useState("");', PAGE)
+        self.assertNotIn("pathOpen", PAGE)
+
+    def test_the_tags_button_is_still_disabled(self):
+        branch = PAGE[PAGE.index('meta.field === "tags"'):]
+
+        self.assertIn("disabled", branch.split("return (", 2)[1])
+
+    def test_the_link_button_is_gone(self):
+        self.assertNotIn('"Link to another note"', PAGE)
 
     def test_the_label_says_which_folder(self):
         """A circle that has changed colour does not say what it holds; the
         accessible name and the tooltip do."""
-        self.assertIn('aria-label={path ? "Folder: " + path : meta.label}', PAGE)
+        self.assertIn('aria-label={chosen ? meta.label + ": " + chosen : meta.label}', PAGE)
 
 
 class WheelStructureTests(unittest.TestCase):
@@ -374,7 +423,7 @@ class WheelStructureTests(unittest.TestCase):
         """`lib/format.pathColor` is the map's language for which folder a
         thing is in; reusing it here means no new palette, and a column of
         near-identical names gains something to recognise."""
-        self.assertIn("pathColor(path)", WHEEL)
+        self.assertIn("pathColor(colorPrefix + item)", WHEEL)
         self.assertIn("  .path-wheel-dot {", CSS)
 
     def test_the_dot_cannot_be_squeezed_away(self):
@@ -475,6 +524,7 @@ class WheelStructureTests(unittest.TestCase):
     def test_a_typed_path_is_an_ordinary_option_row(self):
         """Selecting it is how you use it, so there is no separate "create"
         control to explain."""
+        self.assertIn("const isNew = allowNew && typed !== \"\" && !items.includes(typed);", WHEEL)
         self.assertIn("return isNew ? [typed, ...matching] : matching;", WHEEL)
         self.assertIn('e.key === "Enter" && typed', WHEEL)
 
@@ -490,7 +540,7 @@ class WheelStructureTests(unittest.TestCase):
         self.assertIn("setTimeout(() => document.addEventListener", WHEEL)
 
     def test_picking_closes_the_wheel(self):
-        self.assertIn("onPick={(picked) => { setPath(picked); setPathOpen(false); }}", PAGE)
+        self.assertIn('setOpenWheel("");', PAGE)
 
     def test_the_choice_is_cleared_with_the_page(self):
         """Nothing saves it yet, so it must not survive into the next note."""

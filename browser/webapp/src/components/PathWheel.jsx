@@ -6,9 +6,13 @@ import {
   wheelItem,
   wheelOffset,
 } from "../lib/format.js";
-import { listAddNotePaths } from "../lib/api.js";
 
-// The path wheel: the Add-note page's folder picker, anchored to its button.
+// The path wheel: the Add-note page's folder pickers, anchored to their buttons.
+// There are two — the root folder and the sub-folder under it — and this one
+// component serves both. The caller supplies `load` (the fetch, resolving to
+// `{items, initial}`) and `allowNew` (only the sub-folder wheel accepts a name
+// that isn't listed: the server rejects an unknown root, so offering to type
+// one would only lead to a 422).
 //
 // There is no panel. The options scroll in a transparent column beside the
 // button — a container would have been a second floating object competing with
@@ -24,8 +28,16 @@ import { listAddNotePaths } from "../lib/api.js";
 // The filter is the first row, not a header above the list: the same pill as
 // every option, so "type something new" is an option rather than a mode, and
 // it fades with the rest.
-export default function PathWheel({ value, onPick, onClose }) {
-  const [paths, setPaths] = useState([]);
+export default function PathWheel({
+  value,
+  load,
+  allowNew = false,
+  colorPrefix = "",
+  placeholder,
+  onPick,
+  onClose,
+}) {
+  const [items, setItems] = useState([]);
   // Where an unpicked note goes, as the API reports it. Named for the
   // destination rather than for a "root": the client once invented a folder
   // label for notes that had no path, that feature is retired, and
@@ -37,12 +49,15 @@ export default function PathWheel({ value, onPick, onClose }) {
   const trackRef = useRef(null);
   const panelRef = useRef(null);
 
+  // The wheel mounts each time it opens, so `load` runs once per open — it is
+  // deliberately not a dependency: the caller's inline closure would refetch
+  // on every render.
   useEffect(() => {
     let live = true;
-    listAddNotePaths().then((payload) => {
+    load().then((payload) => {
       if (!live) return;
-      setPaths(payload.paths || []);
-      setDefaultPath(payload.default_root || "");
+      setItems(payload.items || []);
+      setDefaultPath(payload.initial || "");
     });
 
     return () => { live = false; };
@@ -61,20 +76,20 @@ export default function PathWheel({ value, onPick, onClose }) {
 
   const typed = query.trim();
 
-  // Row 0 is always the filter. A typed path that matches nothing follows it
-  // as an ordinary option row — selecting it is how you use it, so there is no
-  // separate "create" control to explain.
+  // Row 0 is always the filter. On a wheel that `allowNew`, a typed name that
+  // matches nothing follows it as an ordinary option row — selecting it is how
+  // you use it, so there is no separate "create" control to explain.
   const options = useMemo(() => {
     const needle = typed.toLowerCase();
     const matching = needle
-      ? paths.filter((path) => path.toLowerCase().includes(needle))
-      : paths;
-    const isNew = typed !== "" && !paths.includes(typed);
+      ? items.filter((item) => item.toLowerCase().includes(needle))
+      : items;
+    const isNew = allowNew && typed !== "" && !items.includes(typed);
 
     return isNew ? [typed, ...matching] : matching;
-  }, [paths, typed]);
+  }, [items, typed, allowNew]);
 
-  // Open centred on the note's own path — or on the default destination when
+  // Open centred on the note's own folder — or on the default destination when
   // it has none, so the wheel starts where the note would actually go. The
   // filter's row offsets every option by one.
   useEffect(() => {
@@ -123,21 +138,25 @@ export default function PathWheel({ value, onPick, onClose }) {
           <input
             type="text"
             value={query}
-            placeholder="Filter or new path…"
+            placeholder={placeholder}
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && typed) onPick(typed); }}
+            // A folder name has no slash: it would be a second level hiding in
+            // the first, so it is dropped as it is typed.
+            onChange={(e) => setQuery(e.target.value.replace(/[\\/]/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && typed && (allowNew || items.includes(typed))) onPick(typed);
+            }}
           />
         </div>
 
-        {options.map((path, index) => (
+        {options.map((item, index) => (
           <button
-            key={path}
-            className={"path-wheel-opt" + (path === value ? " on" : "")}
+            key={item}
+            className={"path-wheel-opt" + (item === value ? " on" : "")}
             style={row(index + 1)}
-            onClick={() => onPick(path)}
+            onClick={() => onPick(item)}
           >
             {/* `direction: rtl` on the label puts the overflow — and the
                 ellipsis — on the *left*, so a long path keeps its leaf (the
@@ -150,8 +169,8 @@ export default function PathWheel({ value, onPick, onClose }) {
                 is the app's existing word for "which folder", and it gives a
                 column of otherwise identical rows something to recognise at a
                 glance — without inventing a palette. */}
-            <i className="path-wheel-dot" style={{ background: pathColor(path) }} />
-            <span className="path-wheel-label"><bdi>{path}</bdi></span>
+            <i className="path-wheel-dot" style={{ background: pathColor(colorPrefix + item) }} />
+            <span className="path-wheel-label"><bdi>{item}</bdi></span>
           </button>
         ))}
 
