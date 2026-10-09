@@ -6,7 +6,7 @@
 # And on the API service: add this service's public origin to
 # WEBAPP_ALLOWED_ORIGINS (CORS).
 
-FROM node:20-slim AS build
+FROM public.ecr.aws/docker/library/node:20-slim AS build
 WORKDIR /webapp
 COPY browser/webapp/package*.json ./
 RUN npm install --no-audit --no-fund
@@ -15,7 +15,7 @@ ARG VITE_API_BASE=""
 ENV VITE_BASE="/" VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-FROM caddy:2-alpine
+FROM public.ecr.aws/docker/library/caddy:2-alpine
 COPY --from=build /webapp/dist /srv
 COPY browser/webapp/Caddyfile /etc/caddy/Caddyfile
 # The caddy image's default CMD runs this Caddyfile; Railway injects $PORT.
