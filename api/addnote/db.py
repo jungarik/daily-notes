@@ -92,22 +92,26 @@ def get_language(user_id: int) -> str | None:
         return row[0] if row else None
 
 
-def list_paths(user_id: int) -> list[str]:
-    """Every distinct path the user has filed a note under, alphabetically.
+def list_children(user_id: int, root: str) -> list[str]:
+    """The distinct second-level folder names under one root, alphabetically.
 
-    The same read the contextmenu section makes, duplicated rather than
-    imported: a section owns its SQL, so the editor's picker cannot break
-    because the ⋮ menu's changed. Ordering into root groups is the caller's
-    job — this returns a stable list, not a presentation.
+    Filtered in SQL rather than fetching every path and splitting in Python, so
+    the read scales with the one root's notes, not the whole vault. `split_part`
+    compares the root as a whole segment — a `LIKE 'Projects%'` would also catch
+    `Projects2/x`, and would need its wildcards escaped. A note filed directly
+    on the root has no second segment (`''`) and contributes nothing.
+
+    The `user_id` predicate is the tenancy guard.
     """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT path FROM notes
-            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
-            ORDER BY path;
+            SELECT DISTINCT split_part(path, '/', 2) AS child FROM notes
+            WHERE user_id = %s AND split_part(path, '/', 1) = %s
+              AND split_part(path, '/', 2) <> ''
+            ORDER BY child;
             """,
-            (user_id,),
+            (user_id, root),
         )
         return [row[0] for row in cur.fetchall()]
 

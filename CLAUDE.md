@@ -328,7 +328,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
   `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
   `POST /api/contextmenu/notes/{id}/path`, `GET /api/addnote/{id}`,
-  `GET /api/addnote/paths`, `POST /api/addnote`, `PUT /api/addnote/{id}`,
+  `GET /api/addnote/roots`, `GET /api/addnote/children?root=`, `POST /api/addnote`, `PUT /api/addnote/{id}`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
@@ -654,8 +654,7 @@ column grows. They are **46px**, 15% off the dock's 54, scoped as
 every circle in the app; the glyph and gap scale with it (20→17, 12→10). At the
 top, set apart by a wider gap rather than a different shape, is an inert **AI**
 button — it acts *on* the note where the rest describe it. Below it, **path /
-link / tags**, also `disabled`, because a path picker would set a field on a
-note that is never saved. They are plain circles rather than a capsule: every
+sub-folder / tags** (the first two live wheels, tags still `disabled`). They are plain circles rather than a capsule: every
 control on this edge is the same `.fab` as the ✕ and ✓. The
 **reminder** button stays in the bottom capture pill despite being metadata
 too — moving it would churn a bar that is already settled. In the **top-right
@@ -817,19 +816,39 @@ suggestions, not the ability to move a note — `listPaths` falls back to an
 empty list. `tests/test_path_picker.py` pins the ordering, the empty-root rule,
 the unknown-root tail and the subtree exclusion.
 
-**The path wheel.** The Add-note page's folder control is the first of its
-three metadata buttons to go live. `GET /api/addnote/paths` serves its roster —
-roots plus paths in use, ordered by root — **duplicated from
-`api/contextmenu`** rather than imported, so the editor's picker cannot break
-because the ⋮ menu's did; same trade as the duplicated `db.py`. It is
-**declared before `/{note_id}`**, and that is load-bearing: FastAPI matches in
-declaration order, so the other way round `GET /api/addnote/paths` is answered
-422 by the note handler — a broken feature with a correct endpoint behind it,
-exactly how `DELETE /api/contextmenu/notes/{id}` once shipped dead. The payload
-also carries `default_root`: `config.DEFAULT_ROOT_FOLDER_KEY` localised, read
-from the *key* rather than from the roster's first entry, because the order and
-the default are two decisions and the day they disagree, position 0 would file
-notes somewhere else in silence.
+**The path wheels.** The Add-note page's folder control is two buttons — root
+folder and, one level below it, sub-folder — over the one `path` string the
+save still sends (`""` | `Root` | `Root/child`; the backend's create/update is
+untouched). Each has its own read, split so choosing a root costs a read of that
+root's notes rather than the vault: `GET /api/addnote/roots` serves the fixed
+root folders in canonical order (empty ones included — an empty root is where a
+note gets filed) plus `default_root`, with no per-note query at all, and `GET
+/api/addnote/children?root=` serves the distinct second-level names already in
+use under it, filtered in SQL by `split_part` (a whole-segment match — `LIKE
+'Projects%'` would also catch `Projects2/x`), owner-scoped. `root` is not
+validated against today's roster, so a root left behind by a language switch
+still shows its children. The reads are **duplicated from `api/contextmenu`'s
+idea** rather than imported (same trade as the duplicated `db.py`), and both
+routes are **declared before `/{note_id}`**, which is load-bearing: FastAPI
+matches in declaration order, so the other way round `GET /api/addnote/roots`
+is answered 422 by the note handler — a broken feature with a correct endpoint
+behind it, exactly how `DELETE /api/contextmenu/notes/{id}` once shipped dead.
+`default_root` is `config.DEFAULT_ROOT_FOLDER_KEY` localised, read from the
+*key* rather than from the roster's first entry, because the order and the
+default are two decisions and the day they disagree, position 0 would file notes
+somewhere else in silence.
+
+On the client the buttons are views of `path`'s first two segments; **the
+sub-folder is `disabled` until a root exists**, picking a *different* root
+replaces the whole path (a stale `Projects/api` never survives a move to
+`Areas`) while re-picking the same one keeps it, and a sub-folder pick sets
+`root/child` — second level only, so picking one on a deeper loaded note
+truncates it. Until a wheel changes it a deeper loaded path is kept as is. Only
+the sub-folder wheel `allowNew`s a typed name (the server rejects an unknown
+root with 422, so offering one would end in an error), and slashes are dropped
+as typed. One `PathWheel` serves both, given `load` and `allowNew`. The old
+`link` button is gone; its icon slot became the sub-folder's nested-folders
+glyph.
 
 **A drum with no panel.** The options scroll in a transparent column beside
 the button. There is deliberately **no container** — a panel would be a second
@@ -920,8 +939,8 @@ glyph follows because the icons stroke `currentColor`. The button lights only
 for an **actual choice** — the note's own path, or one the user picked. The
 default destination does not light it: nobody chose, `path` stays `""`, and the
 save (when it exists) applies `default_root`. Nothing persists yet, so the
-choice is cleared with the page. `link` and `tags` stay `disabled`: they now
-have their data from the note read, which is not the same as having an editor
+choice is cleared with the page. `tags` stays `disabled`: it now
+has its data from the note read, which is not the same as having an editor
 for it. `tests/test_path_wheel.py` pins the geometry's properties — circular
 falloff, zero at the rim, symmetry, the scale floor — rather than its formula.
 

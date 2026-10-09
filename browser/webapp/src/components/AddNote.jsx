@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { visibleViewport } from "../lib/format.js";
-import { createNote, fetchEditableNote, saveNote } from "../lib/api.js";
+import {
+  createNote,
+  fetchEditableNote,
+  listAddNoteChildren,
+  listAddNoteRoots,
+  saveNote,
+} from "../lib/api.js";
 import MarkdownHelp from "./MarkdownHelp.jsx";
 import PathWheel from "./PathWheel.jsx";
 
@@ -47,13 +53,12 @@ const CAPTURE_KINDS = [
   },
 ];
 
-// What the note *is*, as opposed to what it says: where it is filed, what it
-// connects to, what it is about. They sit below the view toggle as plain
+// What the note *is*, as opposed to what it says: where it is filed (the root
+// folder, then the folder one level below it), what it is about. They sit below the view toggle as plain
 // circles rather than in a capsule — every control on this edge is one `.fab`,
 // the same circle as the ✕ and ✓.
 //
-// Inert, like the capture buttons: there is no note-create endpoint, so a path
-// picker would set a field on a note that is never saved. The reminder button
+// Two of them are live wheels; `tags` is still inert. The reminder button
 // stays in the bottom pill — it is metadata too, but moving it would churn a
 // bar that is already settled.
 const METADATA_FIELDS = [
@@ -67,12 +72,14 @@ const METADATA_FIELDS = [
     ),
   },
   {
-    field: "link",
-    label: "Link to another note",
+    field: "subpath",
+    label: "Set the sub-folder",
+    // The folder glyph again with a smaller one nested in front of it: one
+    // level down from the button above.
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.5 1.5" />
-        <path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.5-1.5" />
+        <path d="M3 15V6.5A1.5 1.5 0 0 1 4.5 5h3.7L10 7h5.5A1.5 1.5 0 0 1 17 8.5V10" />
+        <path d="M7 13.5A1.5 1.5 0 0 1 8.5 12h2.8l1.5 1.8h6.7A1.5 1.5 0 0 1 21 15.3V18a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 7 18v-4.5Z" />
       </svg>
     ),
   },
@@ -126,7 +133,9 @@ export default function AddNote({ note_id = null }) {
   // — it will be filed under the API's `default_root` on save, so the button
   // stays unlit rather than claiming a choice nobody made.
   const [path, setPath] = useState("");
-  const [pathOpen, setPathOpen] = useState(false);
+  // Which wheel is open: "" | "path" (the root) | "subpath" (the level below).
+  // One value, because only one hangs off the column at a time.
+  const [openWheel, setOpenWheel] = useState("");
   // "" | "saving" | an error line. One value rather than a boolean plus a
   // string: the page is never saving *and* reporting a failure, and two flags
   // that cannot both be true are two chances to leave one of them stale.
@@ -148,7 +157,7 @@ export default function AddNote({ note_id = null }) {
     setText("");
     setNote(null);
     setPath("");
-    setPathOpen(false);
+    setOpenWheel("");
     setSaveState("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
@@ -203,6 +212,10 @@ export default function AddNote({ note_id = null }) {
     };
   }, [open]);
 
+  // `path` stays the single value that is saved — "" | "Root" | "Root/child" —
+  // and the two buttons are views of its first two segments. A deeper path
+  // loaded from an existing note is kept untouched until a wheel changes it.
+  const [root, child = ""] = path.split("/");
   const saving = saveState === "saving";
   // The API requires at least one character, so an empty save is a 422 the
   // user cannot act on. A dimmed tick says "not yet" where an error message
@@ -317,43 +330,71 @@ export default function AddNote({ note_id = null }) {
           </svg>
         </button>
 
-        {METADATA_FIELDS.map((meta) => (
-          meta.field === "path" ? (
-            // The one live metadata control. Its wheel is anchored here rather
-            // than at the page level so it is positioned by the button it
-            // belongs to — `right: 100%` on this wrapper is "just left of the
-            // circle", which stays true wherever the column ends up.
+        {METADATA_FIELDS.map((meta) => {
+          if (meta.field === "tags") {
+            return (
+              <button
+                key={meta.field}
+                className="fab"
+                aria-label={meta.label}
+                title={meta.label}
+                disabled
+              >
+                {meta.icon}
+              </button>
+            );
+          }
+
+          // The two live controls. Each wheel is anchored here rather than at
+          // the page level so it is positioned by the button it belongs to —
+          // `right: 100%` on this wrapper is "just left of the circle", which
+          // stays true wherever the column ends up.
+          const isRoot = meta.field === "path";
+          const chosen = isRoot ? root : child;
+
+          return (
             <div className="path-anchor" key={meta.field}>
               <button
-                className={"fab" + (path ? " set" : "")}
-                aria-label={path ? "Folder: " + path : meta.label}
-                title={path || meta.label}
-                aria-expanded={pathOpen}
-                onClick={() => setPathOpen((wheel) => !wheel)}
+                className={"fab" + (chosen ? " set" : "")}
+                aria-label={chosen ? meta.label + ": " + chosen : meta.label}
+                title={chosen || meta.label}
+                aria-expanded={openWheel === meta.field}
+                // The sub-folder is a level *of* a root: with none chosen
+                // there is nothing to look inside.
+                disabled={!isRoot && !root}
+                onClick={() => setOpenWheel((open) => (open === meta.field ? "" : meta.field))}
               >
                 {meta.icon}
               </button>
 
-              {pathOpen && (
+              {openWheel === meta.field && (isRoot ? (
                 <PathWheel
-                  value={path}
-                  onPick={(picked) => { setPath(picked); setPathOpen(false); }}
-                  onClose={() => setPathOpen(false)}
+                  value={root}
+                  load={listAddNoteRoots}
+                  placeholder="Filter folders…"
+                  // Re-picking the current root keeps its sub-folder; a
+                  // different one starts clean, so "Projects/api" never
+                  // survives a move to Areas.
+                  onPick={(picked) => {
+                    setPath((current) => (picked === root ? current : picked));
+                    setOpenWheel("");
+                  }}
+                  onClose={() => setOpenWheel("")}
                 />
-              )}
+              ) : (
+                <PathWheel
+                  value={child}
+                  load={() => listAddNoteChildren(root)}
+                  allowNew
+                  colorPrefix={root + "/"}
+                  placeholder="Filter or new sub-folder…"
+                  onPick={(picked) => { setPath(root + "/" + picked); setOpenWheel(""); }}
+                  onClose={() => setOpenWheel("")}
+                />
+              ))}
             </div>
-          ) : (
-            <button
-              key={meta.field}
-              className="fab"
-              aria-label={meta.label}
-              title={meta.label}
-              disabled
-            >
-              {meta.icon}
-            </button>
-          )
-        ))}
+          );
+        })}
       </div>
 
       {/* No keyboard arithmetic here any more: the overlay itself ends where

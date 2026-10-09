@@ -259,24 +259,21 @@ class SideBarTests(unittest.TestCase):
         self.assertIn("top: 50%", block)
         self.assertIn("translateY(-50%)", block)
 
-    def test_the_metadata_fields_are_path_link_and_tags(self):
-        self.assertEqual(["path", "link", "tags"],
+    def test_the_metadata_fields_are_path_subpath_and_tags(self):
+        self.assertEqual(["path", "subpath", "tags"],
                          re.findall(r'field: "(\w+)"', self.addnote))
 
-    def test_only_the_path_field_is_live(self):
-        """Path has a picker and somewhere to put the answer (the page's own
-        state); link and tags have neither, and a live-looking button that
-        swallows the tap reads as a bug where a dimmed one reads as not-yet.
-
-        The map therefore holds two button literals — the path branch and the
-        shared disabled one — and exactly one `disabled`."""
+    def test_only_tags_is_still_inert(self):
+        """The root and sub-folder have wheels and somewhere to put the answer
+        (the page's own `path`); tags has neither, and a live-looking button
+        that swallows the tap reads as a bug where a dimmed one reads as
+        not-yet. So the map has exactly one early-returned disabled button."""
         fields = self.addnote.split("const METADATA_FIELDS = [", 1)[1].split("\n];", 1)[0]
-        mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("\n        ))}", 1)[0]
+        mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("\n        })}", 1)[0]
 
         self.assertEqual(3, len(re.findall(r'label: "[^"]+"', fields)))
-        self.assertEqual(2, mapped.count("<button"))
-        self.assertEqual(1, mapped.count("disabled"))
-        self.assertIn('meta.field === "path" ?', mapped)
+        self.assertEqual(1, len(re.findall(r"\n\s+disabled\n", mapped)))
+        self.assertIn('meta.field === "tags"', mapped)
 
     def test_the_reminder_button_stayed_in_the_bottom_pill(self):
         """It is metadata too, but it was left where it was rather than churn

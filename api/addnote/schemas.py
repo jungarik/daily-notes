@@ -29,17 +29,24 @@ class EditableNote(BaseModel):
     linked_note_ids: list[int] = []
 
 
-class PathsPayload(BaseModel):
-    """The path wheel's roster, already ordered by root — the client renders it
-    as given rather than re-deriving an order it would need
-    `config.ROOT_FOLDERS` to know.
+class RootsPayload(BaseModel):
+    """The root wheel's roster: the vault's root folders in canonical order,
+    in the user's language — the client renders it as given rather than
+    re-deriving an order it would need `config.ROOT_FOLDERS` to know.
 
     `default_root` is where a note goes when the user picks nothing, so the
     page can show that destination instead of an empty control that saves
     somewhere anyway.
     """
-    paths: list[str] = []
+    roots: list[str] = []
     default_root: str = ""
+
+
+class ChildrenPayload(BaseModel):
+    """The sub-folder wheel's roster: the distinct second-level folder names
+    the user already files notes under inside one root. Names, not paths — the
+    client joins them onto the root it asked about."""
+    children: list[str] = []
 
 
 class SaveNoteRequest(BaseModel):

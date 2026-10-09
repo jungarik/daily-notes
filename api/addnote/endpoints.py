@@ -1,50 +1,65 @@
 """Addnote router — the Add note page's data and its saves.
 
-Four methods: the path roster the wheel offers, the note a tapped Edit opens,
-and the two writes — `POST` for a note written from scratch, `PUT` for one
+Five methods: the root folders and a root's sub-folders (one wheel each), the
+note a tapped Edit opens, and the two writes — `POST` for a note written from scratch, `PUT` for one
 being edited. Both writes rebuild the note's embedded chunks, because the text
 they store is what search and RAG are supposed to match on.
 """
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 import i18n
 from api.deps import current_user
 from api.addnote import db, helper
 from common import embedings
-from api.addnote.schemas import EditableNote, PathsPayload, SaveNoteRequest
+from api.addnote.schemas import (
+    ChildrenPayload,
+    EditableNote,
+    RootsPayload,
+    SaveNoteRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/addnote", tags=["addnote"])
 
 
-@router.get("/paths", response_model=PathsPayload)
-def list_paths(user_id: int = Depends(current_user)) -> PathsPayload:
-    """The paths the editor's path wheel offers, plus the default destination.
+@router.get("/roots", response_model=RootsPayload)
+def list_roots(user_id: int = Depends(current_user)) -> RootsPayload:
+    """The root folders the editor's root wheel offers, plus the default.
 
     **Declared before `/{note_id}`, and that is load-bearing.** FastAPI matches
-    routes in declaration order, so with this second, `GET /api/addnote/paths`
+    routes in declaration order, so with this second, `GET /api/addnote/roots`
     would try `{note_id}` first and answer 422 for a perfectly good URL —
-    a broken feature with a correct handler behind it.
+    a broken feature with a correct handler behind it. The same holds for
+    `/children` below.
 
-    Duplicated from `api/contextmenu` rather than imported: a section owns its
-    reads, so the editor's picker cannot break because the ⋮ menu's changed.
-    The endpoint is the impure boundary — it resolves the locale and reads the
-    rows; `helper.known_paths` only maps them.
-
-    `default_root` is where a note with no chosen path goes
-    (`config.DEFAULT_ROOT_FOLDER_KEY`, localised). The page shows it rather
-    than leaving an empty control that will quietly file the note somewhere.
+    The roots are the fixed vault roots, empty ones included (an empty root is
+    exactly where a note gets filed), so there is no per-note read here at all:
+    the endpoint only resolves the locale. `default_root` is where a note with
+    no chosen path goes (`config.DEFAULT_ROOT_FOLDER_KEY`, localised).
     """
     locale = i18n.resolve_locale(db.get_language(user_id))
 
-    return PathsPayload(
-        paths=helper.known_paths(helper.root_labels(locale), db.list_paths(user_id)),
+    return RootsPayload(
+        roots=helper.root_labels(locale),
         default_root=helper.default_root(locale),
     )
+
+
+@router.get("/children", response_model=ChildrenPayload)
+def list_children(root: str = Query(min_length=1, max_length=200),
+                  user_id: int = Depends(current_user)) -> ChildrenPayload:
+    """The second-level folders already in use under one root.
+
+    Owner-scoped and filtered in SQL, so choosing a root costs a read of that
+    root's notes rather than the whole vault. `root` is matched as given — a
+    root left behind by a language switch is still a root with children, and
+    validating it against today's roster would hide them.
+    """
+    return ChildrenPayload(children=db.list_children(user_id, root.strip()))
 
 
 @router.get("/{note_id}", response_model=EditableNote)
