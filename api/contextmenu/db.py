@@ -98,21 +98,27 @@ def get_language(user_id: int) -> str | None:
         return row[0] if row else None
 
 
-def list_paths(user_id: int) -> list[str]:
-    """Every distinct path the user has filed a note under, alphabetically.
+def list_subfolders(user_id: int, root: str) -> list[str]:
+    """The distinct second-level folder names under one root, alphabetically.
 
-    No limit and no popularity ordering, unlike the finder's namesake: this is
-    the roster the change-path picker offers, and a folder missing from it is a
-    folder the user cannot reach without retyping it. Ordering into root groups
-    is the caller's job — this returns a stable list, not a presentation.
+    Filtered in SQL rather than fetching every path and splitting in Python, so
+    the read scales with the one root's notes, not the vault. `split_part`
+    compares the root as a whole segment — a `LIKE 'Projects%'` would also catch
+    `Projects2/x`, and would need its wildcards escaped. A note filed directly
+    on the root has no second segment (`''`) and contributes nothing. The
+    `user_id` predicate is the tenancy guard.
+
+    Duplicated from the addnote section rather than imported: a section owns
+    its SQL, so the ⋮ menu's picker cannot break because the editor's changed.
     """
     with cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT path FROM notes
-            WHERE user_id = %s AND path IS NOT NULL AND path <> ''
-            ORDER BY path;
+            SELECT DISTINCT split_part(path, '/', 2) AS child FROM notes
+            WHERE user_id = %s AND split_part(path, '/', 1) = %s
+              AND split_part(path, '/', 2) <> ''
+            ORDER BY child;
             """,
-            (user_id,),
+            (user_id, root),
         )
         return [row[0] for row in cur.fetchall()]

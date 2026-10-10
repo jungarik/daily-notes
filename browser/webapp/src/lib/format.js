@@ -141,28 +141,38 @@ export function compareRoots(roots) {
   };
 }
 
-// Which of the offered paths this target may actually move to.
-//
-// A note may go anywhere. A folder may not go into itself or into its own
-// descendants: renaming `Projects/api` to `Projects/api` does nothing, and to
-// `Projects/api/v2` asks for a folder to become a child of itself. Pure, and
-// given the list rather than fetching it, so the filter is testable on plain
-// strings.
-export function selectablePaths(paths, target) {
-  if (!target || target.type !== "folder") return paths;
-  const own = target.path || "";
+// The two parts of a path the Path sheet edits: the root folder (everything
+// before the first `/`) and the sub-folder under it. Anything deeper is not
+// carried — the vault has two levels, so a deeper path is truncated by the next
+// save rather than kept half-editable.
+export function splitPath(path) {
+  const [root = "", child = ""] = (path || "").split("/");
 
-  return paths.filter((path) => path !== own && !path.startsWith(own + "/"));
+  return { root, child };
 }
 
-// Rows whose path contains the typed text, case-insensitively. An empty query
-// matches everything rather than nothing — the list's job when the sheet opens
-// is to show what exists.
-export function filterPaths(paths, query) {
-  const needle = (query || "").trim().toLowerCase();
-  if (!needle) return paths;
+// The path a root and a sub-folder make. An empty sub-folder is the root
+// itself — "Projects" is a destination in its own right.
+export function joinPath(root, child) {
+  return child ? root + "/" + child : root;
+}
 
-  return paths.filter((path) => path.toLowerCase().includes(needle));
+// `path` moved under a different root, the rest of it kept. This is a folder's
+// move between roots: `Projects/api` to `Areas` is `Areas/api`.
+export function swapRoot(path, root) {
+  const rest = (path || "").slice(splitPath(path).root.length);
+
+  return root + rest;
+}
+
+// Names containing the typed text, case-insensitively. An empty query matches
+// everything rather than nothing — the list's job when the field is focused is
+// to show what exists.
+export function filterNames(names, query) {
+  const needle = (query || "").trim().toLowerCase();
+  if (!needle) return names;
+
+  return names.filter((name) => name.toLowerCase().includes(needle));
 }
 
 // How much of a note's text the card shows before "… more".

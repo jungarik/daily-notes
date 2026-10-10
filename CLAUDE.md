@@ -326,7 +326,8 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   fully isolated — they import only shared *infra* (`db`, `api.deps` for auth,
   `api.media_token`, `file_store`). Each serves its own URL prefix
   `/api/<section>` (e.g. `GET /api/feed`, `GET /api/notesheet/{id}`,
-  `GET /api/mapview/graph`, `GET /api/contextmenu/paths`,
+  `GET /api/mapview/graph`, `GET /api/contextmenu/roots`,
+  `GET /api/contextmenu/children?root=`,
   `POST /api/contextmenu/notes/{id}/path`, `GET /api/addnote/{id}`,
   `GET /api/addnote/roots`, `GET /api/addnote/children?root=`, `POST /api/addnote`, `PUT /api/addnote/{id}`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
@@ -422,8 +423,8 @@ user to an internal `user_id` and return only that user's data:
 (`{notes, roots}` — the tree's notes plus the vault's root folders,
 localised and in `config.ROOT_FOLDERS` order, which is how the client
 orders a top level it only knows as localised path strings) +
-`GET /api/notesheet/{id}` (preview), `GET /api/contextmenu/paths` (the
-change-path picker's roster), `POST /api/contextmenu/notes/{id}/path` and
+`GET /api/notesheet/{id}` (preview), `GET /api/contextmenu/roots` +
+`GET /api/contextmenu/children?root=` (the change-path sheet's two rosters), `POST /api/contextmenu/notes/{id}/path` and
 `/api/contextmenu/folder/move` (rename a note's or a whole folder's path — root
 folders can't be moved), `DELETE /api/contextmenu/notes/{id}` (hard delete),
 `GET /api/mapview/graph` (connections map),
@@ -772,49 +773,51 @@ button: the same object is not drawn two ways.
 `tests/test_contextmenu_icons.py` pins the recipe, the shared folder path and
 the absence of emoji.
 
-**The path picker is a combobox, not a dropdown.** `GET
-/api/contextmenu/paths` returns every root folder — **including the empty
-ones**, since an empty root is exactly where a note gets moved and typing it by
-hand is what the picker exists to avoid — plus every path the user already
-files notes under, ordered by `config.ROOT_FOLDERS` and then alphabetically,
-with a root sorting above its own children. A path under an unrecognised root
-(one left behind by a language switch) sorts last rather than being dropped,
-which would hide the only route back to those notes — the same choice
-`lib/format.compareRoots` makes client-side. The endpoint resolves the locale
-and reads the rows; `helper.known_paths` is a strict pure mapper over both, per
-`api/README.md`. Root labels are **one language at a time**
-(`helper.root_labels`): `clean_root_path` still accepts a root typed in any
-supported language, but four translations of Inbox in a list is noise.
+**The change-path sheet is two stacked comboboxes: root over sub-folder.** The
+path is two levels deep, so it is edited as two fields rather than one string,
+and the roster is split to match — the same two reads the Add-note page's wheels
+make, duplicated here rather than imported so the ⋮ menu's picker cannot break
+because the editor's changed. `GET /api/contextmenu/roots` returns the fixed
+root folders in `config.ROOT_FOLDERS` order, **including the empty ones**
+(an empty root is exactly where a note gets moved), with no per-note read at
+all: the endpoint resolves the locale and `helper.root_labels` maps it, **one
+language at a time** (`clean_root_path` still accepts a root typed in any
+supported language, but four translations of Inbox in a list is noise). `GET
+/api/contextmenu/children?root=` returns the distinct second-level names under
+one root, owner-scoped and filtered in SQL by `split_part` (a whole-segment
+match — `LIKE 'Projects%'` would also catch `Projects2/x`), so choosing a root
+costs a read of that root's notes rather than the vault. `root` is not
+validated against today's roster: a root left behind by a language switch still
+shows its children. The old all-paths roster (`/paths`, `known_paths`,
+`selectablePaths`, `filterPaths`) is gone — the client helpers are
+`lib/format.splitPath` / `joinPath` / `swapRoot` / `filterNames`, pure and
+tested under node.
 
-The sheet behind the menu's **Path** item (the label is just "Path" — the
-sheet's own heading says whether it is a note's path or a folder's) has a
-single input that is both the filter and the answer. On open it is
-focused **and selected**, not just focused: a path is more often replaced than
-edited, so the first keystroke or Backspace clears the whole thing, while the
-old path stays readable until then — clearing the input on open would throw
-away the only reference to where the note currently lives. The selection waits
-out the sheet's 60ms slide-in, because focusing mid-transition lands the caret
-in a moving element on iOS. **The list stays hidden until the input is
-touched** (`touched`, reset on every open): on open the input holds the current
-path, so a list filtered by it would show that path and its children — the one
-place the note already is — and the sheet would open at its tallest for no
-information. Typing, clearing and picking a row all go through one `edit`
-helper, so no route can set the value while leaving the list hidden. A `✕`
-inside the field empties it in one tap (which opens the list: an empty query is
-every path) and is rendered only when there is something to clear, never hidden
-*under* the thumb that is reaching for it. Typing narrows the scrollable list
-(`lib/format.filterPaths`, case-insensitive); tapping a row *fills the input*
-rather than saving, because the common move is to pick a folder and then extend
-it (`Projects/api` → `Projects/api/v2`). Text matching
-no row is simply a new path — the server validates the root either way, so
-there is no "new folder" mode to switch into. In folder mode the target's own
-path and its descendants are filtered out (`lib/format.selectablePaths`): a
-folder cannot become a child of itself, and renaming it to itself is a tap that
-reports success and changes nothing. The exclusion tests for the slash, so a
-sibling like `Projects/apiv2` survives. A failed roster read costs the
-suggestions, not the ability to move a note — `listPaths` falls back to an
-empty list. `tests/test_path_picker.py` pins the ordering, the empty-root rule,
-the unknown-root tail and the subtree exclusion.
+The sheet behind the menu's **Path** item. The root field offers the roots and
+is **read-only** while there is a roster to pick from (the server rejects an
+unknown root, so typing one only ends in a 422); if that read fails it falls
+back to typing, and the server validates. The sub-folder field is **disabled
+until a root exists**, offers what already exists under the chosen root as you
+focus it, narrows as you type (`filterNames`), and accepts a name that matches
+nothing — a new sub-folder, with no mode to switch into. A typed slash is
+dropped (a third level hiding in the second). Each list opens on focus and a
+tapped row fills its field; `onMouseDown` is kept from moving focus, or the
+field's blur would close the list before the tap lands. A row repeating the
+field's current value is left out. Choosing a *different* root clears the
+sub-folder, so `Projects/api` never survives a move to `Areas`; re-picking the
+same one keeps it. An empty sub-folder saves the root itself. **Two levels
+only**: a note already filed deeper opens showing its first two segments and
+saving truncates the rest. A `✕` in the sub-folder field empties it and is
+rendered only when there is something to clear.
+
+A **folder** is a path prefix and the vault has no third level, so a folder only
+moves between roots: its sheet is the root field alone ("Move folder"), the rest
+of its path travels with it (`Projects/api` to `Areas` is `Areas/api`,
+`lib/format.swapRoot`), and picking its own root is refused rather than
+reporting a success that changed nothing. Renaming a folder is no longer
+offered. `tests/test_path_picker.py` pins the roster, the pure helpers under
+node and each of these decisions; the two endpoints were also executed against a
+stubbed `db` inside the API image.
 
 **The path wheels.** The Add-note page's folder control is two buttons — root
 folder and, one level below it, sub-folder — over the one `path` string the

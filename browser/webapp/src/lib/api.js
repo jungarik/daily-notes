@@ -94,12 +94,16 @@ export const saveNote = (id, body) =>
 // like an empty note.
 export const fetchEditableNote = (id) =>
   apiGet("/api/addnote/" + encodeURIComponent(id));
-// The change-path picker's roster: every root folder plus every path in use,
-// already ordered by root. Falls back to an empty list — the sheet's input
-// still accepts a typed path, so a failed read costs the suggestions, not the
-// ability to move a note.
-export const listPaths = () =>
-  apiGet("/api/contextmenu/paths").then((r) => (r && r.paths) || []).catch(() => []);
+// The change-path sheet's two selectors, each its own read: the root folders,
+// and the sub-folders already in use under one root. Both fall back to an empty
+// list — the root field then accepts a typed root and the sub-folder a typed
+// name, so a failed read costs the suggestions, not the ability to move a note.
+export const listRoots = () =>
+  apiGet("/api/contextmenu/roots").then((r) => (r && r.roots) || []).catch(() => []);
+export const listChildren = (root) =>
+  apiGet("/api/contextmenu/children?root=" + encodeURIComponent(root))
+    .then((r) => (r && r.children) || [])
+    .catch(() => []);
 export const setNotePath = (id, path) => apiPost("/api/contextmenu/notes/" + encodeURIComponent(id) + "/path", { path });
 export const moveFolder = (old_path, new_path) => apiPost("/api/contextmenu/folder/move", { old_path, new_path });
 // No `.catch` here, unlike the reads above: a delete that quietly resolved

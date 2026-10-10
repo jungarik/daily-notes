@@ -49,32 +49,6 @@ def root_labels(locale: str) -> list[str]:
     return [i18n.t(locale, key) for key in helper.order_root_keys()]
 
 
-def known_paths(roots: list[str], note_paths: list[str]) -> list[str]:
-    """Every path the picker offers: the roots plus whatever is in use.
-
-    A strict pure mapper — the endpoint reads the language and the rows and
-    hands both in. Called twice with equal arguments it returns equal output.
-
-    Roots are included even when empty, because an empty root is exactly where
-    a user wants to move a note to and typing it by hand is the thing the
-    picker exists to avoid. They sort into their canonical order from
-    `roots`; a path under an unrecognised root — one left behind by a language
-    switch, say — sorts alphabetically after the known ones rather than being
-    dropped, which would hide the only route back to those notes. The client's
-    `compareRoots` makes the same choice for the same reason.
-    """
-    rank = {label: index for index, label in enumerate(roots)}
-    seen = list(dict.fromkeys(path for path in list(roots) + list(note_paths)
-                              if path and path.strip()))
-
-    def sort_key(path: str) -> tuple:
-        root = path.split("/")[0]
-
-        return (rank.get(root, len(rank)), path if root in rank else root, path)
-
-    return sorted(seen, key=sort_key)
-
-
 def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | None]:
     """Owner-scoped: validate + set a single note's full path. Returns
     (status, meta): ('ok', meta) | ('invalid', None) | ('not_found', None)."""

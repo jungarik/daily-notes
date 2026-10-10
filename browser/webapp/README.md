@@ -5,12 +5,14 @@ Dock, Feed, Explorer, MapView, Search, Chat, NoteSheet, ContextMenu,
 FolderFilter) over a small `AppContext` store, with a single reused `styles.css`.
 It is deployed as its own static host and calls the API cross-origin.
 
-The **change-path sheet** is a combobox: its input filters a scrollable list of
-existing paths (`GET /api/contextmenu/paths` — every root plus every path in
-use, ordered by root), tapping a row fills the input so you can extend it, and
-text matching nothing is a new path. Folder mode hides the folder's own
-subtree. On open the current path is selected (one keystroke replaces it) and
-the list is hidden until the input is touched; a `✕` in the field clears it.
+The **change-path sheet** is two stacked comboboxes: the root folder over the
+sub-folder. The root field lists the fixed roots (`GET /api/contextmenu/roots`)
+and is read-only; the sub-folder field lists what exists under the chosen root
+(`GET /api/contextmenu/children?root=`), narrows as you type, and accepts a new
+name. Choosing a different root clears the sub-folder, and an empty sub-folder
+means the root itself. Notes are two levels deep (saving truncates anything
+deeper). A folder only moves between roots, so its sheet is the root field
+alone and the rest of its path travels with it.
 
 The feed/preview card (`NoteCard.jsx`) leads with the note's own text (images
 above it), then date + `⋮`, path, tags and linked-note chips. Text over 100

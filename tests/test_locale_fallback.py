@@ -80,12 +80,12 @@ class SingleSourceTests(unittest.TestCase):
             "api/explorer/helper.py",
             "common/helper.py",
             "tools/finder/list_paths.py",
-            # The odd one out, and deliberately: `GET /api/contextmenu/paths`
-            # keeps `helper.known_paths` a strict pure mapper (api/README), so
+            # The odd one out, and deliberately: `GET /api/contextmenu/roots`
+            # keeps `helper.root_labels` a strict pure mapper (api/README), so
             # the locale is resolved at the endpoint — the impure boundary —
             # rather than inside the helper the way the older verticals do.
             "api/contextmenu/endpoints.py",
-            # Same shape, same reason: the path roster keeps `known_paths` a
+            # Same shape, same reason: the roots roster keeps `root_labels` a
             # strict pure mapper, so the locale is resolved at the boundary.
             "api/addnote/endpoints.py",
         }
