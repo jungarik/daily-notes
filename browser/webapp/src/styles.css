@@ -691,7 +691,7 @@
      keeps a very long path inside the column, and the label's left-side
      ellipsis takes over from there. */
   .path-wheel-opt {
-    display: flex; align-items: center; gap: 9px;
+    display: flex; align-items: center;
     width: auto; max-width: 100%;
     scroll-snap-align: center;
     font: inherit; font-size: 13.5px; color: var(--text);
@@ -714,13 +714,6 @@
   .path-wheel-opt.on {
     background: var(--commit); border-color: var(--commit); color: #fff;
   }
-  /* The folder's own hue (`lib/format.pathColor`), the map's language for
-     which folder a thing is in. `flex: none` so a long label cannot squeeze
-     it away. */
-  .path-wheel-dot {
-    flex: none; width: 7px; height: 7px; border-radius: 50%;
-  }
-
   /* The label is clipped to the pill's own width, with the ellipsis on the
      *left*: a long path keeps its leaf — the part that tells two folders under
      one root apart — and loses its stem. `direction: rtl` is what moves the

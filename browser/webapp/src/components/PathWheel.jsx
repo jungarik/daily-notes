@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   WHEEL_HEIGHT,
   WHEEL_ITEM_HEIGHT,
-  pathColor,
   wheelItem,
   wheelOffset,
 } from "../lib/format.js";
@@ -12,12 +11,14 @@ import {
 // component serves both. The caller supplies `load` (the fetch, resolving to
 // `{items, initial}`) and `allowNew` (only the sub-folder wheel accepts a name
 // that isn't listed: the server rejects an unknown root, so offering to type
-// one would only lead to a 422).
+// one would only lead to a 422). The filter row exists for that typing, so it
+// is there when `allowNew` is and absent otherwise: the root wheel is the
+// vault's handful of fixed roots, which is shorter than a filter is worth.
 //
 // There is no panel. The options scroll in a transparent column beside the
 // button — a container would have been a second floating object competing with
 // the bar it hangs off, and the page is already glass over the note's text. So
-// the rows are the whole UI: raised pills, each carrying its folder's own hue,
+// the rows are the whole UI: raised pills of plain text,
 // bowing along a circle whose centre is the button (`lib/format.wheelItem`) and
 // fading with the circle's own equation, so the column reads as attached to the
 // control rather than parked next to it. A gradient mask on the track fades
@@ -25,14 +26,13 @@ import {
 // you, the mask is pinned to the visible edge, and it takes both for the two
 // boundaries to look alike.
 //
-// The filter is the first row, not a header above the list: the same pill as
-// every option, so "type something new" is an option rather than a mode, and
-// it fades with the rest.
+// Where there is a filter it is the first row, not a header above the list: the
+// same pill as every option, so "type something new" is an option rather than
+// a mode, and it fades with the rest.
 export default function PathWheel({
   value,
   load,
   allowNew = false,
-  colorPrefix = "",
   placeholder,
   onPick,
   onClose,
@@ -76,9 +76,11 @@ export default function PathWheel({
 
   const typed = query.trim();
 
-  // Row 0 is always the filter. On a wheel that `allowNew`, a typed name that
+  // On a wheel that `allowNew`, row 0 is the filter and a typed name that
   // matches nothing follows it as an ordinary option row — selecting it is how
-  // you use it, so there is no separate "create" control to explain.
+  // you use it, so there is no separate "create" control to explain. Without
+  // a filter the options start at row 0.
+  const lead = allowNew ? 1 : 0;
   const options = useMemo(() => {
     const needle = typed.toLowerCase();
     const matching = needle
@@ -90,16 +92,16 @@ export default function PathWheel({
   }, [items, typed, allowNew]);
 
   // Open centred on the note's own folder — or on the default destination when
-  // it has none, so the wheel starts where the note would actually go. The
-  // filter's row offsets every option by one.
+  // it has none, so the wheel starts where the note would actually go. A
+  // filter row, when there is one, offsets every option by one.
   useEffect(() => {
     const track = trackRef.current;
     if (!track || !options.length) return;
     const found = options.indexOf(value || defaultPath);
 
-    track.scrollTop = (found < 0 ? 0 : found + 1) * WHEEL_ITEM_HEIGHT;
+    track.scrollTop = (found < 0 ? 0 : found + lead) * WHEEL_ITEM_HEIGHT;
     setScrollTop(track.scrollTop);
-  }, [options, value, defaultPath]);
+  }, [options, value, defaultPath, lead]);
 
   const row = (index) => {
     const { x, scale, opacity } = wheelItem(wheelOffset(index, scrollTop));
@@ -129,33 +131,35 @@ export default function PathWheel({
             last row can both reach the centre. */}
         <div style={{ height: WHEEL_HEIGHT / 2 - WHEEL_ITEM_HEIGHT / 2 }} />
 
-        {/* No opacity floor, and no exemption from the arc. It had one, so it
-            could not be missed — but as the topmost row that made the top of
-            the wheel the one edge where nothing ever disappeared, which read
-            as a broken fade rather than as a helpful control. It is findable
-            the way every other row is: by scrolling to it. */}
-        <div className="path-wheel-opt filter" style={row(0)}>
-          <input
-            type="text"
-            value={query}
-            placeholder={placeholder}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            // A folder name has no slash: it would be a second level hiding in
-            // the first, so it is dropped as it is typed.
-            onChange={(e) => setQuery(e.target.value.replace(/[\\/]/g, ""))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && typed && (allowNew || items.includes(typed))) onPick(typed);
-            }}
-          />
-        </div>
+        {allowNew && (
+          {/* No opacity floor, and no exemption from the arc. It had one, so it
+              could not be missed — but as the topmost row that made the top of
+              the wheel the one edge where nothing ever disappeared, which read
+              as a broken fade rather than as a helpful control. It is findable
+              the way every other row is: by scrolling to it. */}
+          <div className="path-wheel-opt filter" style={row(0)}>
+            <input
+              type="text"
+              value={query}
+              placeholder={placeholder}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              // A folder name has no slash: it would be a second level hiding in
+              // the first, so it is dropped as it is typed.
+              onChange={(e) => setQuery(e.target.value.replace(/[\\/]/g, ""))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && typed && (allowNew || items.includes(typed))) onPick(typed);
+              }}
+            />
+          </div>
+        )}
 
         {options.map((item, index) => (
           <button
             key={item}
             className={"path-wheel-opt" + (item === value ? " on" : "")}
-            style={row(index + 1)}
+            style={row(index + lead)}
             onClick={() => onPick(item)}
           >
             {/* `direction: rtl` on the label puts the overflow — and the
@@ -164,12 +168,6 @@ export default function PathWheel({
                 its stem. `<bdi>` isolates the text so the bidi algorithm
                 still lays "Projects/api" out left to right inside it; without
                 it the slashes are neutral characters and migrate. */}
-            {/* The folder's own colour, the same stable hue
-                `lib/format.pathColor` gives the map's dots and node cards. It
-                is the app's existing word for "which folder", and it gives a
-                column of otherwise identical rows something to recognise at a
-                glance — without inventing a palette. */}
-            <i className="path-wheel-dot" style={{ background: pathColor(colorPrefix + item) }} />
             <span className="path-wheel-label"><bdi>{item}</bdi></span>
           </button>
         ))}

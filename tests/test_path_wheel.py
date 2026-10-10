@@ -349,6 +349,17 @@ class ButtonStateTests(unittest.TestCase):
 
         self.assertIn("disabled", branch.split("return (", 2)[1])
 
+    def test_the_sub_folder_icon_is_a_slash_and_two_dots(self):
+        sub = PAGE[PAGE.index('field: "subpath"'):PAGE.index('field: "tags"')]
+
+        self.assertIn('d="M9.5 4.5 5 19.5"', sub)
+        self.assertIn('d="M14.5 18.5h.01M19.5 18.5h.01"', sub)
+
+    def test_the_tags_icon_is_a_hash(self):
+        tags = PAGE[PAGE.index('field: "tags"'):PAGE.index("];", PAGE.index('field: "tags"'))]
+
+        self.assertIn("M4.5 9h15M4 15h15", tags)
+
     def test_the_link_button_is_gone(self):
         self.assertNotIn('"Link to another note"', PAGE)
 
@@ -419,18 +430,14 @@ class WheelStructureTests(unittest.TestCase):
         self.assertGreater(padding, 26)
         self.assertIn("box-sizing: border-box", track)
 
-    def test_each_row_carries_its_folders_colour(self):
-        """`lib/format.pathColor` is the map's language for which folder a
-        thing is in; reusing it here means no new palette, and a column of
-        near-identical names gains something to recognise."""
-        self.assertIn("pathColor(colorPrefix + item)", WHEEL)
-        self.assertIn("  .path-wheel-dot {", CSS)
-
-    def test_the_dot_cannot_be_squeezed_away(self):
-        start = CSS.index("  .path-wheel-dot {")
-        rule = CSS[start:CSS.index("}", start)]
-
-        self.assertIn("flex: none", rule)
+    def test_rows_are_plain_text(self):
+        """No colour dot: the label is the whole row. The dots were the map's
+        folder hue, which a list of short root names does not need."""
+        self.assertNotIn("pathColor", WHEEL)
+        self.assertNotIn("colorPrefix", WHEEL)
+        self.assertNotIn("colorPrefix", PAGE)
+        self.assertNotIn("path-wheel-dot", WHEEL)
+        self.assertNotIn("path-wheel-dot", CSS)
 
     def test_the_chosen_folder_is_filled_blue(self):
         """A deliberate exception to "`--commit` as a fill means an
@@ -508,6 +515,7 @@ class WheelStructureTests(unittest.TestCase):
         """Not a header above the list: it wears the same pill as every
         option, so "type something new" is an option rather than a mode."""
         self.assertIn('className="path-wheel-opt filter"', WHEEL)
+        self.assertIn("{allowNew && (", WHEEL)
         self.assertIn("  .path-wheel-opt.filter {", CSS)
         self.assertLess(WHEEL.index("path-wheel-opt filter"),
                         WHEEL.index("options.map("))
@@ -528,11 +536,18 @@ class WheelStructureTests(unittest.TestCase):
         self.assertIn("return isNew ? [typed, ...matching] : matching;", WHEEL)
         self.assertIn('e.key === "Enter" && typed', WHEEL)
 
+    def test_only_the_sub_folder_wheel_has_a_filter(self):
+        """The root wheel is the vault's handful of fixed roots; the filter
+        exists to type a new name, which only the sub-folder wheel accepts."""
+        self.assertIn("const lead = allowNew ? 1 : 0;", WHEEL)
+        self.assertNotIn("Filter folders", PAGE)
+
     def test_the_options_are_offset_by_the_filters_row(self):
-        """Row 0 is the filter, so option `i` is row `i + 1` — and the scroll
-        that centres the current path has to account for it."""
-        self.assertIn("style={row(index + 1)}", WHEEL)
-        self.assertIn("(found < 0 ? 0 : found + 1) * WHEEL_ITEM_HEIGHT", WHEEL)
+        """With a filter, row 0 is the filter and option `i` is row `i + 1` —
+        and the scroll that centres the current path has to account for it.
+        Without one the options start at row 0."""
+        self.assertIn("style={row(index + lead)}", WHEEL)
+        self.assertIn("(found < 0 ? 0 : found + lead) * WHEEL_ITEM_HEIGHT", WHEEL)
 
     def test_it_dismisses_on_an_outside_tap(self):
         """Deferred, so the opening tap does not close it — the same trick as
