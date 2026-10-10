@@ -131,12 +131,12 @@ export default function PathWheel({
             last row can both reach the centre. */}
         <div style={{ height: WHEEL_HEIGHT / 2 - WHEEL_ITEM_HEIGHT / 2 }} />
 
+        {/* No opacity floor, and no exemption from the arc. It had one, so it
+            could not be missed — but as the topmost row that made the top of
+            the wheel the one edge where nothing ever disappeared, which read
+            as a broken fade rather than as a helpful control. It is findable
+            the way every other row is: by scrolling to it. */}
         {allowNew && (
-          {/* No opacity floor, and no exemption from the arc. It had one, so it
-              could not be missed — but as the topmost row that made the top of
-              the wheel the one edge where nothing ever disappeared, which read
-              as a broken fade rather than as a helpful control. It is findable
-              the way every other row is: by scrolling to it. */}
           <div className="path-wheel-opt filter" style={row(0)}>
             <input
               type="text"
