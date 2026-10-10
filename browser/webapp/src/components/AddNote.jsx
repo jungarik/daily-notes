@@ -74,12 +74,12 @@ const METADATA_FIELDS = [
   {
     field: "subpath",
     label: "Set the sub-folder",
-    // The folder glyph again with a smaller one nested in front of it: one
-    // level down from the button above.
+    // "/.." — the path one level on, drawn as strokes like every other glyph
+    // (a slash and two dots; the dots are zero-length round-capped segments).
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 15V6.5A1.5 1.5 0 0 1 4.5 5h3.7L10 7h5.5A1.5 1.5 0 0 1 17 8.5V10" />
-        <path d="M7 13.5A1.5 1.5 0 0 1 8.5 12h2.8l1.5 1.8h6.7A1.5 1.5 0 0 1 21 15.3V18a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 7 18v-4.5Z" />
+        <path d="M9.5 4.5 5 19.5" />
+        <path d="M14.5 18.5h.01M19.5 18.5h.01" />
       </svg>
     ),
   },
@@ -88,8 +88,7 @@ const METADATA_FIELDS = [
     label: "Add tags",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M11.4 3.5H5a1.5 1.5 0 0 0-1.5 1.5v6.4a1.5 1.5 0 0 0 .44 1.06l7.6 7.6a1.5 1.5 0 0 0 2.12 0l6.4-6.4a1.5 1.5 0 0 0 0-2.12l-7.6-7.6a1.5 1.5 0 0 0-1.06-.44Z" />
-        <path d="M7.8 7.8h.01" />
+        <path d="M9.5 4 8 20M16 4l-1.5 16M4.5 9h15M4 15h15" />
       </svg>
     ),
   },
@@ -371,7 +370,6 @@ export default function AddNote({ note_id = null }) {
                 <PathWheel
                   value={root}
                   load={listAddNoteRoots}
-                  placeholder="Filter folders…"
                   // Re-picking the current root keeps its sub-folder; a
                   // different one starts clean, so "Projects/api" never
                   // survives a move to Areas.
@@ -386,7 +384,6 @@ export default function AddNote({ note_id = null }) {
                   value={child}
                   load={() => listAddNoteChildren(root)}
                   allowNew
-                  colorPrefix={root + "/"}
                   placeholder="Filter or new sub-folder…"
                   onPick={(picked) => { setPath(root + "/" + picked); setOpenWheel(""); }}
                   onClose={() => setOpenWheel("")}
