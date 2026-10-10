@@ -847,8 +847,8 @@ truncates it. Until a wheel changes it a deeper loaded path is kept as is. Only
 the sub-folder wheel `allowNew`s a typed name (the server rejects an unknown
 root with 422, so offering one would end in an error), and slashes are dropped
 as typed. One `PathWheel` serves both, given `load` and `allowNew`. The old
-`link` button is gone; its icon slot became the sub-folder's nested-folders
-glyph.
+`link` button is gone; its slot became the sub-folder button, drawn as `/..`
+(a stroked slash and two dots), and the `tags` button is a stroked `#`.
 
 **A drum with no panel.** The options scroll in a transparent column beside
 the button. There is deliberately **no container** — a panel would be a second
@@ -860,10 +860,9 @@ the edge, and a soft lift. No blur, because a row is not a floating bar. A row
 is **as wide as its name** (`width: auto` with `align-items: flex-end` on the
 track), which is what makes the column read as a list of folders rather than a
 stack of bars; `max-width` keeps the long ones in the column and the label's
-left-side ellipsis takes over from there. Each carries a 7px dot in its
-folder's own hue from `lib/format.pathColor` — the map's existing language for
-which folder a thing is in, so a column of near-identical names gains
-something to recognise without inventing a palette. The chosen folder is
+left-side ellipsis takes over from there. Rows are plain text — they had a
+7px dot in the folder's hue (`lib/format.pathColor`), dropped because a handful
+of short names needs no second cue. The chosen folder is
 **filled blue**, a deliberate exception to "`--commit` as a fill means an
 affirmative action": in a list where every row is a candidate, the one that is
 already the answer has to be unmissable, and a hairline would be lost among
@@ -895,14 +894,17 @@ and the two ends look like siblings. The mask is `-webkit-` prefixed as well,
 since Telegram's webview is WebKit and a missing mask is precisely the bug this
 replaced.
 
-**The filter is row 0**, wearing the same pill as every option, so typing a new
+**The filter is row 0 — on the sub-folder wheel only.** The root wheel is the
+vault's handful of fixed roots and takes no typed name, so it has no filter and
+its options start at row 0 (`lead` is 0 there, 1 where there is a filter). It
+wears the same pill as every option, so typing a new
 path is an *option* rather than a mode — text matching nothing appears as an
 ordinary row above the matches and selecting it is how you use it (Enter does
 the same). It takes the arc unmodified. It used to carry an opacity floor so it
 could not be missed, and because it is the *topmost* row that made the top of
 the wheel the one edge where nothing ever disappeared — which reads as a broken
 fade rather than as a helpful control. It is findable the way every other row
-is: by scrolling to it. Because row 0 is the filter, option `i` is row `i + 1` —
+is: by scrolling to it. Where there is a filter, option `i` is row `i + 1` —
 including in the scroll that centres the current path.
 
 **The box runs one row longer than it reads.** `WHEEL_HEIGHT` is 336 — six
