@@ -184,7 +184,7 @@ class RosterEndpointTests(unittest.TestCase):
         """Choosing a root should read that root's notes, not the vault. And
         the root is matched as a whole segment: `LIKE 'Projects%'` would also
         catch `Projects2/x`."""
-        statement = DB_SOURCE.split("def list_children", 1)[1].split('"""', 3)[3]
+        statement = DB_SOURCE.split("def list_subfolders", 1)[1].split('"""', 3)[3]
 
         self.assertIn("split_part(path, '/', 2)", statement)
         self.assertNotIn("LIKE", statement)
@@ -193,7 +193,7 @@ class RosterEndpointTests(unittest.TestCase):
         """The fixed roots need the locale and nothing else."""
         roots = ENDPOINTS.split('@router.get("/roots"', 1)[1].split("@router", 1)[0]
 
-        self.assertNotIn("list_children", roots)
+        self.assertNotIn("list_subfolders", roots)
         self.assertIn("helper.root_labels(locale)", roots)
 
     def test_the_section_owns_its_reads(self):

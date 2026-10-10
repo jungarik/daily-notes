@@ -98,7 +98,7 @@ def get_language(user_id: int) -> str | None:
         return row[0] if row else None
 
 
-def list_children(user_id: int, root: str) -> list[str]:
+def list_subfolders(user_id: int, root: str) -> list[str]:
     """The distinct second-level folder names under one root, alphabetically.
 
     Filtered in SQL rather than fetching every path and splitting in Python, so

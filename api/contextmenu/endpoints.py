@@ -32,7 +32,7 @@ def list_roots(user_id: int = Depends(current_user)) -> RootsPayload:
 
 
 @router.get("/children", response_model=ChildrenPayload)
-def list_children(root: str = Query(min_length=1, max_length=200),
+def list_subfolders(root: str = Query(min_length=1, max_length=200),
                   user_id: int = Depends(current_user)) -> ChildrenPayload:
     """The second-level folders already in use under one root.
 
@@ -41,7 +41,7 @@ def list_children(root: str = Query(min_length=1, max_length=200),
     behind by a language switch is still a root with children, and validating
     it against today's roster would hide them.
     """
-    return ChildrenPayload(children=db.list_children(user_id, root.strip()))
+    return ChildrenPayload(children=db.list_subfolders(user_id, root.strip()))
 
 
 @router.post("/notes/{note_id}/path", response_model=NoteMeta)
