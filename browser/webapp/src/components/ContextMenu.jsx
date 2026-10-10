@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { setNotePath, moveFolder, listPaths } from "../lib/api.js";
-import { selectablePaths, filterPaths } from "../lib/format.js";
+import { setNotePath, moveFolder, listRoots, listChildren } from "../lib/api.js";
+import { splitPath, joinPath, swapRoot, filterNames } from "../lib/format.js";
 
 // The menu's icons, in the app's one icon style: a 24-viewBox inline SVG,
 // `fill: none`, `stroke: currentColor`, 1.8 stroke, round caps — the same
@@ -139,45 +139,40 @@ function DeleteSheet({ target, onClose, onConfirm }) {
   );
 }
 
-// The change-path sheet: a combobox, not a dropdown beside a text field.
+// The change-path sheet: two stacked comboboxes, the root folder over the
+// sub-folder under it.
 //
-// The input is both the filter and the answer. Typing narrows the list below;
-// tapping a row fills the input rather than saving, because the common move is
-// to pick an existing folder and then extend it (`Projects/api` →
-// `Projects/api/v2`), which a save-on-tap list makes impossible. Anything typed
-// that matches no row is simply a new path — the server validates the root
-// either way, so there is no "new folder" mode to switch into.
+// The path is two levels deep, so it is edited as two fields rather than one
+// string. The root field offers the vault's fixed roots (no typing — the server
+// rejects an unknown root); the sub-folder field offers what already exists
+// under the chosen root and accepts a new name. Each field's list opens on
+// focus and tapping a row fills the field. Choosing a different root clears the
+// sub-folder, so "Projects/api" never survives a move to "Areas"; an empty
+// sub-folder is the root itself.
+//
+// A folder is a path prefix, not a note, so it only moves between roots: its
+// sheet has the root field alone, and the rest of its path travels with it
+// (`Projects/api` to `Areas` is `Areas/api`).
 function PathSheet({ target, onClose, onSaved }) {
-  const [val, setVal] = useState("");
+  const isFolder = !!target && target.type === "folder";
+  const [root, setRoot] = useState("");
+  const [child, setChild] = useState("");
   const [err, setErr] = useState("");
-  const [paths, setPaths] = useState([]);
-  // Whether the user has touched the input since the sheet opened. The list
-  // stays hidden until they have: on open the input holds the current path,
-  // and a list filtered by it would show that path and its children — the one
-  // place the note already is. Hiding it keeps the sheet the size it was and
-  // makes the list appear as an answer to typing rather than as furniture.
-  const [touched, setTouched] = useState(false);
-  const inputRef = useRef(null);
+  const [roots, setRoots] = useState([]);
+  const [children, setChildren] = useState([]);
+  // Which field's list is showing: "root" | "child" | "". One value — only one
+  // list is ever open, and it closes when its field loses focus.
+  const [openField, setOpenField] = useState("");
 
   useEffect(() => {
-    if (target) {
-      setVal(target.path || ""); setErr(""); setTouched(false);
-      // Focus *and select*: the path is usually being replaced rather than
-      // edited, so the first keystroke or Backspace should clear the whole
-      // thing. `select()` keeps it readable until then, where clearing the
-      // input on open would throw away the only reference to where the note
-      // currently lives. The 60ms wait is the sheet's slide-in — focusing
-      // mid-transition lands the caret in a moving element on iOS.
-      setTimeout(() => {
-        const input = inputRef.current;
-        if (!input) return;
-        input.focus();
-        input.select();
-      }, 60);
-    }
-  }, [target]);
+    if (!target) return;
+    const current = splitPath(target.path);
 
-  const edit = (next) => { setVal(next); setErr(""); setTouched(true); };
+    setRoot(current.root);
+    setChild(target.type === "folder" ? "" : current.child);
+    setErr("");
+    setOpenField("");
+  }, [target]);
 
   // Read on open, not on mount: the vault changes while the app is up, and a
   // roster fetched once at boot goes stale exactly when the user has just
@@ -185,25 +180,52 @@ function PathSheet({ target, onClose, onSaved }) {
   useEffect(() => {
     if (!target) return;
     let live = true;
-    listPaths().then((list) => { if (live) setPaths(list); });
+    listRoots().then((list) => { if (live) setRoots(list); });
 
     return () => { live = false; };
   }, [target]);
 
-  const options = filterPaths(selectablePaths(paths, target), val);
-  // The typed path is already the input's value, so a row repeating it back
-  // is a tap that changes nothing.
-  const suggestions = touched
-    ? options.filter((path) => path !== (val || "").trim())
-    : [];
+  // The sub-folders of whichever root is chosen, re-read when it changes. A
+  // folder has no sub-folder field, so it reads none.
+  useEffect(() => {
+    if (!target || isFolder || !root) { setChildren([]); return; }
+    let live = true;
+    listChildren(root).then((list) => { if (live) setChildren(list); });
+
+    return () => { live = false; };
+  }, [target, isFolder, root]);
+
+  const pickRoot = (next) => {
+    if (next !== root) setChild("");
+    setRoot(next);
+    setErr("");
+    setOpenField("");
+  };
+
+  const pickChild = (next) => {
+    setChild(next);
+    setErr("");
+    setOpenField("");
+  };
+
+  // Rows are tapped, not typed: keeping the mousedown from moving focus is what
+  // stops the field's blur closing the list before the tap lands.
+  const keepFocus = (e) => e.preventDefault();
+
+  // The current choice is already in the field, so a row repeating it is a tap
+  // that changes nothing.
+  const rootOptions = roots.filter((name) => name !== root);
+  const childOptions = filterNames(children, child).filter((name) => name !== child.trim());
 
   const save = async () => {
     if (!target) return;
-    const v = (val || "").trim();
-    if (!v) { setErr("Enter a path."); return; }
+    const chosenRoot = root.trim();
+    if (!chosenRoot) { setErr("Pick a root folder."); return; }
+    const next = isFolder ? swapRoot(target.path, chosenRoot) : joinPath(chosenRoot, child.trim());
+    if (isFolder && next === target.path) { setErr("Pick a different root folder."); return; }
     try {
-      if (target.type === "note") await setNotePath(target.id, v);
-      else await moveFolder(target.path, v);
+      if (target.type === "note") await setNotePath(target.id, next);
+      else await moveFolder(target.path, next);
     } catch (e) {
       setErr(String(e).includes("422") ? "Path must start with a root folder." : "Couldn't save. Try again.");
       return;
@@ -218,31 +240,52 @@ function PathSheet({ target, onClose, onSaved }) {
       <div className={"sheet-backdrop" + (open ? " show" : "")} onClick={onClose} />
       <div className={"sheet" + (open ? " show" : "")} id="pathSheet">
         <div className="grip" />
-        <div className="card-title">{target && target.type === "folder" ? "Rename folder path" : "Change note path"}</div>
+        <div className="card-title">{isFolder ? "Move folder" : "Change note path"}</div>
         <div className="path-field">
-          <input ref={inputRef} className="path-input" type="text" value={val}
-            autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Projects/idea"
-            onChange={(e) => edit(e.target.value)}
+          {/* Read-only while there is a roster to pick from; if the read failed
+              the field falls back to typing, and the server validates. */}
+          <input className="path-input" type="text" value={root}
+            readOnly={roots.length > 0}
+            autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="Folder"
+            aria-label="Folder"
+            onFocus={() => setOpenField("root")}
+            onBlur={() => setOpenField("")}
+            onChange={(e) => { setRoot(e.target.value); setErr(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
-          {/* Not a `type="reset"`, and not hidden when the field is empty: a
-              control that disappears under your thumb is one the user stops
-              trusting. It empties the field and refocuses, which also opens
-              the list — an empty query is every path. */}
-          {val !== "" && (
-            <button className="path-clear" aria-label="Clear path" onClick={() => {
-              edit("");
-              if (inputRef.current) inputRef.current.focus();
-            }}>✕</button>
-          )}
         </div>
-        {suggestions.length > 0 && (
+        {openField === "root" && rootOptions.length > 0 && (
           <div className="path-list">
-            {suggestions.map((path) => (
-              <button key={path} className="path-opt" onClick={() => {
-                setVal(path);
-                setErr("");
-                if (inputRef.current) inputRef.current.focus();
-              }}>{path}</button>
+            {rootOptions.map((name) => (
+              <button key={name} className="path-opt" onMouseDown={keepFocus}
+                onClick={() => pickRoot(name)}>{name}</button>
+            ))}
+          </div>
+        )}
+        {!isFolder && (
+          <div className="path-field">
+            <input className="path-input" type="text" value={child}
+              disabled={!root.trim()}
+              autoComplete="off" autoCapitalize="off" spellCheck={false}
+              placeholder="Sub-folder (optional)" aria-label="Sub-folder"
+              onFocus={() => setOpenField("child")}
+              onBlur={() => setOpenField("")}
+              // A name has no slash: it would be a third level hiding in the
+              // second, so it is dropped as it is typed.
+              onChange={(e) => { setChild(e.target.value.replace(/[\\/]/g, "")); setErr(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+            {/* Not hidden when the field is empty: a control that disappears
+                under your thumb is one the user stops trusting. */}
+            {child !== "" && (
+              <button className="path-clear" aria-label="Clear sub-folder"
+                onMouseDown={keepFocus} onClick={() => { setChild(""); setErr(""); }}>✕</button>
+            )}
+          </div>
+        )}
+        {!isFolder && openField === "child" && childOptions.length > 0 && (
+          <div className="path-list">
+            {childOptions.map((name) => (
+              <button key={name} className="path-opt" onMouseDown={keepFocus}
+                onClick={() => pickChild(name)}>{name}</button>
             ))}
           </div>
         )}

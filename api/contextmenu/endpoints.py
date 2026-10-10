@@ -1,7 +1,7 @@
 """Contextmenu router — the ⋮ menu's actions: change a note's path, rename a
 folder, delete a note."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 import i18n
 from api.deps import current_user
@@ -11,27 +11,37 @@ from api.contextmenu.schemas import (
     NoteMeta,
     MoveFolderRequest,
     MoveFolderResponse,
-    PathsPayload,
+    RootsPayload,
+    ChildrenPayload,
 )
 
 router = APIRouter(prefix="/api/contextmenu", tags=["contextmenu"])
 
 
-@router.get("/paths", response_model=PathsPayload)
-def list_paths(user_id: int = Depends(current_user)) -> PathsPayload:
-    """The paths the change-path sheet offers: every root folder plus every
-    path the user already files notes under, ordered by root.
+@router.get("/roots", response_model=RootsPayload)
+def list_roots(user_id: int = Depends(current_user)) -> RootsPayload:
+    """The root folders the change-path sheet's root selector offers.
 
-    The endpoint is the impure boundary — it resolves the locale and reads the
-    rows; `helper.known_paths` only maps them. The route sits above the
-    `/notes/{note_id}/path` writes because it serves them: without it the only
-    way to file a note somewhere that exists is to remember the spelling.
+    The fixed vault roots, empty ones included — an empty root is exactly where
+    a note gets moved — so there is no per-note read: the endpoint only
+    resolves the locale, and `helper.root_labels` maps it.
     """
     locale = i18n.resolve_locale(db.get_language(user_id))
 
-    return PathsPayload(
-        paths=helper.known_paths(helper.root_labels(locale), db.list_paths(user_id))
-    )
+    return RootsPayload(roots=helper.root_labels(locale))
+
+
+@router.get("/children", response_model=ChildrenPayload)
+def list_children(root: str = Query(min_length=1, max_length=200),
+                  user_id: int = Depends(current_user)) -> ChildrenPayload:
+    """The second-level folders already in use under one root.
+
+    Owner-scoped and filtered in SQL, so choosing a root costs a read of that
+    root's notes rather than the vault. `root` is matched as given — a root left
+    behind by a language switch is still a root with children, and validating
+    it against today's roster would hide them.
+    """
+    return ChildrenPayload(children=db.list_children(user_id, root.strip()))
 
 
 @router.post("/notes/{note_id}/path", response_model=NoteMeta)

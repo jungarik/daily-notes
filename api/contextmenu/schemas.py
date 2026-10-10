@@ -25,8 +25,15 @@ class MoveFolderResponse(BaseModel):
     new_path: str
 
 
-class PathsPayload(BaseModel):
-    """The change-path picker's roster. Flat and already ordered — the client
-    renders it as given rather than re-deriving the root order it would need
-    `config.ROOT_FOLDERS` to know."""
-    paths: list[str] = []
+class RootsPayload(BaseModel):
+    """The root selector's roster: the vault's root folders in canonical order,
+    in the user's language — the client renders it as given rather than
+    re-deriving an order it would need `config.ROOT_FOLDERS` to know."""
+    roots: list[str] = []
+
+
+class ChildrenPayload(BaseModel):
+    """The sub-folder selector's roster: the distinct second-level folder names
+    the user already files notes under inside one root. Names, not paths — the
+    client joins them onto the root it asked about."""
+    children: list[str] = []
