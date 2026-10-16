@@ -1,5 +1,7 @@
 """Request/response models for the addnote section."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +29,13 @@ class EditableNote(BaseModel):
     tags: list[str] = []
     attachments: list[EditableAttachment] = []
     linked_note_ids: list[int] = []
+    # The frontmatter the info block shows. Timestamps are UTC instants; the
+    # user's own zone rides along so the client formats them on their clock
+    # rather than the server's, and is None for a Mini-App-only user who never
+    # set one (the client then uses the device's).
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    timezone: str | None = None
 
 
 class RootsPayload(BaseModel):

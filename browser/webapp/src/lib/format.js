@@ -6,6 +6,25 @@ export function fmtDate(iso) {
   return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+// An instant as date and time on the clock of `timeZone` (an IANA name such as
+// "Europe/Kyiv"), e.g. "16 Oct 2026, 14:32". The zone is the user's saved one
+// when they have it; without one — or with a name the engine rejects, which
+// throws — it falls back to the device's own, so a bad value costs the zone and
+// never the date. `locale` is a parameter so the result is testable; the app
+// leaves it to the device.
+export function fmtDateTime(iso, timeZone, locale) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (isNaN(date)) return "";
+  const parts = { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" };
+
+  try {
+    return new Intl.DateTimeFormat(locale, { ...parts, timeZone: timeZone || undefined }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat(locale, parts).format(date);
+  }
+}
+
 // Compact dd/mm/yy for tight spots like the chat note card.
 export function fmtDateShort(iso) {
   if (!iso) return "";

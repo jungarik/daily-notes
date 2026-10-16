@@ -101,6 +101,9 @@ def get_note(note_id: int, user_id: int = Depends(current_user)) -> EditableNote
         tags=row["tags"] or [],
         attachments=helper.attachment_views(db.attachments(note_id)),
         linked_note_ids=db.linked_note_ids(user_id, note_id),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        timezone=db.get_timezone(user_id),
     )
 
 
@@ -122,6 +125,9 @@ def _saved(user_id: int, note_id: int) -> EditableNote:
         tags=row["tags"] or [],
         attachments=helper.attachment_views(db.attachments(note_id)),
         linked_note_ids=db.linked_note_ids(user_id, note_id),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        timezone=db.get_timezone(user_id),
     )
 
 

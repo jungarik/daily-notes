@@ -211,7 +211,11 @@ class FakeDb:
         self.chunks = chunks
 
     def note_for_user(self, user_id, note_id):
-        return {"id": note_id, "text": "stored", "path": "Inbox", "tags": []}
+        return {"id": note_id, "text": "stored", "path": "Inbox", "tags": [],
+                "created_at": None, "updated_at": None}
+
+    def get_timezone(self, user_id):
+        return None
 
     def attachments(self, note_id):
         return []
