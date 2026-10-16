@@ -8,7 +8,6 @@ import {
   listAddNoteRoots,
   saveNote,
 } from "../lib/api.js";
-import MarkdownHelp from "./MarkdownHelp.jsx";
 import PathWheel from "./PathWheel.jsx";
 
 // The three capture kinds the bar offers alongside typing — the same three the
@@ -143,7 +142,12 @@ export default function AddNote({ note_id = null }) {
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
   const [box, setBox] = useState(null);
-  const [helpOpen, setHelpOpen] = useState(false);
+  // The frontmatter block above the text, toggled by the `i` button. Closed on
+  // every open, like everything else on this page.
+  const [infoOpen, setInfoOpen] = useState(false);
+  // Where a note with no chosen path will go, so the Path row can show it
+  // dimmed. Read only when the block is opened with nothing chosen.
+  const [defaultDestination, setDefaultDestination] = useState("");
   const open = state.addNoteOpen;
 
   useEffect(() => {
@@ -160,7 +164,7 @@ export default function AddNote({ note_id = null }) {
     setSaveState("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
-    setHelpOpen(false);
+    setInfoOpen(false);
   }, [open, note_id]);
 
   // The text arrives *after* the page is open, and that order is forced: the
@@ -215,6 +219,19 @@ export default function AddNote({ note_id = null }) {
   // and the two buttons are views of its first two segments. A deeper path
   // loaded from an existing note is kept untouched until a wheel changes it.
   const [root, child = ""] = path.split("/");
+  useEffect(() => {
+    if (!infoOpen || path || defaultDestination) return;
+    let live = true;
+    listAddNoteRoots().then((roster) => { if (live) setDefaultDestination(roster.initial); });
+
+    return () => { live = false; };
+  }, [infoOpen, path, defaultDestination]);
+
+  // One row per frontmatter field. Read-only: the wheels own editing the path.
+  // Backlinks and the rest join this list when they have somewhere to come from.
+  const infoRows = [
+    { key: "Path", value: path || defaultDestination, isDefault: !path },
+  ];
   const saving = saveState === "saving";
   // The API requires at least one character, so an empty save is a 422 the
   // user cannot act on. A dimmed tick says "not yet" where an error message
@@ -267,6 +284,18 @@ export default function AddNote({ note_id = null }) {
       // 0` in CSS, which would otherwise fight the explicit height.
       style={box ? { top: box.top, height: box.height, bottom: "auto" } : undefined}
     >
+      {infoOpen && (
+        <div className="addnote-info">
+          {infoRows.map((row) => (
+            <div className="addnote-info-row" key={row.key}>
+              <span className="addnote-info-key">{row.key}</span>
+              <span className={"addnote-info-value" + (row.isDefault ? " is-default" : "")}>
+                {row.value || "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
         ref={addNoteInputRef}
         className="addnote-body"
@@ -290,29 +319,22 @@ export default function AddNote({ note_id = null }) {
           {status === "failed" ? "Couldn’t load this note." : saveState}
         </div>
       )}
-      {/* Help, in the top-right corner. No glass: the glyph is already a
-          circled `?`, so out of the capsule it *is* "just a question icon and
-          a circle" with nothing else drawn around it. */}
-      <div className="addnote-help">
-        <button
-          className={"addnote-help-btn" + (helpOpen ? " active" : "")}
-          aria-label="Markdown"
-          title="Markdown"
-          aria-expanded={helpOpen}
-          onClick={() => setHelpOpen((open) => !open)}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M9.4 9.3a2.7 2.7 0 1 1 3.4 3.2c-.6.2-.8.7-.8 1.3v.4" />
-            <path d="M12 17.3h.01" />
-          </svg>
-        </button>
-
-        {/* Hangs below the button and grows leftward — anchored at `right: 0`
-            so its right edge stays on the button's, rather than running off
-            the screen it is pinned to the corner of. */}
-        {helpOpen && <MarkdownHelp onClose={() => setHelpOpen(false)} />}
-      </div>
+      {/* Note info, in the top-right corner. No glass: the glyph is already a
+          circled `i`, so out of the capsule it is "just an info icon and a
+          circle" with nothing else drawn around it. */}
+      <button
+        className={"addnote-info-btn" + (infoOpen ? " active" : "")}
+        aria-label="Note info"
+        title="Note info"
+        aria-expanded={infoOpen}
+        onClick={() => setInfoOpen((open) => !open)}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5.5" />
+          <path d="M12 7.7h.01" />
+        </svg>
+      </button>
 
       {/* The right edge: AI on its own, then the note's metadata. All the same
           `.fab` circle as the ✕ and ✓, stacked and centred as one group so the

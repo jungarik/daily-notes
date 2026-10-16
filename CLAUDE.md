@@ -682,26 +682,27 @@ sub-folder / tags** (the first two live wheels, tags still `disabled`). They are
 control on this edge is the same `.fab` as the ✕ and ✓. The
 **reminder** button stays in the bottom capture pill despite being metadata
 too — moving it would churn a bar that is already settled. In the **top-right
-corner** is the **help button**, opening
-`MarkdownHelp.jsx`. It carries no glass and no ring — its glyph is already a
-circled `?`, so any chrome would be a second circle around the first — and it
-needs no top padding on the textarea, because the 74px right padding that
-clears the mode circle already keeps text 74px from an edge the button only
-reaches 48px into. The cheat sheet hangs below it at `right: 0`, growing
-*leftward* rather than off the corner it is pinned to. That sheet is
-**Ukrainian only and hard-coded**: the Mini App has no
-i18n layer, every other label being fixed English or translated server-side,
-and a second translation table beside `locales.json` is one more thing to
-drift. Its examples are hand-styled rather than rendered (no renderer yet), and
-it documents **no underline** — Markdown has none, and the only route to one is
-raw HTML this app never renders.
+corner** is the **info button**, an `i` in a circle that toggles the note's
+**frontmatter block**. It carries no glass and no ring — its glyph is already a
+circled `i`, so any chrome would be a second circle around the first. The block
+sits in the page's own flex column **above** the textarea, so opening it pushes
+the text down rather than covering its first lines, and a 1px line separates the
+two; its right padding is the textarea's 74px, which keeps its text clear of the
+button (it reaches 48px in from the edge), and `.addnote-info + .addnote-body`
+drops the textarea's safe-area top padding so the inset is paid once. It is
+read-only and closed on every open. Today it has one row, **Path** — the *live*
+path (it follows the wheels), or, with nothing chosen, the default root dimmed
+because nobody picked it (read from `GET /api/addnote/roots` only then). The
+rows are a list in `AddNote.jsx`, so backlinks and the other frontmatter fields
+join it as entries. It replaced the Markdown cheat sheet (`MarkdownHelp.jsx`,
+Ukrainian-only and hand-styled), which is gone along with its styles.
 
 A trap worth knowing: `pointer-events: none` on the overlay does **not**
 disable a child that sets `auto`, so every control inside the always-mounted
 page is scoped to `.addnote.show`. Unscoped, the closed page's buttons stayed
 live over the feed and a tap where Done sits fired Done.
 `tests/test_addnote_keyboard.py` pins the inset maths, the focus path, the
-`.show` scoping and the cheat sheet.
+`.show` scoping and the info block.
 
 Growing the box from 54 to 64px does **not** disturb `.hdr-filter`'s -11.17px
 lift: both it and the stats are centred in the header row, so the offset

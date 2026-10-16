@@ -27,7 +27,6 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 FORMAT_JS = ROOT / "browser" / "webapp" / "src" / "lib" / "format.js"
 ADDNOTE = ROOT / "browser" / "webapp" / "src" / "components" / "AddNote.jsx"
-HELP = ROOT / "browser" / "webapp" / "src" / "components" / "MarkdownHelp.jsx"
 CONTEXT = ROOT / "browser" / "webapp" / "src" / "store" / "AppContext.jsx"
 CSS = ROOT / "browser" / "webapp" / "src" / "styles.css"
 
@@ -163,16 +162,16 @@ class BarTests(unittest.TestCase):
         """
         self.assertEqual(4, len(re.findall(r'className="fab\b', self.addnote)))
 
-    def test_no_button_outside_the_help_corner_skips_fab(self):
-        """The one exception is the help button, which is deliberately bare."""
+    def test_no_button_outside_the_info_corner_skips_fab(self):
+        """The one exception is the info button, which is deliberately bare."""
         classes = re.findall(r'className=\{?"([\w -]+)"', self.addnote)
         buttons = [name for name in classes
-                   if "fab" in name or "addnote-help-btn" in name]
+                   if "fab" in name or "addnote-info-btn" in name]
 
         # Six since the path field got its own branch: ✕, ✓, AI, the path
-        # circle, the shared disabled circle, and the bare help button.
+        # circle, the shared disabled circle, and the bare info button.
         self.assertEqual(6, len(buttons))
-        self.assertEqual(1, sum("addnote-help-btn" in name for name in buttons))
+        self.assertEqual(1, sum("addnote-info-btn" in name for name in buttons))
 
     def test_only_the_tick_is_the_commit_colour(self):
         """A discard should not compete with the commit for attention."""
@@ -230,7 +229,7 @@ class BarTests(unittest.TestCase):
         """Both bars float over the textarea, so without padding on those two
         sides the text slides under glass mid-sentence — 100px at the bottom
         for the circles, 74px at the right for the side capsule."""
-        block = self.css.split(".addnote-body {", 1)[1].split("}", 1)[0]
+        block = self.css.split("\n  .addnote-body {", 1)[1].split("}", 1)[0]
         padding = re.search(r"padding:(.*?);", block, re.S).group(1)
 
         self.assertIn("100px", padding)
@@ -330,97 +329,105 @@ class SideBarTests(unittest.TestCase):
         self.assertIn("54px", dock)
 
 
-class MarkdownHelpTests(unittest.TestCase):
-    """The cheat sheet: static, Ukrainian, no backend, no renderer."""
+class InfoPanelTests(unittest.TestCase):
+    """The `i` button and the frontmatter block it toggles above the text."""
 
     def setUp(self):
         self.addnote = ADDNOTE.read_text(encoding="utf-8")
-        self.help = HELP.read_text(encoding="utf-8")
         self.css = CSS.read_text(encoding="utf-8")
 
-    def test_the_help_button_is_live(self):
-        """Every other button on this page is disabled; this one is the whole
-        point, so it must not have been copied with the `disabled` along."""
-        button = self.addnote.split('aria-label="Markdown"', 1)[1].split("</button>", 1)[0]
+    def test_the_info_button_is_live(self):
+        """Every other button on this page is disabled or acts; this one is the
+        whole point, so it must not have been copied with the `disabled`."""
+        button = self.addnote.split('aria-label="Note info"', 1)[1].split("</button>", 1)[0]
 
         self.assertNotIn("disabled", button)
-        self.assertIn("setHelpOpen", button)
+        self.assertIn("setInfoOpen((open) => !open)", button)
+        self.assertIn("aria-expanded={infoOpen}", button)
 
-    def test_it_hangs_below_the_corner_and_grows_leftward(self):
-        """Anchored at the top-right corner, so `right: 0` keeps its right edge
-        on the button's and the panel extends across the screen. Anything that
-        grows rightward from there runs straight off it."""
-        block = self.css.split(".md-help {", 1)[1].split("}", 1)[0]
+    def test_the_cheat_sheet_is_gone(self):
+        """The `?` button and its Markdown panel were replaced, not kept."""
+        self.assertFalse((ROOT / "browser" / "webapp" / "src" / "components"
+                          / "MarkdownHelp.jsx").exists())
+        self.assertNotIn("MarkdownHelp", self.addnote)
+        self.assertNotIn("md-help", self.css)
+        self.assertNotIn("addnote-help", self.css)
 
-        self.assertIn("right: 0", block)
-        self.assertIn("top: calc(100% + 6px)", block)
+    def test_the_icon_is_an_i_in_a_circle(self):
+        icon = self.addnote.split('aria-label="Note info"', 1)[1].split("</svg>", 1)[0]
 
-    def test_the_panel_stacks_above_the_pages_other_controls(self):
-        """All these children are positioned with no stacking order of their
-        own, so they paint in DOM order — and both the mode circle and the
-        bottom bar are declared after the help corner, which put the panel
-        underneath them. The anchor carries the z-index; the panel rides it."""
-        anchor = self.css.split(".addnote-help {", 1)[1].split("}", 1)[0]
+        self.assertIn('<circle cx="12" cy="12" r="9" />', icon)
+        self.assertIn('<path d="M12 11v5.5" />', icon)
+        self.assertIn('<path d="M12 7.7h.01" />', icon)
 
-        self.assertIn("z-index:", anchor)
+    def test_the_block_sits_above_the_text_in_the_pages_flow(self):
+        """In the flex column before the textarea, so opening it pushes the text
+        down rather than covering the first lines."""
+        self.assertLess(self.addnote.index('className="addnote-info"'),
+                        self.addnote.index('className="addnote-body"'))
 
-    def test_nothing_else_in_the_overlay_outranks_it(self):
-        """A z-index elsewhere in the page would have to be compared against
-        this one by hand. Today there is none, so the single value is enough."""
-        page = self.css.split(".addnote {", 1)[1].split(".md-help {", 1)[0]
-        ranked = re.findall(r"(\.[\w.-]+)\s*\{[^}]*z-index:\s*(\d+)", page)
+        block = self.css.split(".addnote-info {", 1)[1].split("}", 1)[0]
 
-        self.assertEqual([(".addnote-help", "2")], ranked)
+        self.assertNotIn("position: absolute", block)
+        self.assertIn("flex: none", block)
 
-    def test_the_help_button_carries_no_glass_of_its_own(self):
-        """The glyph is already a circled `?`. Any ring or blur around it would
+    def test_it_is_separated_from_the_text_by_a_line(self):
+        block = self.css.split(".addnote-info {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("border-bottom: 1px solid var(--border)", block)
+
+    def test_it_clears_the_info_button(self):
+        """The button reaches 48px in from the edge; the block's right padding
+        is the same 74px the textarea uses, so its text never runs under it."""
+        block = self.css.split(".addnote-info {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("74px", block)
+
+    def test_the_text_does_not_pay_the_safe_area_twice(self):
+        self.assertIn(".addnote-info + .addnote-body { padding-top: 12px; }", self.css)
+
+    def test_it_shows_the_path_row_read_only(self):
+        """One row for now, built from a list so backlinks can join it."""
+        self.assertIn('{ key: "Path", value: path || defaultDestination, isDefault: !path }',
+                      self.addnote)
+        info = self.addnote.split('className="addnote-info"', 1)[1].split("<textarea", 1)[0]
+
+        self.assertNotIn("<input", info)
+
+    def test_nothing_chosen_shows_the_default_dimmed(self):
+        self.assertIn(".addnote-info-value.is-default { color: var(--text-faint); }", self.css)
+        self.assertIn('(row.isDefault ? " is-default" : "")', self.addnote)
+
+    def test_the_default_root_is_read_only_when_it_is_needed(self):
+        """Not on every open: only with the block showing and nothing chosen."""
+        effect = self.addnote.split("if (!infoOpen || path || defaultDestination) return;", 1)[1] \
+                             .split("}, [infoOpen, path, defaultDestination]);", 1)[0]
+
+        self.assertIn("listAddNoteRoots()", effect)
+
+    def test_it_reopens_closed_on_the_next_visit(self):
+        """Per-visit, not a preference: a block left open would push the text
+        down the next time the page is opened.
+
+        Scoped to the on-open effect. Searching the whole file matches the
+        toggle too, which is always there."""
+        effect = self.addnote.split("if (!open) return;", 1)[1].split("}, [open]);", 1)[0]
+
+        self.assertIn("setInfoOpen(false)", effect)
+
+    def test_the_info_button_carries_no_glass_of_its_own(self):
+        """The glyph is already a circled `i`. Any ring or blur around it would
         be a second circle drawn around the first."""
-        block = self.css.split(".addnote-help-btn {", 1)[1].split("}", 1)[0]
+        block = self.css.split(".addnote-info-btn {", 1)[1].split("}", 1)[0]
 
         self.assertIn("border: none", block)
         self.assertIn("background: none", block)
         self.assertNotIn("backdrop-filter", block)
 
-    def test_it_documents_no_underline(self):
-        """Markdown has none — CommonMark has no syntax for it, and the only
-        route is raw HTML, which this app never renders. A cheat sheet teaching
-        syntax the renderer will not honour is worse than one that omits it."""
-        self.assertNotIn("<u>", self.help)
-        self.assertNotIn("underline", self.help.lower().split("no underline")[0])
+    def test_the_button_outranks_the_block_it_sits_over(self):
+        block = self.css.split(".addnote-info-btn {", 1)[1].split("}", 1)[0]
 
-    def test_every_row_has_both_a_syntax_and_a_sample(self):
-        """The left column is what you type, the right is what it looks like.
-        A row missing either is a blank cell in the grid."""
-        rows = re.findall(r"\{ syntax: (\"[^\"]+\"|`[^`]+`), sample: \"[^\"]+\", style: \"[\w-]+\" \}",
-                          self.help)
-
-        self.assertEqual(self.help.count("{ syntax:"), len(rows))
-        self.assertGreaterEqual(len(rows), 8)
-
-    def test_every_sample_style_has_a_rule(self):
-        """`s-` classes are written by hand in both files; a style named in the
-        data with no CSS renders as unstyled text and silently teaches nothing."""
-        styles = set(re.findall(r'style: "([\w-]+)"', self.help))
-        missing = sorted(style for style in styles
-                         if style != "plain"
-                         and f".md-help-sample.s-{style} {{" not in self.css)
-
-        self.assertEqual([], missing)
-
-    def test_it_closes_on_an_outside_tap(self):
-        self.assertIn('addEventListener("click"', self.help)
-        self.assertIn("contains(event.target)", self.help)
-
-    def test_it_reopens_closed_on_the_next_visit(self):
-        """Per-visit, not a preference: a panel left open would sit over the
-        text the next time the page is opened.
-
-        Scoped to the on-open effect. Searching the whole file matches the
-        `onClose` prop too, which is always there — so the unscoped version
-        passed even with the reset deleted."""
-        effect = self.addnote.split("if (!open) return;", 1)[1].split("}, [open]);", 1)[0]
-
-        self.assertIn("setHelpOpen(false)", effect)
+        self.assertIn("z-index: 2", block)
 
 
 class ClosedOverlayTests(unittest.TestCase):
