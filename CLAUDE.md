@@ -690,7 +690,11 @@ the text down rather than covering its first lines, and a 1px line separates the
 two; its right padding is the textarea's 74px, which keeps its text clear of the
 button (it reaches 48px in from the edge), and `.addnote-info + .addnote-body`
 drops the textarea's safe-area top padding so the inset is paid once. It is
-read-only and closed on every open. Today it has one row, **Path** — the *live*
+read-only and closed on every open. It is deliberately smaller (13px) and greyer
+(`--text-muted`) than the 16px note text below, so it reads as metadata about the
+text rather than part of it. Today it has one row, the path, labelled by the
+**folder glyph** (the same `FolderGlyph` the path button draws, decorative and
+with no word beside it) rather than by a word — the *live*
 path (it follows the wheels), or, with nothing chosen, the default root dimmed
 because nobody picked it (read from `GET /api/addnote/roots` only then). The
 rows are a list in `AddNote.jsx`, so backlinks and the other frontmatter fields
