@@ -192,9 +192,10 @@ class TenancyTests(unittest.TestCase):
         self.assertNotIn("user_id: int = Query", ENDPOINTS_SOURCE)
 
     def test_the_select_is_narrow(self):
-        """Only the columns the response carries — the row read is the note's
-        own four fields, and nothing does `SELECT *`."""
-        self.assertIn("SELECT id, text, path, tags FROM notes", DB_SOURCE)
+        """Only the columns the response carries — the note's own fields and its
+        two timestamps, and nothing does `SELECT *`."""
+        self.assertIn("SELECT id, text, path, tags, created_at, updated_at FROM notes",
+                      DB_SOURCE)
         self.assertNotIn("SELECT *", DB_SOURCE)
 
     def test_the_follow_up_reads_happen_after_the_ownership_check(self):

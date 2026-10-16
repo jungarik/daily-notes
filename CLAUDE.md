@@ -615,7 +615,8 @@ own input would show the wrong folder until the next open.
 
 **The editor reads its own section.** `GET /api/addnote/{note_id}` (the
 `api/addnote` vertical: `endpoints` → `helper` → `db`, its own SQL, shared
-infra only) returns `{id, text, path, tags, attachments, linked_note_ids}` —
+infra only) returns `{id, text, path, tags, attachments, linked_note_ids,
+created_at, updated_at, timezone}` —
 everything the page's controls own, so wiring one of them later is a UI change
 rather than a UI change plus another round trip. The writes belong here beside
 the read when they arrive. The owner predicate is **in the query** (`WHERE id =
@@ -692,13 +693,37 @@ button (it reaches 48px in from the edge), and `.addnote-info + .addnote-body`
 drops the textarea's safe-area top padding so the inset is paid once. It is
 read-only and closed on every open. It is deliberately smaller (13px) and greyer
 (`--text-muted`) than the 16px note text below, so it reads as metadata about the
-text rather than part of it. Today it has one row, the path, labelled by the
-**folder glyph** (the same `FolderGlyph` the path button draws, decorative and
-with no word beside it) rather than by a word — the *live*
-path (it follows the wheels), or, with nothing chosen, the default root dimmed
-because nobody picked it (read from `GET /api/addnote/roots` only then). The
-rows are a list in `AddNote.jsx`, so backlinks and the other frontmatter fields
-join it as entries. It replaced the Markdown cheat sheet (`MarkdownHelp.jsx`,
+text rather than part of it. For a saved note it has three rows, each labelled by a **glyph** (decorative, no word
+beside it): **created** (a calendar), **modified** (a pencil, `ModifiedGlyph` —
+`PencilGlyph` is a retired name a test forbids), then the **path** (the same
+`FolderGlyph` the path button draws). A new note has no dates yet, so it shows
+the path row alone. The path is the *live* path (it follows the wheels), or, with
+nothing chosen, the default root dimmed because nobody picked it (read from
+`GET /api/addnote/roots` only then).
+
+The rows are a list in `AddNote.jsx`, so backlinks and the other frontmatter fields
+join it as entries. **The dates.** `notes.created_at` has existed since the first migration;
+`updated_at` arrived with migration 0023 as a `TIMESTAMPTZ NOT NULL DEFAULT
+now()` column kept by a `BEFORE UPDATE` **trigger**, because nine separate
+`UPDATE notes` statements (the bot, the editor, the ⋮ menu, the enricher, the
+classifier) write to the table and a trigger is the one place that sees all of
+them — nothing can forget to set it. "Modified" therefore means *any change to
+the row*, enrichment and path moves included, not only editor saves. The trigger
+bumps only a row that actually changed (`NEW IS DISTINCT FROM OLD`), so an editor
+save that writes back identical values is not a modification. Existing notes were
+backfilled to `updated_at = created_at` **before** the trigger was created
+(otherwise every old note would read as modified at the moment of the
+migration): earlier edits were never recorded, so "not changed since created" is
+the honest value. The API sends both as UTC instants with the user's saved IANA
+`timezone` (`users.timezone`, which only the bot writes, so it is null for a
+Mini-App-only user), and `lib/format.fmtDateTime` shows them on that clock —
+falling back to the device's if there is none or the engine rejects the name.
+`tests/test_note_dates.py` pins the migration's ordering, the payload and the
+formatter; the trigger itself was exercised against a real Postgres 16 when it
+was written (backfill, a no-op write, a changed row, a jsonb change, a new row,
+re-applying).
+
+It replaced the Markdown cheat sheet (`MarkdownHelp.jsx`,
 Ukrainian-only and hand-styled), which is gone along with its styles.
 
 A trap worth knowing: `pointer-events: none` on the overlay does **not**

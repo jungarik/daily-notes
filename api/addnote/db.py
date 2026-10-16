@@ -13,19 +13,28 @@ def note_for_user(user_id: int, note_id: int) -> dict | None:
     the query rather than a check afterwards so there is no path that forgets
     it.
 
-    `path` and `tags` ride along with the body because they belong to the same
-    row — a second query for two columns of the row already in hand would be a
-    query for nothing.
+    `path`, `tags` and the two timestamps ride along with the body because they
+    belong to the same row — a second query for columns of the row already in
+    hand would be a query for nothing.
     """
     with cursor() as cur:
         cur.execute(
-            "SELECT id, text, path, tags FROM notes WHERE id = %s AND user_id = %s;",
+            """
+            SELECT id, text, path, tags, created_at, updated_at FROM notes
+            WHERE id = %s AND user_id = %s;
+            """,
             (note_id, user_id),
         )
         row = cur.fetchone()
 
-        return ({"id": row[0], "text": row[1], "path": row[2], "tags": row[3]}
-                if row else None)
+        return ({
+            "id": row[0],
+            "text": row[1],
+            "path": row[2],
+            "tags": row[3],
+            "created_at": row[4],
+            "updated_at": row[5],
+        } if row else None)
 
 
 def attachments(note_id: int) -> list[dict]:
@@ -87,6 +96,20 @@ def get_language(user_id: int) -> str | None:
     """
     with cursor() as cur:
         cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+        return row[0] if row else None
+
+
+def get_timezone(user_id: int) -> str | None:
+    """The user's saved IANA timezone, or None when they have never set one.
+
+    Duplicated from the other verticals on purpose — this section owns its SQL.
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the client falls back to the device's own zone.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT timezone FROM users WHERE id = %s;", (user_id,))
         row = cur.fetchone()
 
         return row[0] if row else None

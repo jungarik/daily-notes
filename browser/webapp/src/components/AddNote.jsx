@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { visibleViewport } from "../lib/format.js";
+import { fmtDateTime, visibleViewport } from "../lib/format.js";
 import {
   createNote,
   fetchEditableNote,
@@ -52,15 +52,41 @@ const CAPTURE_KINDS = [
   },
 ];
 
-// The folder glyph: the path button on the side edge and the Path row of the
-// info block draw the same object, so they share this one. Decorative — the
-// text beside it says what it is — hence `aria-hidden`. Sized by the CSS of
-// whichever container it sits in.
-function FolderGlyph() {
+// The info block's glyphs. The folder is the one the path button draws, so the
+// two share it; the calendar (created) and the pencil (modified) are the block's
+// own. All decorative — the text beside each says what it is — hence
+// `aria-hidden`, and sized by the CSS of whichever container they sit in.
+function Glyph({ children }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
+      {children}
     </svg>
+  );
+}
+
+function FolderGlyph() {
+  return (
+    <Glyph>
+      <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
+    </Glyph>
+  );
+}
+
+function CalendarGlyph() {
+  return (
+    <Glyph>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </Glyph>
+  );
+}
+
+function ModifiedGlyph() {
+  return (
+    <Glyph>
+      <path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1Z" />
+      <path d="M14.5 6.5l3 3" />
+    </Glyph>
   );
 }
 
@@ -236,8 +262,15 @@ export default function AddNote({ note_id = null }) {
   }, [infoOpen, path, defaultDestination]);
 
   // One row per frontmatter field. Read-only: the wheels own editing the path.
-  // Backlinks and the rest join this list when they have somewhere to come from.
+  // The dates come first and only exist for a note that has been saved — a new
+  // one has neither yet. Backlinks and the rest join this list when they have
+  // somewhere to come from.
+  const dated = note !== null && !!note.created_at;
   const infoRows = [
+    ...(dated ? [
+      { key: "created", icon: <CalendarGlyph />, value: fmtDateTime(note.created_at, note.timezone) },
+      { key: "modified", icon: <ModifiedGlyph />, value: fmtDateTime(note.updated_at, note.timezone) },
+    ] : []),
     { key: "path", icon: <FolderGlyph />, value: path || defaultDestination, isDefault: !path },
   ];
   const saving = saveState === "saving";
