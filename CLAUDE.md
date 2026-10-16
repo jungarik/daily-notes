@@ -130,6 +130,29 @@ additive — a file plus an edge or a map entry — and never a rewrite of the l
   update `devdoc/agent-workflows-langgraph.md`, the relevant `devdoc/agentic-*.md`,
   and the node-set assertions in `tests/`.
 
+## Branches (cloud sessions)
+
+- **Name every branch `feature/<name>`.** The name is lowercase kebab-case,
+  two to five words, and says what the change is *for* — its intention, not the
+  files it touches, a date, or the session: `feature/split-path-sheet-selectors`,
+  `feature/fix-pathwheel-jsx-build`. Always the `feature/` prefix, fixes and
+  docs included.
+- **Don't use the branch the session assigns.** A cloud session hands out a
+  `claude/<random>` branch. Leave it unused: create `feature/<name>` yourself
+  and push there. This rule is the standing permission to push to a branch other
+  than the assigned one, so no per-session approval is needed. Never push to
+  `main`.
+- **Branch from the latest `origin/main`** (`git fetch origin main`, then
+  `git checkout -b feature/<name> origin/main`), not from whatever happens to be
+  checked out.
+- **One branch per task, one PR per branch.** Unrelated requests get separate
+  branches so each PR stays reviewable. Follow-up commits for an *open* PR
+  (review feedback, a CI fix) go on that PR's branch.
+- **Never reuse a merged branch.** Once its PR is merged the branch is finished:
+  follow-up work gets a new `feature/<name>` off the latest `origin/main`.
+- **Don't open a pull request unless asked.** PRs are normally created from the
+  Claude Code UI; push the branch and say so.
+
 ## Project code style
 
 - Keep standalone `if` blocks separated from surrounding logic with a single
