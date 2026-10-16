@@ -26,14 +26,22 @@ const FileSvg = () => (
   <svg className="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" /><path d="M14 2v5h5" /><line x1="8" y1="12" x2="14" y2="12" /><line x1="8" y1="15.5" x2="14" y2="15.5" /><line x1="8" y1="19" x2="11.5" y2="19" /></svg>
 );
 
-function FileRow({ note }) {
+// Selection is one value for the whole tree, owned by `Explorer`: the key of the
+// last row tapped. It used to be a `sel` flag inside every `Folder` that was only
+// ever set to true, so each folder you had tapped stayed highlighted for good
+// and a note row had no highlight at all.
+const folderKey = (path) => "folder:" + path;
+const noteKey = (id) => "note:" + id;
+
+function FileRow({ note, selected, onSelect }) {
   const { openNote, openCtx } = useApp();
   // The server labels every row with the note's opening words and never sends
   // an empty one (it falls back to "untitled" for a note that is only photos),
   // so there is nothing to default here.
   const label = note.label;
   return (
-    <div className="row file" data-id={note.id} onClick={() => openNote(note.id)}>
+    <div className={"row file" + (selected === noteKey(note.id) ? " selected" : "")} data-id={note.id}
+      onClick={() => { onSelect(noteKey(note.id)); openNote(note.id); }}>
       <FileSvg />
       <span className="name">{label}<span className="ext">.md</span></span>
       <span className="dots" role="button" aria-label="menu"
@@ -42,10 +50,11 @@ function FileRow({ note }) {
   );
 }
 
-function Folder({ name, node, path }) {
+function Folder({ name, node, path, selected, onSelect }) {
   const { openCtx } = useApp();
+  // Open and selected are independent: opening a folder does not collapse the
+  // others, and re-tapping the selected one still toggles it and stays selected.
   const [open, setOpen] = useState(false);
-  const [sel, setSel] = useState(false);
   const isRoot = path.indexOf("/") < 0;
   const folderNames = Object.keys(node.folders).sort((a, b) => a.localeCompare(b));
   // Sorted by the label, which is now the note's first words rather than an
@@ -53,8 +62,8 @@ function Folder({ name, node, path }) {
   const files = node.files.slice().sort((a, b) => (a.label || "").localeCompare(b.label || ""));
   return (
     <div className={"folder" + (open ? " open" : "")}>
-      <div className={"row" + (sel ? " selected" : "")}
-        onClick={() => { setOpen((o) => !o); setSel(true); }}>
+      <div className={"row" + (selected === folderKey(path) ? " selected" : "")}
+        onClick={() => { setOpen((o) => !o); onSelect(folderKey(path)); }}>
         <FolderSvg />
         <span className="name">{name}</span>
         {!isRoot && (
@@ -63,8 +72,11 @@ function Folder({ name, node, path }) {
         )}
       </div>
       <div className="children">
-        {folderNames.map((f) => <Folder key={f} name={f} node={node.folders[f]} path={path + "/" + f} />)}
-        {files.map((file) => <FileRow key={file.id} note={file} />)}
+        {folderNames.map((f) => (
+          <Folder key={f} name={f} node={node.folders[f]} path={path + "/" + f}
+            selected={selected} onSelect={onSelect} />
+        ))}
+        {files.map((file) => <FileRow key={file.id} note={file} selected={selected} onSelect={onSelect} />)}
       </div>
     </div>
   );
@@ -72,6 +84,9 @@ function Folder({ name, node, path }) {
 
 export default function Explorer({ hidden }) {
   const { state } = useApp();
+  // The one highlighted row; the Explorer stays mounted while hidden, so it
+  // survives a trip to another tab.
+  const [selected, setSelected] = useState(null);
   const notes = state.notes || [];
   const root = useMemo(() => buildTree(notes), [notes]);
   // Only the top level follows the vault's order; `Folder` keeps sorting its
@@ -83,8 +98,11 @@ export default function Explorer({ hidden }) {
       {empty
         ? <div className="empty">No notes yet.<br />Send one to the bot to get started.</div>
         : (<>
-            {rootFolders.map((f) => <Folder key={f} name={f} node={root.folders[f]} path={f} />)}
-            {root.files.map((file) => <FileRow key={file.id} note={file} />)}
+            {rootFolders.map((f) => (
+              <Folder key={f} name={f} node={root.folders[f]} path={f}
+                selected={selected} onSelect={setSelected} />
+            ))}
+            {root.files.map((file) => <FileRow key={file.id} note={file} selected={selected} onSelect={setSelected} />)}
           </>)}
     </div>
   );

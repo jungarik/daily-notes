@@ -292,7 +292,6 @@
 
   .file .name { color: var(--text); }
   .file .name .ext { color: var(--text-faint); }
-  .file.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
   .row.selected { background: var(--accent-soft); }
 
   .ico { flex: none; opacity: .85; }
