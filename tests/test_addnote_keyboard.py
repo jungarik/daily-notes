@@ -388,11 +388,31 @@ class InfoPanelTests(unittest.TestCase):
 
     def test_it_shows_the_path_row_read_only(self):
         """One row for now, built from a list so backlinks can join it."""
-        self.assertIn('{ key: "Path", value: path || defaultDestination, isDefault: !path }',
+        self.assertIn('{ key: "path", icon: <FolderGlyph />, value: path || defaultDestination, isDefault: !path }',
                       self.addnote)
         info = self.addnote.split('className="addnote-info"', 1)[1].split("<textarea", 1)[0]
 
         self.assertNotIn("<input", info)
+
+    def test_the_path_row_is_labelled_by_the_folder_glyph_not_a_word(self):
+        """The same folder the path button draws, from one component — so the
+        two cannot drift apart."""
+        self.assertIn("function FolderGlyph()", self.addnote)
+        self.assertEqual(1, self.addnote.count("M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5"))
+        self.assertIn('className="addnote-info-icon">{row.icon}</span>', self.addnote)
+        self.assertNotIn("addnote-info-key", self.addnote + self.css)
+
+    def test_the_info_text_is_smaller_and_greyer_than_the_note(self):
+        """It is metadata about the text, so it must read differently from it:
+        13px against the textarea's 16px, and the muted grey rather than the
+        text colour."""
+        row = self.css.split(".addnote-info-row {", 1)[1].split("}", 1)[0]
+        value = self.css.split(".addnote-info-value {", 1)[1].split("}", 1)[0]
+        icon = self.css.split(".addnote-info-icon {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("font-size: 13px", row)
+        self.assertIn("color: var(--text-muted)", value)
+        self.assertIn("color: var(--text-muted)", icon)
 
     def test_nothing_chosen_shows_the_default_dimmed(self):
         self.assertIn(".addnote-info-value.is-default { color: var(--text-faint); }", self.css)

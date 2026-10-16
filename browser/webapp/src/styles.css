@@ -775,17 +775,21 @@
   /* The info block already paid the safe-area inset, so the text below it
      starts a plain 12px under the line instead of paying it again. */
   .addnote-info + .addnote-body { padding-top: 12px; }
+  /* Smaller and greyer than the note below it (16px, full colour), so the
+     frontmatter reads as metadata about the text rather than part of it. */
   .addnote-info-row {
-    display: flex; align-items: baseline; gap: 12px;
-    font-size: 14px; line-height: 1.5;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; line-height: 1.5;
   }
-  .addnote-info-key {
-    flex: none; width: 52px;
-    color: var(--text-faint); font-size: 12px;
-    text-transform: uppercase; letter-spacing: .05em;
+  /* The row's label is a glyph, not a word: the same folder as the path
+     button. Muted like the value beside it. */
+  .addnote-info-icon {
+    flex: none; display: flex;
+    color: var(--text-muted);
   }
+  .addnote-info-icon svg { width: 16px; height: 16px; }
   .addnote-info-value {
-    flex: 1; min-width: 0; color: var(--text);
+    flex: 1; min-width: 0; color: var(--text-muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Nothing chosen: the note goes to the default folder. Shown, but dimmed —

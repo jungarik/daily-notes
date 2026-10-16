@@ -52,6 +52,18 @@ const CAPTURE_KINDS = [
   },
 ];
 
+// The folder glyph: the path button on the side edge and the Path row of the
+// info block draw the same object, so they share this one. Decorative — the
+// text beside it says what it is — hence `aria-hidden`. Sized by the CSS of
+// whichever container it sits in.
+function FolderGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
+    </svg>
+  );
+}
+
 // What the note *is*, as opposed to what it says: where it is filed (the root
 // folder, then the folder one level below it), what it is about. They sit below the view toggle as plain
 // circles rather than in a capsule — every control on this edge is one `.fab`,
@@ -64,11 +76,7 @@ const METADATA_FIELDS = [
   {
     field: "path",
     label: "Set the folder",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11Z" />
-      </svg>
-    ),
+    icon: <FolderGlyph />,
   },
   {
     field: "subpath",
@@ -230,7 +238,7 @@ export default function AddNote({ note_id = null }) {
   // One row per frontmatter field. Read-only: the wheels own editing the path.
   // Backlinks and the rest join this list when they have somewhere to come from.
   const infoRows = [
-    { key: "Path", value: path || defaultDestination, isDefault: !path },
+    { key: "path", icon: <FolderGlyph />, value: path || defaultDestination, isDefault: !path },
   ];
   const saving = saveState === "saving";
   // The API requires at least one character, so an empty save is a 422 the
@@ -288,7 +296,7 @@ export default function AddNote({ note_id = null }) {
         <div className="addnote-info">
           {infoRows.map((row) => (
             <div className="addnote-info-row" key={row.key}>
-              <span className="addnote-info-key">{row.key}</span>
+              <span className="addnote-info-icon">{row.icon}</span>
               <span className={"addnote-info-value" + (row.isDefault ? " is-default" : "")}>
                 {row.value || "—"}
               </span>
