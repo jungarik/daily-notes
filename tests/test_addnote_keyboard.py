@@ -168,9 +168,9 @@ class BarTests(unittest.TestCase):
         buttons = [name for name in classes
                    if "fab" in name or "addnote-info-btn" in name]
 
-        # Six since the path field got its own branch: ✕, ✓, AI, the path
-        # circle, the shared disabled circle, and the bare info button.
-        self.assertEqual(6, len(buttons))
+        # Seven: ✕, ✓, AI, the path circle, the favourite star, the shared
+        # disabled circle, and the bare info button.
+        self.assertEqual(7, len(buttons))
         self.assertEqual(1, sum("addnote-info-btn" in name for name in buttons))
 
     def test_only_the_tick_is_the_commit_colour(self):
@@ -259,7 +259,7 @@ class SideBarTests(unittest.TestCase):
         self.assertIn("translateY(-50%)", block)
 
     def test_the_metadata_fields_are_path_subpath_and_tags(self):
-        self.assertEqual(["path", "subpath", "tags"],
+        self.assertEqual(["path", "subpath", "tags", "favorite"],
                          re.findall(r'field: "(\w+)"', self.addnote))
 
     def test_only_tags_is_still_inert(self):
@@ -270,9 +270,44 @@ class SideBarTests(unittest.TestCase):
         fields = self.addnote.split("const METADATA_FIELDS = [", 1)[1].split("\n];", 1)[0]
         mapped = self.addnote.split("{METADATA_FIELDS.map(", 1)[1].split("\n        })}", 1)[0]
 
-        self.assertEqual(3, len(re.findall(r'label: "[^"]+"', fields)))
+        self.assertEqual(4, len(re.findall(r'label: "[^"]+"', fields)))
         self.assertEqual(1, len(re.findall(r"\n\s+disabled\n", mapped)))
         self.assertIn('meta.field === "tags"', mapped)
+
+    def test_the_favourite_star_sits_directly_under_tags_in_the_group(self):
+        """Same gap as the rest: one more circle in the existing group, not set
+        apart the way the AI button is."""
+        fields = re.findall(r'field: "(\w+)"', self.addnote)
+
+        self.assertEqual("favorite", fields[fields.index("tags") + 1])
+        self.assertEqual("favorite", fields[-1])
+
+    def test_the_star_toggles_a_local_flag_and_saves_nothing(self):
+        """A placeholder. It must not reach the request, or a later reader
+        assumes the server stores it."""
+        self.assertIn("const [favorite, setFavorite] = useState(false);", self.addnote)
+        self.assertIn("onClick={() => setFavorite((on) => !on)}", self.addnote)
+        self.assertIn("const body = { text: text.trim(), path, tags: [] };", self.addnote)
+        self.assertNotIn("favorite", self.addnote.split("const body =", 1)[1].split(";", 1)[0])
+
+    def test_the_star_resets_every_time_the_page_opens(self):
+        effect = self.addnote.split("if (!open) return;", 1)[1].split("}, [open, note_id]);", 1)[0]
+
+        self.assertIn("setFavorite(false);", effect)
+
+    def test_the_star_fills_and_lights_when_on_and_says_so(self):
+        """Filled star plus the ring-and-glyph lit state a chosen folder uses —
+        never the blue fill that means 'this button commits' — and exposed to
+        assistive tech as a pressed toggle."""
+        star = self.addnote.split('meta.field === "favorite"', 1)[1].split("</button>", 1)[0]
+
+        self.assertIn('className={"fab" + (favorite ? " set" : "")}', star)
+        self.assertIn('fill={favorite ? "currentColor" : "none"}', star)
+        self.assertIn("aria-pressed={favorite}", star)
+        self.assertIn("aria-label={meta.label}", star)
+        self.assertNotIn("disabled", star)
+        self.assertIn("  .addnote-side .fab.set { color: var(--commit); border-color: var(--commit); }",
+                      self.css)
 
     def test_the_reminder_button_stayed_in_the_bottom_pill(self):
         """It is metadata too, but it was left where it was rather than churn
