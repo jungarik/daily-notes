@@ -95,7 +95,8 @@ function ModifiedGlyph() {
 // circles rather than in a capsule — every control on this edge is one `.fab`,
 // the same circle as the ✕ and ✓.
 //
-// Two of them are live wheels; `tags` is still inert. The reminder button
+// Two of them are live wheels; `tags` is still inert; the favourite star is a
+// placeholder (see the state below). The reminder button
 // stays in the bottom pill — it is metadata too, but moving it would churn a
 // bar that is already settled.
 const METADATA_FIELDS = [
@@ -125,6 +126,9 @@ const METADATA_FIELDS = [
       </svg>
     ),
   },
+  // No `icon` here: the star is drawn filled or outlined by whether it is on,
+  // which a static element cannot know, so the button below renders it itself.
+  { field: "favorite", label: "Mark as favorite" },
 ];
 
 // The Add note page.
@@ -176,6 +180,11 @@ export default function AddNote({ note_id = null }) {
   // it, so everything anchored to the overlay's bottom or centre lands in the
   // part of the screen you can actually see.
   const [box, setBox] = useState(null);
+  // PLACEHOLDER for a future "favourite" flag. It only fills the star on this
+  // page: nothing is sent on save and nothing is stored, so it resets whenever
+  // the page opens. When the feature gets a column, this becomes a field read
+  // from `GET /api/addnote/{id}` and sent with the save.
+  const [favorite, setFavorite] = useState(false);
   // The frontmatter block above the text, toggled by the `i` button. Closed on
   // every open, like everything else on this page.
   const [infoOpen, setInfoOpen] = useState(false);
@@ -195,6 +204,7 @@ export default function AddNote({ note_id = null }) {
     setNote(null);
     setPath("");
     setOpenWheel("");
+    setFavorite(false);
     setSaveState("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
@@ -403,6 +413,26 @@ export default function AddNote({ note_id = null }) {
                 disabled
               >
                 {meta.icon}
+              </button>
+            );
+          }
+
+          if (meta.field === "favorite") {
+            // Lit the way a chosen folder is — ring and glyph, not a fill — and
+            // the star itself fills, so it reads as on without borrowing the
+            // blue fill that means "this button commits".
+            return (
+              <button
+                key={meta.field}
+                className={"fab" + (favorite ? " set" : "")}
+                aria-label={meta.label}
+                title={meta.label}
+                aria-pressed={favorite}
+                onClick={() => setFavorite((on) => !on)}
+              >
+                <svg viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3.6Z" />
+                </svg>
               </button>
             );
           }

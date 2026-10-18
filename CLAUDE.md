@@ -679,8 +679,17 @@ column grows. They are **46px**, 15% off the dock's 54, scoped as
 every circle in the app; the glyph and gap scale with it (20→17, 12→10). At the
 top, set apart by a wider gap rather than a different shape, is an inert **AI**
 button — it acts *on* the note where the rest describe it. Below it, **path /
-sub-folder / tags** (the first two live wheels, tags still `disabled`). They are plain circles rather than a capsule: every
-control on this edge is the same `.fab` as the ✕ and ✓. The
+sub-folder / tags / favourite star** (the first two live wheels, tags still
+`disabled`). They are plain circles rather than a capsule: every
+control on this edge is the same `.fab` as the ✕ and ✓. The **star** is a
+placeholder for a future "favourite" flag and, unlike tags, is *tappable*: it
+fills and lights (ring and glyph, the way a chosen folder does — never the blue
+fill that means "this commits") and exposes `aria-pressed`, but the state lives
+only in the page (`favorite`, reset on every open) — nothing is sent on save and
+nothing is stored, and a test pins that the request body never mentions it. It
+sits directly under tags with the same gap as the rest of the group. When the
+feature gets a column it becomes a field the note read returns and the save
+sends. The
 **reminder** button stays in the bottom capture pill despite being metadata
 too — moving it would churn a bar that is already settled. In the **top-right
 corner** is the **info button**, an `i` in a circle that toggles the note's
