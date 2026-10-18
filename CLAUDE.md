@@ -493,7 +493,14 @@ reminder: the kinds the bot already accepts, plus the one piece of metadata
 worth setting while the thought is fresh). **All three are `disabled`** — the
 Mini App has no note-create endpoint, so wiring a photo picker would produce a
 file with nowhere to go; dimmed reads as not-yet, whereas a live-looking button
-that swallows the tap reads as a bug. It is
+that swallows the tap reads as a bug. **The pill is folded away until asked
+for**: the page opens as just ✕ ✏ ✓ in one row, the pencil being a plain `.fab`
+(the modified date's pencil glyph, labelled "Add photo, voice or reminder" —
+the page is already the editor, so the label says what it discloses). Tapping it
+puts the pill in the pencil's slot, so ✕ and ✓ stay at the edges and the bar
+never grows taller; tapping the text folds it back to the pencil (`onClick`, not
+a pointer event, so a touch that only scrolls does not collapse it), and it
+starts folded on every open. The page is
 **always mounted**, hidden with `opacity: 0` + `pointer-events: none` rather
 than unmounted or `display: none`, and that is load-bearing rather than a
 transition: neither of those leaves a focusable element, and iOS and Telegram's
