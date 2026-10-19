@@ -122,17 +122,19 @@ class PageTests(unittest.TestCase):
 
 
 class EditButtonTests(unittest.TestCase):
-    def test_close_is_bottom_left_and_as_big_as_the_side_buttons(self):
+    def test_back_is_bottom_left_a_chevron_and_as_big_as_edit(self):
         self.assertNotIn("viewnote-bar", PAGE + CSS)
         self.assertIn('className="fab viewnote-close"', PAGE)
-        self.assertIn('aria-label="Close"', PAGE)
+        self.assertIn('aria-label="Back"', PAGE)
+        self.assertIn('<path d="M14.5 5.5 8 12l6.5 6.5" />', PAGE)
+        self.assertNotIn("M6 6l12 12", PAGE)
 
         rule = CSS.split("  .viewnote-close {", 1)[1].split("}", 1)[0]
 
         self.assertIn("left: 12px;", rule)
-        self.assertIn("width: 46px; height: 46px;", rule)
-        self.assertIn(".viewnote-side .fab { width: 46px; height: 46px; }", CSS)
-        self.assertIn(".viewnote-close svg { width: 17px; height: 17px; }", CSS)
+        self.assertIn("width: 62px; height: 62px;", rule)
+        self.assertIn(".viewnote-close svg { width: 23px; height: 23px; }", CSS)
+        self.assertIn("width: 62px; height: 62px;", CSS.split("  .viewnote-edit {", 1)[1].split("}", 1)[0])
 
     def test_close_and_edit_share_a_baseline(self):
         bottom = "bottom: calc(30px + env(safe-area-inset-bottom, 0px));"

@@ -253,9 +253,9 @@ export default function ViewNote({ note_id = null }) {
 
       {/* Bottom left, mirroring Edit: the side column's 12px inset and the same
           46px circle as its path and tags buttons. */}
-      <button className="fab viewnote-close" aria-label="Close" onClick={closeViewNote}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M6 6l12 12M18 6L6 18" />
+      <button className="fab viewnote-close" aria-label="Back" title="Back" onClick={closeViewNote}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.5 5.5 8 12l6.5 6.5" />
         </svg>
       </button>
 

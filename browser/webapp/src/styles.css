@@ -860,15 +860,15 @@
   }
   .viewnote.show { opacity: 1; pointer-events: auto; }
   /* Close: bottom left, 12px in like the side column's buttons, on Edit's
-     baseline, and the same 46px circle (17px glyph) as its path and tags. */
+     baseline, and the same 62px circle (23px glyph) as Edit. */
   .viewnote-close {
     position: absolute; left: 12px;
     bottom: calc(30px + env(safe-area-inset-bottom, 0px));
-    width: 46px; height: 46px;
+    width: 62px; height: 62px;
     pointer-events: none;
   }
   .viewnote.show .viewnote-close { pointer-events: auto; }
-  .viewnote-close svg { width: 17px; height: 17px; }
+  .viewnote-close svg { width: 23px; height: 23px; }
   /* Edit: bottom right, 12px in like the side column, on the close button's baseline,
      and 15% over the 54px circle (54 * 1.15 = 62). */
   .viewnote-edit {
