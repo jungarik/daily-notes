@@ -33,11 +33,13 @@ SCHEMAS = (ROOT / "api" / "addnote" / "schemas.py").read_text(encoding="utf-8")
 
 
 class MigrationTests(unittest.TestCase):
-    def test_it_is_the_newest_migration(self):
+    def test_it_is_applied_in_filename_order(self):
         """Migrations are append-only and applied in filename order."""
         names = sorted(path.name for path in MIGRATIONS.glob("*.sql"))
 
-        self.assertEqual("0023_note_updated_at.sql", names[-1])
+        # Later migrations may follow it (0024 adds `is_favorite`), but it must
+        # stay where it is: the trigger has to exist before anything relies on it.
+        self.assertIn("0023_note_updated_at.sql", names)
 
     def test_the_column_defaults_to_now_and_is_never_null(self):
         self.assertIn(

@@ -49,11 +49,15 @@ class SectionTests(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertNotRegex(_read(SECTION / name), r"api\.(addnote|contextmenu|notesheet|feed)")
 
-    def test_reads_only(self):
-        for verb in ("post", "put", "delete", "patch"):
+    def test_the_only_write_is_the_favorite_flag(self):
+        for verb in ("post", "delete", "patch"):
             self.assertNotIn(f"@router.{verb}(", ENDPOINTS)
 
-        self.assertNotRegex(DB_SOURCE, r"\b(INSERT|UPDATE|DELETE)\b")
+        self.assertEqual(1, ENDPOINTS.count("@router.put("))
+        self.assertIn('@router.put("/{note_id}/favorite"', ENDPOINTS)
+        self.assertNotRegex(DB_SOURCE, r"\b(INSERT|DELETE)\b")
+        self.assertEqual(1, len(re.findall(r"\bUPDATE\b", DB_SOURCE)))
+        self.assertIn("UPDATE notes SET is_favorite = %s", DB_SOURCE)
 
     def test_roots_and_children_are_declared_before_the_note(self):
         order = [ENDPOINTS.index(f'@router.get("{route}"') for route in ("/roots", "/children", "/{note_id}")]
@@ -99,6 +103,7 @@ class PageTests(unittest.TestCase):
         self.assertNotIn('aria-label="Save"', PAGE)
         self.assertNotIn("fab commit", PAGE)
         self.assertNotRegex(PAGE, r"\b(apiPost|apiPut|createNote|saveNote)\b")
+        self.assertIn("setViewNoteFavorite", PAGE)
 
     def test_it_carries_no_keyboard_machinery(self):
         for name in ("visualViewport", "visibleViewport", "addNoteInputRef"):
@@ -119,6 +124,43 @@ class PageTests(unittest.TestCase):
                 self.assertIn(selector, CSS)
 
         self.assertNotIn("viewnote", _read(SRC / "components" / "AddNote.jsx"))
+
+
+class FavoriteTests(unittest.TestCase):
+    def test_the_column_is_a_non_null_boolean_defaulting_to_false(self):
+        migration = _read(ROOT / "migrations" / "0024_note_is_favorite.sql")
+
+        self.assertIn("ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN NOT NULL DEFAULT false", migration)
+
+    def test_the_write_is_owner_scoped_in_the_statement(self):
+        block = DB_SOURCE.split("def set_favorite", 1)[1]
+
+        self.assertIn("WHERE id = %s AND user_id = %s RETURNING id;", block)
+        self.assertIn("status_code=404", ENDPOINTS.split("def set_favorite", 1)[1])
+
+    def test_it_sets_rather_than_toggles(self):
+        schemas = _read(SECTION / "schemas.py")
+
+        self.assertIn("is_favorite: bool", schemas.split("class FavoriteRequest", 1)[1])
+        self.assertNotIn("/toggle", ENDPOINTS)
+
+    def test_the_read_carries_the_flag(self):
+        self.assertIn("is_favorite", DB_SOURCE.split("def note_for_user", 1)[1].split("def attachments", 1)[0])
+        self.assertIn('is_favorite=row["is_favorite"]', ENDPOINTS)
+
+    def test_the_star_is_optimistic_with_rollback_and_no_double_tap(self):
+        body = PAGE.split("const toggleFavorite = async", 1)[1].split("const dated", 1)[0]
+
+        self.assertLess(body.index("setFavorite(wanted)"), body.index("await setViewNoteFavorite"))
+        self.assertIn("setFavorite(!wanted)", body)
+        self.assertIn("if (favoriteSaving", body)
+        self.assertIn("onClick={toggleFavorite}", PAGE)
+
+    def test_the_api_call_has_no_catch_and_put_is_already_allowed(self):
+        block = API_JS.split("export const setViewNoteFavorite", 1)[1].split("export const", 1)[0]
+
+        self.assertNotIn(".catch", block)
+        self.assertIn('"PUT"', MAIN)
 
 
 class EditButtonTests(unittest.TestCase):

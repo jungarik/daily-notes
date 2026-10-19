@@ -101,6 +101,11 @@ export const fetchEditableNote = (id) =>
 // opening a blank note — while the two rosters fall back to an empty list.
 export const fetchViewNote = (id) =>
   apiGet("/api/viewnote/" + encodeURIComponent(id));
+// Star or un-star the note. A set, not a toggle, with no catch handler: the page rolls
+// its optimistic star back on a rejection, so a swallowed failure would leave it
+// lit over a flag the server never stored.
+export const setViewNoteFavorite = (id, is_favorite) =>
+  apiPut("/api/viewnote/" + encodeURIComponent(id) + "/favorite", { is_favorite });
 export const listViewNoteRoots = () =>
   apiGet("/api/viewnote/roots")
     .then((r) => ({ items: (r && r.roots) || [], initial: (r && r.default_root) || "" }))

@@ -22,7 +22,7 @@ def note_for_user(user_id: int, note_id: int) -> dict | None:
     with cursor() as cur:
         cur.execute(
             """
-            SELECT id, text, path, tags, created_at, updated_at FROM notes
+            SELECT id, text, path, tags, created_at, updated_at, is_favorite FROM notes
             WHERE id = %s AND user_id = %s;
             """,
             (note_id, user_id),
@@ -36,6 +36,7 @@ def note_for_user(user_id: int, note_id: int) -> dict | None:
             "tags": row[3],
             "created_at": row[4],
             "updated_at": row[5],
+            "is_favorite": row[6],
         } if row else None)
 
 
@@ -139,3 +140,21 @@ def list_children(user_id: int, root: str) -> list[str]:
             (user_id, root),
         )
         return [row[0] for row in cur.fetchall()]
+
+
+def set_favorite(user_id: int, note_id: int, is_favorite: bool) -> bool:
+    """Owner-scoped write of the favourite flag. True if a row went.
+
+    The `user_id` predicate is the tenancy guard, in the statement rather than a
+    check before it. Setting the flag it already has is a successful no-op, not
+    a miss, so the answer is "the note is yours", which is what the 404 means.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            UPDATE notes SET is_favorite = %s
+            WHERE id = %s AND user_id = %s RETURNING id;
+            """,
+            (is_favorite, note_id, user_id),
+        )
+        return cur.fetchone() is not None

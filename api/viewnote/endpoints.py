@@ -1,8 +1,9 @@
 """Viewnote router — the View note page's data.
 
 Three reads: the note the page opens, and the two rosters its path wheels offer
-(the root folders, and the sub-folders under one root). There are no writes:
-the page cannot save yet.
+(the root folders, and the sub-folders under one root). One write: the
+favourite flag, set by `PUT /{note_id}/favorite`. The page still cannot save a
+note's text, path or tags.
 """
 
 import logging
@@ -14,6 +15,8 @@ from api.deps import current_user
 from api.viewnote import db, helper
 from api.viewnote.schemas import (
     ChildrenPayload,
+    FavoritePayload,
+    FavoriteRequest,
     RootsPayload,
     ViewableNote,
 )
@@ -95,4 +98,23 @@ def get_note(note_id: int, user_id: int = Depends(current_user)) -> ViewableNote
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         timezone=db.get_timezone(user_id),
+        is_favorite=row["is_favorite"],
     )
+
+
+@router.put("/{note_id}/favorite", response_model=FavoritePayload)
+def set_favorite(note_id: int, req: FavoriteRequest,
+                 user_id: int = Depends(current_user)) -> FavoritePayload:
+    """Star or un-star a note, owner-scoped.
+
+    A set rather than a toggle, so a retried request lands in the same place.
+    404 covers both "no such note" and "not yours", like the read; the ownership
+    predicate is in the UPDATE. Answers with the stored flag, which is what the
+    client should show.
+    """
+    if not db.set_favorite(user_id, note_id, req.is_favorite):
+        raise HTTPException(status_code=404, detail="note not found")
+
+    logger.info("Note %s favourite set to %s", note_id, req.is_favorite)
+
+    return FavoritePayload(is_favorite=req.is_favorite)
