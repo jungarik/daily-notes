@@ -552,7 +552,7 @@
      is the only way iOS raises the keyboard (see AddNote.jsx). `pointer-events`
      keeps the invisible layer from swallowing taps meant for the feed. */
   .addnote {
-    position: fixed; inset: 0; z-index: 60;
+    position: fixed; inset: 0; z-index: 61;
     display: flex; flex-direction: column;
     background: var(--bg);
     opacity: 0; pointer-events: none;
@@ -867,7 +867,16 @@
     pointer-events: none;
   }
   .viewnote.show .viewnote-bar > * { pointer-events: auto; }
-  .viewnote-bar .tab { padding: 13px 14px; }
+  /* Edit: bottom right, 12px in like the side column, on the bar's baseline,
+     and 15% over the 54px circle (54 * 1.15 = 62). */
+  .viewnote-edit {
+    position: absolute; right: 12px;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+    width: 62px; height: 62px;
+    pointer-events: none;
+  }
+  .viewnote.show .viewnote-edit { pointer-events: auto; }
+  .viewnote-edit svg { width: 23px; height: 23px; }
   .viewnote-side {
     position: absolute; right: 12px; top: 50%;
     transform: translateY(-50%);
@@ -915,8 +924,6 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .viewnote-info-value.is-default { color: var(--text-faint); }
-  .viewnote-bar .tab:disabled { opacity: .45; cursor: default; }
-  .viewnote-bar .fab:disabled { opacity: .45; cursor: default; }
   .viewnote-body {
     flex: 1; min-height: 0; width: 100%;
     padding: calc(16px + env(safe-area-inset-top, 0px)) 74px

@@ -497,14 +497,7 @@ reminder: the kinds the bot already accepts, plus the one piece of metadata
 worth setting while the thought is fresh). **All three are `disabled`** — the
 Mini App has no note-create endpoint, so wiring a photo picker would produce a
 file with nowhere to go; dimmed reads as not-yet, whereas a live-looking button
-that swallows the tap reads as a bug. **The pill is folded away until asked
-for**: the page opens as just ✕ ✏ ✓ in one row, the pencil being a plain `.fab`
-(the modified date's pencil glyph, labelled "Add photo, voice or reminder" —
-the page is already the editor, so the label says what it discloses). Tapping it
-puts the pill in the pencil's slot, so ✕ and ✓ stay at the edges and the bar
-never grows taller; tapping the text folds it back to the pencil (`onClick`, not
-a pointer event, so a touch that only scrolls does not collapse it), and it
-starts folded on every open. The page is
+that swallows the tap reads as a bug. **The pill is always shown**: the page opens as ✕ pill ✓ in one row (there used to be a pencil that unfolded it; it moved to the View note page as *Edit*). The page is
 **always mounted**, hidden with `opacity: 0` + `pointer-events: none` rather
 than unmounted or `display: none`, and that is load-bearing rather than a
 transition: neither of those leaves a focusable element, and iOS and Telegram's
@@ -1107,13 +1100,13 @@ the focus/ego state.
 on an existing note and is its own component with its own `.viewnote*` styles,
 client calls (`fetchViewNote`, `listViewNoteRoots`, `listViewNoteChildren`) and
 section. Only `PathWheel` and the small glyphs (`components/glyphs.jsx`, also
-used by Add note) are shared. It cannot save: the text is `readOnly`, the tick is
-dimmed, and the wheels, star and info block are local to the page and reset on
+used by Add note) are shared. It cannot save: the text is `readOnly`, there is no tick, and the wheels, star and info block are local to the page and reset on
 every open. It has none of the Add note page's keyboard or viewport logic since
 nothing is typed into it. It opens from a **long press on an Explorer note row**
 (450 ms, 6 px slop — the map's numbers; the row tints while held, the native
 callout/context menu is suppressed, and the click that ends the press is
 swallowed so the preview sheet does not also open). Folders do not long-press.
+Its bottom bar is ✕ alone; **Edit** (the pencil glyph) is a 62px circle (the bar's 54px +15%) at the bottom right on the side column's 12px inset. It calls `openAddNote(note_id)` and passes nothing else — the editor reads the note itself — so the Add note page (z-index 61, over this page's 60) opens on top, and closing it returns here. This page re-reads the note when the editor closes, so a saved edit shows without reopening.
 `tests/test_viewnote.py` pins the section, the read-only page and the press.
 
 ## Agentic chat — the agent farm

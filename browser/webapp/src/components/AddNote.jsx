@@ -148,10 +148,6 @@ export default function AddNote({ note_id = null }) {
   // the page opens. When the feature gets a column, this becomes a field read
   // from `GET /api/addnote/{id}` and sent with the save.
   const [favorite, setFavorite] = useState(false);
-  // The capture pill (photo / voice / reminder) is folded into a single pencil
-  // circle until it is asked for: the page opens as just ✕ ✏ ✓, which leaves the
-  // text the room. Closed on every open, like the rest of the page.
-  const [captureOpen, setCaptureOpen] = useState(false);
   // The frontmatter block above the text, toggled by the `i` button. Closed on
   // every open, like everything else on this page.
   const [infoOpen, setInfoOpen] = useState(false);
@@ -172,7 +168,6 @@ export default function AddNote({ note_id = null }) {
     setPath("");
     setOpenWheel("");
     setFavorite(false);
-    setCaptureOpen(false);
     setSaveState("");
     // Reset per visit rather than persisting: a capture screen should open the
     // same way every time, not in whatever state it was left.
@@ -328,11 +323,6 @@ export default function AddNote({ note_id = null }) {
         // works on a tabIndex -1 element, which is all the plus button needs.
         tabIndex={open ? 0 : -1}
         onChange={(e) => setText(e.target.value)}
-        // Going back to the text folds the pill away again, so the bar returns
-        // to ✕ ✏ ✓. `onClick` and not a pointer event: a touch that only
-        // scrolls the text is not a reason to collapse anything.
-        onClick={() => setCaptureOpen(false)}
-        onFocus={() => setCaptureOpen(false)}
       />
       {/* Stays open on a failed read rather than closing: being dropped back
           to the feed mid-gesture reads as a crash, and nothing is saved here
@@ -469,41 +459,23 @@ export default function AddNote({ note_id = null }) {
           </svg>
         </button>
 
-        {/* One slot between ✕ and ✓, holding either the pencil or the pill. The
-            pencil is a plain `.fab` — the same circle as its neighbours — and
-            leaves when tapped, so ✕ and ✓ stay at the edges and the pill takes
-            exactly the middle it always had. Its glyph is the modified date's
-            pencil: the page is already the editor, so the label says what the
-            button actually discloses. */}
-        {captureOpen ? (
-          // Same glass capsule the dock's tab pill uses, between the two
-          // circles exactly as it is on the main page.
-          <nav className="tabbar" aria-label="Capture">
-            <div className="tab-icons">
-              {CAPTURE_KINDS.map((capture) => (
-                <button
-                  key={capture.kind}
-                  className="tab"
-                  aria-label={capture.label}
-                  title={capture.label}
-                  disabled
-                >
-                  {capture.icon}
-                </button>
-              ))}
-            </div>
-          </nav>
-        ) : (
-          <button
-            className="fab"
-            aria-label="Add photo, voice or reminder"
-            title="Add photo, voice or reminder"
-            aria-expanded={false}
-            onClick={() => setCaptureOpen(true)}
-          >
-            <ModifiedGlyph />
-          </button>
-        )}
+        {/* Same glass capsule the dock's tab pill uses, between the two circles
+            exactly as it is on the main page. Always shown. */}
+        <nav className="tabbar" aria-label="Capture">
+          <div className="tab-icons">
+            {CAPTURE_KINDS.map((capture) => (
+              <button
+                key={capture.kind}
+                className="tab"
+                aria-label={capture.label}
+                title={capture.label}
+                disabled
+              >
+                {capture.icon}
+              </button>
+            ))}
+          </div>
+        </nav>
 
         {/* Dimmed while the request is in flight *and* when there is nothing
             to save, and `canSave` guards the handler too: a second tap on a

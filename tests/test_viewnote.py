@@ -87,7 +87,7 @@ class PageTests(unittest.TestCase):
                 self.assertIn(call, PAGE)
 
         self.assertIn('"/api/viewnote/"', API_JS)
-        self.assertNotRegex(PAGE, r"AddNote|addnote|createNote|saveNote")
+        self.assertNotRegex(PAGE, r"addnote|createNote|saveNote")
 
     def test_the_note_read_has_no_catch(self):
         block = API_JS.split("export const fetchViewNote")[1].split("export const")[0]
@@ -96,7 +96,8 @@ class PageTests(unittest.TestCase):
 
     def test_it_cannot_write(self):
         self.assertIn("readOnly", PAGE)
-        self.assertRegex(PAGE, r'className="fab commit" aria-label="Save" disabled')
+        self.assertNotIn('aria-label="Save"', PAGE)
+        self.assertNotIn("fab commit", PAGE)
         self.assertNotRegex(PAGE, r"\b(apiPost|apiPut|createNote|saveNote)\b")
 
     def test_it_carries_no_keyboard_machinery(self):
@@ -118,6 +119,34 @@ class PageTests(unittest.TestCase):
                 self.assertIn(selector, CSS)
 
         self.assertNotIn("viewnote", _read(SRC / "components" / "AddNote.jsx"))
+
+
+class EditButtonTests(unittest.TestCase):
+    def test_the_bar_holds_only_close_and_edit_sits_bottom_right(self):
+        bar = PAGE.split('className="viewnote-bar"', 1)[1].split("</div>", 1)[0]
+
+        self.assertEqual(1, bar.count("<button"))
+        self.assertIn('aria-label="Close"', bar)
+        self.assertIn('className="fab viewnote-edit"', PAGE)
+
+    def test_edit_opens_the_editor_by_id_and_passes_nothing_else(self):
+        self.assertIn("openAddNote(note_id)", PAGE)
+
+    def test_edit_is_fifteen_percent_over_the_bar_circle_on_the_side_inset(self):
+        rule = CSS.split("  .viewnote-edit {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("right: 12px;", rule)
+        self.assertIn("width: 62px; height: 62px;", rule)
+        self.assertIn(".viewnote.show .viewnote-edit", CSS)
+
+    def test_the_editor_stacks_above_the_viewer(self):
+        z = lambda sel: int(re.search(re.escape(sel) + r" \{\s*position: fixed; inset: 0; z-index: (\d+)", CSS).group(1))
+
+        self.assertGreater(z(".addnote"), z(".viewnote"))
+
+    def test_the_page_rereads_after_the_editor_closes(self):
+        self.assertIn("editing", PAGE)
+        self.assertIn("[open, note_id, editing]", PAGE)
 
 
 class LongPressTests(unittest.TestCase):

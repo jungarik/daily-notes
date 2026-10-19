@@ -9,46 +9,6 @@ import {
 import PathWheel from "./PathWheel.jsx";
 import { CalendarGlyph, FolderGlyph, ModifiedGlyph } from "./glyphs.jsx";
 
-// The three capture kinds the bar offers alongside typing — the same three the
-// bot already accepts (text, voice, photo), plus the one piece of metadata
-// worth setting while the thought is still fresh.
-//
-// NONE OF THEM DO ANYTHING, deliberately: this page reads and does not save.
-// They are `disabled` rather than inert with a live look: a dimmed button
-// reads as not-yet, where one that depresses and does nothing reads as a bug.
-const CAPTURE_KINDS = [
-  {
-    kind: "photo",
-    label: "Add a photo",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-9Z" />
-        <circle cx="12" cy="12.5" r="3.4" />
-      </svg>
-    ),
-  },
-  {
-    kind: "voice",
-    label: "Record a voice note",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-        <rect x="9" y="3" width="6" height="11" rx="3" />
-        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" />
-      </svg>
-    ),
-  },
-  {
-    kind: "reminder",
-    label: "Set a reminder",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-        <circle cx="12" cy="13" r="8" />
-        <path d="M12 9v4.3l2.8 1.7M9 2.5 5.5 5M15 2.5 18.5 5" />
-      </svg>
-    ),
-  },
-];
-
 // What the note *is*, as opposed to what it says: where it is filed (the root
 // folder, then the folder one level below it), what it is about. They sit below the view toggle as plain
 // circles rather than in a capsule — every control on this edge is one `.fab`,
@@ -98,15 +58,14 @@ const METADATA_FIELDS = [
 // glyphs are shared.
 //
 // **Reads only for now.** There is no save endpoint behind it, so the text is
-// `readOnly`, the tick is dimmed ("not yet" rather than a button that does
-// nothing), and the path wheels, the star and the info block are local to the
+// `readOnly`, there is no tick, and the path wheels, the star and the info block are local to the
 // page and reset on every open. Opened by a long press on an Explorer row.
 //
 // Always mounted and hidden with `opacity: 0` + `pointer-events: none`, like the
 // Add note page, but with none of its keyboard machinery: nothing here is typed
 // into, so no focus gesture, no visual-viewport sizing.
 export default function ViewNote({ note_id = null }) {
-  const { state, closeViewNote } = useApp();
+  const { state, closeViewNote, openAddNote } = useApp();
   // "loading" | "ready" | "failed".
   const [status, setStatus] = useState("loading");
   const [note, setNote] = useState(null);
@@ -115,10 +74,10 @@ export default function ViewNote({ note_id = null }) {
   const [openWheel, setOpenWheel] = useState("");
   // PLACEHOLDER, as on the Add note page: fills the star here, stores nothing.
   const [favorite, setFavorite] = useState(false);
-  const [captureOpen, setCaptureOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [defaultDestination, setDefaultDestination] = useState("");
   const open = state.viewNoteOpen;
+  const editing = state.addNoteOpen;
 
   useEffect(() => {
     if (!open) return;
@@ -128,12 +87,13 @@ export default function ViewNote({ note_id = null }) {
     setPath("");
     setOpenWheel("");
     setFavorite(false);
-    setCaptureOpen(false);
     setInfoOpen(false);
   }, [open, note_id]);
 
   useEffect(() => {
-    if (!open || note_id == null) return;
+    // Skipped while the editor is up over this page; when it closes (saved or
+    // not) the read runs again, so a saved edit shows here without a reopen.
+    if (!open || note_id == null || editing) return;
 
     let live = true;
     setStatus("loading");
@@ -148,7 +108,7 @@ export default function ViewNote({ note_id = null }) {
     );
 
     return () => { live = false; };
-  }, [open, note_id]);
+  }, [open, note_id, editing]);
 
   // `path` is "" | "Root" | "Root/child"; the two buttons are views of its
   // first two segments. A deeper loaded path is kept until a wheel changes it.
@@ -197,7 +157,6 @@ export default function ViewNote({ note_id = null }) {
         readOnly
         spellCheck={false}
         tabIndex={open ? 0 : -1}
-        onClick={() => setCaptureOpen(false)}
       />
       {/* Stays open on a failed read: being dropped back mid-gesture reads as a
           crash, and a blank page would look like a note with an empty body. */}
@@ -299,36 +258,22 @@ export default function ViewNote({ note_id = null }) {
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
-
-        {captureOpen ? (
-          <nav className="tabbar" aria-label="Capture">
-            <div className="tab-icons">
-              {CAPTURE_KINDS.map((capture) => (
-                <button key={capture.kind} className="tab" aria-label={capture.label} title={capture.label} disabled>
-                  {capture.icon}
-                </button>
-              ))}
-            </div>
-          </nav>
-        ) : (
-          <button
-            className="fab"
-            aria-label="Add photo, voice or reminder"
-            title="Add photo, voice or reminder"
-            aria-expanded={false}
-            onClick={() => setCaptureOpen(true)}
-          >
-            <ModifiedGlyph />
-          </button>
-        )}
-
-        {/* Dimmed: there is nothing to save yet. */}
-        <button className="fab commit" aria-label="Save" disabled>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 13l4 4L19 7" />
-          </svg>
-        </button>
       </div>
+
+      {/* Bottom right, on the side column's 12px inset and the bar's baseline,
+          15% bigger than the bar's 54px circle. Opens the Add note page on top
+          of this one and passes nothing but the id: the editor reads the note
+          itself. `openAddNote` focuses its textarea inside this tap, which is
+          what raises the keyboard. */}
+      <button
+        className="fab viewnote-edit"
+        aria-label="Edit note"
+        title="Edit note"
+        onClick={() => openAddNote(note_id)}
+        disabled={note_id == null}
+      >
+        <ModifiedGlyph />
+      </button>
     </div>
   );
 }
