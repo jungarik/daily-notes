@@ -122,7 +122,8 @@ class PageTests(unittest.TestCase):
 
 
 class EditButtonTests(unittest.TestCase):
-    def test_back_is_top_right_and_as_big_as_the_side_buttons(self):
+    def test_back_is_bottom_left_a_chevron_and_as_big_as_edit(self):
+        self.assertNotIn("viewnote-bar", PAGE + CSS)
         self.assertIn('className="fab viewnote-close"', PAGE)
         self.assertIn('aria-label="Back"', PAGE)
         self.assertIn('<path d="M14.5 5.5 8 12l6.5 6.5" />', PAGE)
@@ -130,37 +131,16 @@ class EditButtonTests(unittest.TestCase):
 
         rule = CSS.split("  .viewnote-close {", 1)[1].split("}", 1)[0]
 
-        self.assertIn("right: 12px;", rule)
-        self.assertIn("top: calc(12px + env(safe-area-inset-top, 0px));", rule)
-        self.assertIn("width: 46px; height: 46px;", rule)
-        self.assertIn(".viewnote-side .fab { width: 46px; height: 46px; }", CSS)
-        self.assertIn(".viewnote-close svg { width: 17px; height: 17px; }", CSS)
+        self.assertIn("left: 12px;", rule)
+        self.assertIn("width: 62px; height: 62px;", rule)
+        self.assertIn(".viewnote-close svg { width: 23px; height: 23px; }", CSS)
+        self.assertIn("width: 62px; height: 62px;", CSS.split("  .viewnote-edit {", 1)[1].split("}", 1)[0])
 
+    def test_close_and_edit_share_a_baseline(self):
+        bottom = "bottom: calc(30px + env(safe-area-inset-bottom, 0px));"
 
-class MetaRevealTests(unittest.TestCase):
-    def test_the_info_button_is_gone(self):
-        self.assertNotIn("viewnote-info-btn", PAGE + CSS)
-        self.assertNotIn("infoOpen", PAGE)
-        self.assertNotIn("Note info", PAGE)
-
-    def test_meta_and_text_share_one_scroller_meta_first(self):
-        scroller = PAGE.split('className="viewnote-scroll"', 1)[1]
-
-        self.assertLess(scroller.index('className="viewnote-info"'), scroller.index('className="viewnote-body"'))
-
-    def test_the_page_opens_scrolled_past_the_meta_block(self):
-        self.assertIn("scrollRef.current.scrollTop = metaRef.current.offsetHeight;", PAGE)
-        self.assertIn("[open, note_id, status]", PAGE)
-
-    def test_the_text_is_tall_enough_to_always_scroll(self):
-        rule = CSS.split("  .viewnote-body {", 1)[1].split("}", 1)[0]
-
-        self.assertIn("min-height: 100%;", rule)
-
-    def test_meta_rows_keep_created_modified_and_path(self):
-        for key in ('"created"', '"modified"', '"path"'):
-            self.assertIn(f"key: {key}", PAGE)
-
+        for selector in ("  .viewnote-close {", "  .viewnote-edit {"):
+            self.assertIn(bottom, CSS.split(selector, 1)[1].split("}", 1)[0])
 
     def test_the_chat_button_is_a_bubble_not_the_sparkle(self):
         button = PAGE.split('className="fab viewnote-ai"', 1)[1].split("</button>", 1)[0]

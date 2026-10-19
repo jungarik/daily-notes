@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { fmtDateTime } from "../lib/format.js";
 import {
@@ -74,10 +74,7 @@ export default function ViewNote({ note_id = null }) {
   const [openWheel, setOpenWheel] = useState("");
   // PLACEHOLDER, as on the Add note page: fills the star here, stores nothing.
   const [favorite, setFavorite] = useState(false);
-  // The scroller and the meta block inside it: the block sits above the text and
-  // is scrolled out of sight on load, so pulling the text down reveals it.
-  const scrollRef = useRef(null);
-  const metaRef = useRef(null);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [defaultDestination, setDefaultDestination] = useState("");
   const open = state.viewNoteOpen;
   const editing = state.addNoteOpen;
@@ -90,6 +87,7 @@ export default function ViewNote({ note_id = null }) {
     setPath("");
     setOpenWheel("");
     setFavorite(false);
+    setInfoOpen(false);
   }, [open, note_id]);
 
   useEffect(() => {
@@ -116,20 +114,12 @@ export default function ViewNote({ note_id = null }) {
   // first two segments. A deeper loaded path is kept until a wheel changes it.
   const [root, child = ""] = path.split("/");
   useEffect(() => {
-    if (!open || path || defaultDestination) return;
+    if (!infoOpen || path || defaultDestination) return;
     let live = true;
     listViewNoteRoots().then((roster) => { if (live) setDefaultDestination(roster.initial); });
 
     return () => { live = false; };
-  }, [open, path, defaultDestination]);
-
-  // Hide the meta block above the fold once the note is in. Keyed on `status`
-  // so it happens once per load and a later wheel pick does not yank the scroll.
-  useLayoutEffect(() => {
-    if (!open || status !== "ready" || !scrollRef.current || !metaRef.current) return;
-
-    scrollRef.current.scrollTop = metaRef.current.offsetHeight;
-  }, [open, note_id, status]);
+  }, [infoOpen, path, defaultDestination]);
 
   const dated = note !== null && !!note.created_at;
   const infoRows = [
@@ -148,11 +138,8 @@ export default function ViewNote({ note_id = null }) {
       aria-label="View note"
       aria-hidden={open ? undefined : true}
     >
-      {/* One scroller holds the meta block and then the text. The text is at
-          least a screen tall, so there is always a little to scroll, and it
-          opens scrolled past the block: pulling down at the top reveals it. */}
-      <div className="viewnote-scroll" ref={scrollRef}>
-        <div className="viewnote-info" ref={metaRef}>
+      {infoOpen && (
+        <div className="viewnote-info">
           {infoRows.map((row) => (
             <div className="viewnote-info-row" key={row.key}>
               <span className="viewnote-info-icon">{row.icon}</span>
@@ -162,15 +149,34 @@ export default function ViewNote({ note_id = null }) {
             </div>
           ))}
         </div>
-        <div className="viewnote-body">
-          {note ? note.text : (status === "loading" ? <span className="viewnote-loading">Loading…</span> : "")}
-        </div>
-      </div>
+      )}
+      <textarea
+        className="viewnote-body"
+        value={note ? note.text : ""}
+        placeholder={status === "loading" ? "Loading…" : ""}
+        readOnly
+        spellCheck={false}
+        tabIndex={open ? 0 : -1}
+      />
       {/* Stays open on a failed read: being dropped back mid-gesture reads as a
           crash, and a blank page would look like a note with an empty body. */}
       {status === "failed" && (
         <div className="viewnote-error">Couldn’t load this note.</div>
       )}
+      <button
+        className={"viewnote-info-btn" + (infoOpen ? " active" : "")}
+        aria-label="Note info"
+        title="Note info"
+        aria-expanded={infoOpen}
+        onClick={() => setInfoOpen((on) => !on)}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5.5" />
+          <path d="M12 7.7h.01" />
+        </svg>
+      </button>
+
       <div className="viewnote-side">
         <button className="fab viewnote-ai" aria-label="Chat" title="Chat" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -245,8 +251,8 @@ export default function ViewNote({ note_id = null }) {
         })}
       </div>
 
-      {/* Top right, where the info button used to be: the side column's 12px
-          inset and the same 46px circle as its path and tags buttons. */}
+      {/* Bottom left, mirroring Edit: the side column's 12px inset and the same
+          46px circle as its path and tags buttons. */}
       <button className="fab viewnote-close" aria-label="Back" title="Back" onClick={closeViewNote}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14.5 5.5 8 12l6.5 6.5" />
