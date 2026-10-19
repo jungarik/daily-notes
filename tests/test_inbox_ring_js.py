@@ -117,34 +117,40 @@ class RingDashesTests(unittest.TestCase):
 
                 self.assertAlmostEqual(step, ring["dash"] + ring["gap"], places=9)
 
-    def test_the_painted_ink_matches_the_requested_ratio(self):
-        """Round caps paint half a stroke width past each end of a dash, so
-        what lands on screen is not what the dash array asked for: the ink runs
-        a whole stroke width long and the gap a whole stroke width short.
-
-        The ratio is asserted on the PAINTED lengths, because those are what a
-        reader sees. Checking the requested `dash` instead would pass whether
-        or not the compensation exists — the bug it is meant to catch is
-        invisible at that level.
-        """
-        for count in (1, 6, 12, 128):
-            with self.subTest(count=count):
-                ring = _rings([count])["rings"][0]
-                step = CIRCUMFERENCE / ring["segments"]
-
-                self.assertAlmostEqual(0.6, (ring["dash"] + STROKE) / step,
-                                       places=9)
-
-    def test_the_gap_survives_the_round_caps(self):
-        """A painted gap narrower than nothing is a solid ring: the segments
-        close up and the Inbox looks empty at exactly the counts where it is
-        fullest. At the cap the ring is at its tightest, so that is where this
-        has to hold."""
-        for count in (1, 6, 12, 128):
+    def test_every_painted_gap_is_the_same_whatever_the_count(self):
+        """Round caps paint half a stroke width past each end of a dash, so the
+        array asks for a gap one stroke wider than the one that shows. The shown
+        gap is asserted, not the requested one, and it must not move between a
+        ring of two and a ring of twelve."""
+        for count in (2, 3, 6, 12, 128):
             with self.subTest(count=count):
                 ring = _rings([count])["rings"][0]
 
-                self.assertGreater(ring["gap"] - STROKE, 0.5)
+                self.assertAlmostEqual(3, ring["gap"] - STROKE, places=9)
+
+    def test_the_gap_is_small(self):
+        """Two or three units: wide enough to read as separate dashes, narrow
+        enough to read as one ring."""
+        for count in (2, 12):
+            gap = _rings([count])["rings"][0]["gap"] - STROKE
+
+            self.assertTrue(2 <= gap <= 3)
+
+    def test_one_note_is_a_solid_ring(self):
+        """No gap and a dash as long as the circle: a single segment has no
+        neighbour to be gapped from, and a bite out of the ring read as half a
+        circle."""
+        ring = _rings([1])["rings"][0]
+
+        self.assertEqual(1, ring["segments"])
+        self.assertAlmostEqual(CIRCUMFERENCE, ring["dash"], places=9)
+        self.assertEqual(0, ring["gap"])
+
+    def test_two_notes_are_two_dashes_with_gaps(self):
+        ring = _rings([2])["rings"][0]
+
+        self.assertGreater(ring["gap"], 0)
+        self.assertAlmostEqual(CIRCUMFERENCE / 2, ring["dash"] + ring["gap"], places=9)
 
     def test_the_dash_is_never_negative(self):
         """A negative dash is not a thin segment, it is an invalid attribute:
@@ -153,14 +159,6 @@ class RingDashesTests(unittest.TestCase):
         for count in (1, 2, 12, 99):
             with self.subTest(count=count):
                 self.assertGreater(_rings([count])["rings"][0]["dash"], 0)
-
-    def test_one_note_still_reads_as_a_broken_ring(self):
-        """The degenerate case: with a single segment the dash would otherwise
-        run the whole circumference and close into a plain circle — the same
-        shape that means "empty"."""
-        ring = _rings([1])["rings"][0]
-
-        self.assertLess(ring["dash"], CIRCUMFERENCE * 0.95)
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not available")
