@@ -1,6 +1,6 @@
 import { useApp } from "../store/AppContext.jsx";
 import CountRing from "./CountRing.jsx";
-import FavoriteStories from "./FavoriteStories.jsx";
+import FavoriteNotes from "./FavoriteNotes.jsx";
 
 // The Inbox ring on the left, always available; a row of favourite folders that
 // scrolls sideways beside it; and a folder-filter dots button on the right shown
@@ -37,7 +37,7 @@ export default function Header() {
         </div>
       </div>
 
-      <FavoriteStories groups={state.favorites || []} />
+      <FavoriteNotes groups={state.favorites || []} />
 
       <div className="hdr-side">
         <button

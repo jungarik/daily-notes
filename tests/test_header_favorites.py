@@ -30,7 +30,7 @@ if not _had_db:
 
 DB_SOURCE = (ROOT / "api" / "header" / "db.py").read_text(encoding="utf-8")
 HEADER = (SRC / "components" / "Header.jsx").read_text(encoding="utf-8")
-STORIES = (SRC / "components" / "FavoriteStories.jsx").read_text(encoding="utf-8")
+STORIES = (SRC / "components" / "FavoriteNotes.jsx").read_text(encoding="utf-8")
 RING = (SRC / "components" / "CountRing.jsx").read_text(encoding="utf-8")
 CSS = (SRC / "styles.css").read_text(encoding="utf-8")
 
@@ -116,7 +116,7 @@ class OrderingTests(unittest.TestCase):
 
 class RowTests(unittest.TestCase):
     def test_the_header_shows_stories_and_no_root_counts(self):
-        self.assertIn("<FavoriteStories groups={state.favorites || []} />", HEADER)
+        self.assertIn("<FavoriteNotes groups={state.favorites || []} />", HEADER)
         self.assertNotIn("hdr-stats", HEADER + CSS)
         self.assertNotIn('className="stat"', HEADER)
 

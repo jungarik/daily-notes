@@ -6,7 +6,7 @@ import CountRing from "./CountRing.jsx";
 //
 // A readout for now — nothing here is tappable. The key is the stored path, the
 // one thing that tells `Projects/api` from `Areas/api` apart.
-export default function FavoriteStories({ groups }) {
+export default function FavoriteNotes({ groups }) {
   return (
     <div className="hdr-stories" role="list" aria-label="Favorite folders">
       {groups.map((group) => (
