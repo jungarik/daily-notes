@@ -114,6 +114,7 @@ def _stats(language, counts):
     test can check the labels and the matching against each other.
     """
     with patch.object(helper.db, "get_language", return_value=language), \
+            patch.object(helper.db, "count_favorites_by_folder", return_value=[]), \
             patch.object(helper.db, "count_root_entries",
                          return_value=counts) as counted:
         return helper.stats(7), counted.call_args[0][1]

@@ -62,7 +62,7 @@ export const fetchNotes = () => apiGet("/api/explorer").catch(() => ({ notes: []
 export const fetchFeed = () => apiGet("/api/feed").catch(() => []);
 export const fetchNote = (id) => apiGet("/api/notesheet/" + encodeURIComponent(id)).catch(() => null);
 export const fetchGraph = () => apiGet("/api/mapview/graph").catch(() => ({ nodes: [], edges: [] }));
-export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [] }));
+export const fetchStats = () => apiGet("/api/header/stats").catch(() => ({ stats: [], favorites: [] }));
 export const searchNotes = (q) => apiGet("/api/search?q=" + encodeURIComponent(q)).catch(() => []);
 // The two path wheels' rosters, each its own request: the root folders (plus
 // where a note goes when nobody picks), and the sub-folders already in use

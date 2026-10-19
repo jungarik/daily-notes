@@ -103,7 +103,8 @@ class HeaderSharesTheSourceTests(unittest.TestCase):
 
     def test_the_header_reports_the_first_roots_of_the_roster(self):
         with patch.object(header.db, "get_language", return_value="uk"), \
-                patch.object(header.db, "count_root_entries", return_value={}):
+                patch.object(header.db, "count_root_entries", return_value={}), \
+                patch.object(header.db, "count_favorites_by_folder", return_value=[]):
             reported = [entry["key"] for entry in header.stats(7)["stats"]]
 
         self.assertEqual(list(common.order_root_keys()[:4]), reported)
@@ -116,7 +117,8 @@ class HeaderSharesTheSourceTests(unittest.TestCase):
 
         with patch.object(config, "ROOT_FOLDERS", moved), \
                 patch.object(header.db, "get_language", return_value="uk"), \
-                patch.object(header.db, "count_root_entries", return_value={}):
+                patch.object(header.db, "count_root_entries", return_value={}), \
+                patch.object(header.db, "count_favorites_by_folder", return_value=[]):
             reported = [entry["key"] for entry in header.stats(7)["stats"]]
 
         self.assertEqual("folder_areas", reported[1])

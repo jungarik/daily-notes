@@ -44,7 +44,7 @@
   }
   body { display: flex; flex-direction: column; }
 
-  /* Instagram-style stats header (glass) */
+  /* Header: no bar, glass scrim */
   /* No bar. The two actions carry their own glass (see .hdr-add / .hdr-filter);
      the stats are held up by a progressive scrim instead of a panel.
 
@@ -76,17 +76,35 @@
     mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 100%);
   }
   header button { pointer-events: auto; }
-  /* Plus hard left, stats hard right. The side wrappers no longer split the
-     free space between them — they are sized to their contents and the stats
-     take the slack with `margin-left: auto`, so the stats + dots group is
-     pinned right whatever the counts widen to. The dots follow the numbers in
-     DOM order, which puts them at the end of that line; the header's 12px gap
-     keeps them off the last stat and its 16px padding off the screen edge. */
-  .hdr-stats { display: flex; gap: 30px; margin-left: auto; }
+  /* The favourite folders: a row of circles beside the Inbox ring that scrolls
+     sideways. It takes the slack (`flex: 1`), so the filter dots stay at the
+     right edge, and `min-width: 0` lets it shrink below its content, which is
+     what makes it scroll rather than push the header wider.
+
+     Each circle is the Inbox's drawing at 52px (the Inbox is 64) with the
+     folder's name under it. 52 + 12 for the name is 64, so the row is exactly as
+     tall as the ring and the header keeps its height. The strip is the header's
+     one scroller and the header lets no pointer through, hence `auto` here;
+     `touch-action: pan-x` keeps a sideways drag from scrolling the page, and
+     the last 16px fade out so a clipped circle reads as "more this way". */
+  .hdr-stories {
+    flex: 1; min-width: 0; height: 64px;
+    display: flex; gap: 12px; align-items: flex-start;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    touch-action: pan-x; pointer-events: auto;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+  }
+  .hdr-stories::-webkit-scrollbar { display: none; }
+  .story { flex: none; width: 56px; display: flex; flex-direction: column; align-items: center; }
+  .story .hdr-ring { position: static; width: 52px; height: 52px; }
+  .story-name {
+    display: block; max-width: 100%; height: 12px;
+    font-size: 11px; line-height: 12px; color: var(--text-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .hdr-side { flex: none; display: flex; align-items: center; }
-  .stat { text-align: center; min-width: 54px; }
-  .stat b { display: block; font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15; }
-  .stat span { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
 
   /* Floating liquid-glass bottom tab bar */
   /* Floating dock: chat circle (left) · tab pill (center) · search circle (right) */
@@ -160,7 +178,7 @@
 
   .view.hidden { display: none; }
 
-  /* Image carousel (Instagram-style: horizontal swipe + snap, dots) */
+  /* Image carousel (horizontal swipe + snap, dots) */
   .carousel { position: relative; margin: 10px 0; }
   .carousel .track {
     display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
@@ -439,7 +457,7 @@
 
   /* The Inbox unit: a bordered disc holding the count, a dashed ring around it
      carrying one dash per waiting note, and the add button as a badge on the
-     disc's lower-right — the Instagram add-story shape. The disc and ring are a
+     disc's lower-right. The disc and ring are a
      readout and the badge is the only control, so only the badge is a <button>.
 
      64px, not 54: the disc is still 54 across — the size the dock's circles
@@ -470,15 +488,14 @@
      makes "nothing waiting" a visibly different shape from "twelve waiting". */
   .hdr-ring-dashes { stroke: var(--commit); }
 
-  /* The count owns the middle, at `.stat b`'s size and weight — it is one of
-     the vault's root counts and should not look like a different species of
-     number just because it sits in a circle. Tabular figures so the digits
+  /* The count owns the middle, at 19px and weight 600 on the 64px Inbox ring
+     (it scales with the box on the smaller favourite circles). Tabular figures so the digits
      don't shuffle the centring as the count changes.
 
      It is SVG text, so the colour is `fill` and not `color`, and there is no
      `line-height` in the picture at all — which is the point of putting it
      there. The box is 64 units wide and rendered at 64px, so 19px here is
-     19px on screen, the same number `.stat b` uses.
+     19px on screen at the Inbox's size.
 
      White at every count, zero included: the dashes are what say how full the
      Inbox is, and a number that also changed colour would be saying it twice. */
@@ -524,19 +541,18 @@
      button that narrow is unhittable. 12px each side makes it 27x40px while
      leaving the glyph exactly 16px.
 
-     The lift puts the first dot on the numbers' top line, and it is the same
-     number whatever sets the row height — which is why growing `.hdr-inbox`
-     from 54px to 64px left it alone. Both the stats and this button are centred
-     in the row, so for a row of height H the numbers start at
-     14 + (H - 38.35)/2 = H/2 - 5.175, the 40px button's glyph starts at
-     14 + (H - 40)/2 + 12 = H/2 + 6, and the difference is -11.175 with H
-     cancelling out. */
+     The lift puts the dots' middle on the middle of the favourite circles, 6px
+     above the row's centre (the circles are 52px at the top of a 64px row, the
+     rest being their names). The 40px button's glyph is centred in the row, so
+     its middle starts at the row's middle and -20px lands it 6px above that,
+     inside the 14px the glyph sits down from the button's top (6 + 8 = 14),
+     whatever the row height. */
   .hdr-filter {
     padding: 12px;
     border: none;
     background: transparent;
     color: var(--text-muted);
-    transform: translateY(-11.17px);
+    transform: translateY(-20px);
   }
   .hdr-filter svg { width: 3.2px; height: 16px; }
   .hdr-filter.active { color: var(--accent); }

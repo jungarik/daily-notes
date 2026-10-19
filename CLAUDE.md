@@ -459,14 +459,24 @@ orders a top level it only knows as localised path strings) +
 folders can't be moved), `DELETE /api/contextmenu/notes/{id}` (hard delete),
 `GET /api/mapview/graph` (connections map),
 `GET /api/header/stats` (root-folder counts: per root, its sub-folders plus
-its loose notes, labelled in the user's language), `GET /api/search?q=`
+its loose notes, labelled in the user's language; plus the favourite groups), `GET /api/search?q=`
 (server-side search), and `GET /api/notecard/attachments/{id}?t=<token>` (the
 signed image proxy). `POST /api/chat/v2` + `/api/chat/v2/confirm` back the
 **agentic chat tab** (see below).
 
-UI: a **header** with no bar of its own — an **Inbox ring**, the vault's other
-root-folder counts (Projects / Areas / Resources) and a **folder-filter**
-button, over a progressive blur scrim. The ring is two concentric bands in a
+UI: a **header** with no bar of its own — an **Inbox ring**, a sideways-scrolling
+row of **favourite folders** and a **folder-filter** button, over a progressive
+blur scrim. The row has one circle per folder that holds favourite notes
+(`GET /api/header/stats` → `favorites`, grouped by the note's own path: `Root/Sub`,
+or `Root` for a note filed directly on it; root order, loose notes first, then
+sub-folders by name; an unknown root sorts last rather than vanishing). Each is
+the Inbox's drawing — `CountRing`, shared by both — at 52px against the Inbox's
+64, with the sub-folder (or root) name under it, one line, ellipsised. 52 + a
+12px name is 64, so the row is as tall as the ring; the strip scrolls
+horizontally (`overflow-x: auto`, `touch-action: pan-x`, the last 16px faded)
+and the filter dots keep the right edge. Nothing in it is tappable yet. The
+filter dots are lifted -20px to sit on the circles' middle. The other roots'
+counts are still in the payload but unused. Starring a note re-reads the stats. The ring is two concentric bands in a
 64px box. Inside is the **disc** — 54px, the size the dock's circles use, a
 1.5px grey border holding the Inbox count at `.stat b`'s size and weight; it is
 always drawn, so an empty Inbox is just a bordered circle with a white `0`. The

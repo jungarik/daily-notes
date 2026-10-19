@@ -66,7 +66,7 @@ const METADATA_FIELDS = [
 // Add note page, but with none of its keyboard machinery: nothing here is typed
 // into, so no focus gesture, no visual-viewport sizing.
 export default function ViewNote({ note_id = null }) {
-  const { state, closeViewNote, openAddNote } = useApp();
+  const { state, closeViewNote, openAddNote, refreshStats } = useApp();
   // "loading" | "ready" | "failed".
   const [status, setStatus] = useState("loading");
   const [note, setNote] = useState(null);
@@ -143,6 +143,8 @@ export default function ViewNote({ note_id = null }) {
       const stored = await setViewNoteFavorite(note_id, wanted);
 
       setFavorite(stored.is_favorite);
+      // The header's favourite circles count this note, so they re-read.
+      refreshStats();
     } catch (err) {
       setFavorite(!wanted);
       setFavoriteError("Couldn’t update favorite. Try again.");
