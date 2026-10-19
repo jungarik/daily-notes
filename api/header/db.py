@@ -54,3 +54,34 @@ def count_root_entries(user_id: int, root_names: list[str]) -> dict[str, int]:
         )
 
         return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def count_favorites_by_folder(user_id: int) -> list[tuple[str, str, int]]:
+    """Favourite notes per folder: `(root, sub, count)`, `sub` empty for a note
+    filed directly on a root.
+
+    Grouped by the note's own two path levels, so `Projects/api` and
+    `Projects/web` are two groups and a loose `Projects` note is a third.
+    Paths are capped at two levels, so splitting on the first slash is
+    exhaustive. A note with no path is not in the vault yet and is left out,
+    like everywhere else the Mini App lists notes.
+
+    The `user_id` predicate is the tenancy guard. Order is left to the caller:
+    the root order is config and the stored names are localised, so only the
+    caller can sort them.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT split_part(path, '/', 1) AS root,
+                   split_part(path, '/', 2) AS sub,
+                   count(*) AS favorites
+            FROM notes
+            WHERE user_id = %s AND is_favorite
+              AND path IS NOT NULL AND path <> ''
+            GROUP BY root, sub;
+            """,
+            (user_id,),
+        )
+
+        return [(row[0], row[1], row[2]) for row in cur.fetchall()]

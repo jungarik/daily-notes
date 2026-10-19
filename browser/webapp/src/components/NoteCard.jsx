@@ -3,7 +3,7 @@ import { mediaUrl } from "../lib/api.js";
 import { dateText, tagsText, linkedItems, clampText } from "../lib/format.js";
 import { useApp } from "../store/AppContext.jsx";
 
-// Instagram-style image carousel with a position counter + dots.
+// Image carousel with a position counter + dots.
 function Carousel({ atts }) {
   const [idx, setIdx] = useState(0);
   if (!atts || !atts.length) return null;

@@ -28,6 +28,7 @@ const initial = {
   feed: null,               // full note cards; null = not loaded
   filterSel: loadFilter(),  // Set of included folder keys, or null = all
   stats: [],                // header root-folder counts (/api/header/stats)
+  favorites: [],            // favourite notes grouped by folder, same payload
   sheetNoteId: null,        // open note preview (null = closed)
   filterOpen: false,
   addNoteOpen: false,       // the Add note page (a full-screen overlay)
@@ -93,7 +94,9 @@ export function AppProvider({ children }) {
 
 
   const refreshStats = useCallback(async () => {
-    patch({ stats: (await api.fetchStats()).stats || [] });
+    const header = await api.fetchStats();
+
+    patch({ stats: header.stats || [], favorites: header.favorites || [] });
   }, [patch]);
 
   // Deleting lives here rather than in the sheet because the aftermath is all
