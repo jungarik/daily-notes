@@ -357,8 +357,11 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/notecard/attachments/{id}?t=<token>`).
 - **`api/viewnote`** — the View note page's reads (`GET /api/viewnote/roots`,
   `/children?root=`, `/{note_id}`), a deliberate copy of `addnote`'s so the two
-  pages can diverge. Reads only: no write verbs, nothing in `allow_methods` to
-  add. Same tenancy and null-coercion rules as the editor's read.
+  pages can diverge, plus its one write, `PUT /api/viewnote/{note_id}/favorite`
+  `{is_favorite}` — a *set*, not a toggle, owner-scoped in the UPDATE, 404 for
+  not-yours (PUT is already in `allow_methods`). `notes.is_favorite` is
+  migration 0024, `BOOLEAN NOT NULL DEFAULT false`; the 0023 trigger counts a
+  star as a modification. Same tenancy and null-coercion rules as the editor's read.
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
   (`POST /api/chat/v2`, `/api/chat/v2/confirm`). It owns the caller's clock/locale
   *and* the `chat_threads` projection (its own `db`): it hands the thread to
@@ -1100,8 +1103,8 @@ the focus/ego state.
 on an existing note and is its own component with its own `.viewnote*` styles,
 client calls (`fetchViewNote`, `listViewNoteRoots`, `listViewNoteChildren`) and
 section. Only `PathWheel` and the small glyphs (`components/glyphs.jsx`, also
-used by Add note) are shared. It cannot save: the text is `readOnly`, there is no tick, and the wheels, star and info block are local to the page and reset on
-every open. It has none of the Add note page's keyboard or viewport logic since
+used by Add note) are shared. It cannot save the note: the text is `readOnly`, there is no tick, and the wheels and info block are local to the page and reset on
+every open. The **star is live**: it is read with the note (`is_favorite`), fills and lights (ring and glyph, never the blue fill) when set, and a tap flips it at once, calls the favourite endpoint, and rolls back with an inline message if that fails; a second tap is ignored while one is in flight. Only this page knows the flag so far — Add note's star is still a local placeholder. It has none of the Add note page's keyboard or viewport logic since
 nothing is typed into it. It opens from a **long press on an Explorer note row**
 (450 ms, 6 px slop — the map's numbers; the row tints while held, the native
 callout/context menu is suppressed, and the click that ends the press is

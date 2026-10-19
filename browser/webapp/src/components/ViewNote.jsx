@@ -3,6 +3,7 @@ import { useApp } from "../store/AppContext.jsx";
 import { fmtDateTime } from "../lib/format.js";
 import {
   fetchViewNote,
+  setViewNoteFavorite,
   listViewNoteChildren,
   listViewNoteRoots,
 } from "../lib/api.js";
@@ -72,8 +73,13 @@ export default function ViewNote({ note_id = null }) {
   const [path, setPath] = useState("");
   // Which wheel is open: "" | "path" (the root) | "subpath" (the level below).
   const [openWheel, setOpenWheel] = useState("");
-  // PLACEHOLDER, as on the Add note page: fills the star here, stores nothing.
+  // The note's favourite flag. Read with the note; a tap flips it at once and
+  // `toggleFavorite` rolls it back if the server refuses. `favoriteError` is the
+  // line shown for that, and `favoriteSaving` keeps a second tap from racing the
+  // first.
   const [favorite, setFavorite] = useState(false);
+  const [favoriteSaving, setFavoriteSaving] = useState(false);
+  const [favoriteError, setFavoriteError] = useState("");
   const [infoOpen, setInfoOpen] = useState(false);
   const [defaultDestination, setDefaultDestination] = useState("");
   const open = state.viewNoteOpen;
@@ -87,6 +93,8 @@ export default function ViewNote({ note_id = null }) {
     setPath("");
     setOpenWheel("");
     setFavorite(false);
+    setFavoriteSaving(false);
+    setFavoriteError("");
     setInfoOpen(false);
   }, [open, note_id]);
 
@@ -102,6 +110,7 @@ export default function ViewNote({ note_id = null }) {
         if (!live) return;
         setNote(loaded);
         setPath(loaded.path || "");
+        setFavorite(!!loaded.is_favorite);
         setStatus("ready");
       },
       () => { if (live) setStatus("failed"); },
@@ -120,6 +129,27 @@ export default function ViewNote({ note_id = null }) {
 
     return () => { live = false; };
   }, [infoOpen, path, defaultDestination]);
+
+  const toggleFavorite = async () => {
+    if (favoriteSaving || note_id == null) return;
+
+    const wanted = !favorite;
+
+    setFavorite(wanted);
+    setFavoriteSaving(true);
+    setFavoriteError("");
+
+    try {
+      const stored = await setViewNoteFavorite(note_id, wanted);
+
+      setFavorite(stored.is_favorite);
+    } catch (err) {
+      setFavorite(!wanted);
+      setFavoriteError("Couldn’t update favorite. Try again.");
+    }
+
+    setFavoriteSaving(false);
+  };
 
   const dated = note !== null && !!note.created_at;
   const infoRows = [
@@ -160,8 +190,10 @@ export default function ViewNote({ note_id = null }) {
       />
       {/* Stays open on a failed read: being dropped back mid-gesture reads as a
           crash, and a blank page would look like a note with an empty body. */}
-      {status === "failed" && (
-        <div className="viewnote-error">Couldn’t load this note.</div>
+      {(status === "failed" || favoriteError) && (
+        <div className="viewnote-error">
+          {status === "failed" ? "Couldn’t load this note." : favoriteError}
+        </div>
       )}
       <button
         className={"viewnote-info-btn" + (infoOpen ? " active" : "")}
@@ -201,7 +233,7 @@ export default function ViewNote({ note_id = null }) {
                 aria-label={meta.label}
                 title={meta.label}
                 aria-pressed={favorite}
-                onClick={() => setFavorite((on) => !on)}
+                onClick={toggleFavorite}
               >
                 <svg viewBox="0 0 24 24" fill={favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3.6Z" />

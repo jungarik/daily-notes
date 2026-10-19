@@ -36,6 +36,7 @@ class ViewableNote(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     timezone: str | None = None
+    is_favorite: bool = False
 
 
 class RootsPayload(BaseModel):
@@ -55,3 +56,14 @@ class ChildrenPayload(BaseModel):
     user already files notes under inside one root. Names, not paths — the client
     joins them onto the root it asked about."""
     children: list[str] = []
+
+
+class FavoriteRequest(BaseModel):
+    """Set, not toggle: sending the state you want makes a retried request
+    harmless, where a toggle would undo itself."""
+    is_favorite: bool
+
+
+class FavoritePayload(BaseModel):
+    """The flag as stored, so the client shows what the server holds."""
+    is_favorite: bool
