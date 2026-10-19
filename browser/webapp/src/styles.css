@@ -859,18 +859,18 @@
     transition: opacity .16s ease;
   }
   .viewnote.show { opacity: 1; pointer-events: auto; }
-  /* Back: top right, 12px in like the side column's buttons, and the same 46px
-     circle (17px glyph) as its path and tags. */
+  /* Close: bottom left, 12px in like the side column's buttons, on Edit's
+     baseline, and the same 46px circle (17px glyph) as its path and tags. */
   .viewnote-close {
-    position: absolute; right: 12px;
-    top: calc(12px + env(safe-area-inset-top, 0px));
-    z-index: 2;
+    position: absolute; left: 12px;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
     width: 46px; height: 46px;
     pointer-events: none;
   }
   .viewnote.show .viewnote-close { pointer-events: auto; }
   .viewnote-close svg { width: 17px; height: 17px; }
-  /* Edit: bottom right, 12px in like the side column, and 15% over the 54px circle (54 * 1.15 = 62). */
+  /* Edit: bottom right, 12px in like the side column, on the close button's baseline,
+     and 15% over the 54px circle (54 * 1.15 = 62). */
   .viewnote-edit {
     position: absolute; right: 12px;
     bottom: calc(30px + env(safe-area-inset-bottom, 0px));
@@ -892,11 +892,26 @@
   .viewnote-side .fab:disabled { opacity: .45; cursor: default; }
   .viewnote-side .fab.set { color: var(--commit); border-color: var(--commit); }
   .viewnote-error { margin: 0 20px; color: #e5736b; font-size: 13px; }
+  .viewnote-info-btn {
+    position: absolute; right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; padding: 0;
+    border: none; background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    pointer-events: none;
+  }
+  .viewnote.show .viewnote-info-btn { pointer-events: auto; }
+  .viewnote-info-btn svg { width: 22px; height: 22px; }
+  .viewnote-info-btn.active { color: var(--text); }
   .viewnote-info {
     flex: none;
     padding: calc(14px + env(safe-area-inset-top, 0px)) 74px 12px 16px;
     border-bottom: 1px solid var(--border);
   }
+  .viewnote-info + .viewnote-body { padding-top: 12px; }
   .viewnote-info-row {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px; line-height: 1.5;
@@ -911,22 +926,17 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .viewnote-info-value.is-default { color: var(--text-faint); }
-  /* The one scroller: meta block first, then the text. */
-  .viewnote-scroll {
-    flex: 1; min-height: 0; overflow-y: auto;
-    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
-  }
-  /* A screen tall at least, so there is always the block's height to scroll. */
   .viewnote-body {
-    min-height: 100%; box-sizing: border-box;
+    flex: 1; min-height: 0; width: 100%;
     padding: calc(16px + env(safe-area-inset-top, 0px)) 74px
              calc(100px + env(safe-area-inset-bottom, 0px)) 16px;
+    border: none; outline: none; resize: none;
+    background: transparent;
     color: var(--text);
-    font-size: 16px; line-height: 1.55;
-    white-space: pre-wrap; overflow-wrap: anywhere;
-    -webkit-user-select: text; user-select: text;
+    font: inherit; font-size: 16px; line-height: 1.55;
+      overflow-y: auto;
   }
-  .viewnote-loading { color: var(--text-faint); }
+  .viewnote-body::placeholder { color: var(--text-faint); }
 
   /* Filter sheet: indented folder tree with tri-state checkboxes */
   #filterSheet .filter-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
