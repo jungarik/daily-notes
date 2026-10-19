@@ -160,7 +160,7 @@ class BarTests(unittest.TestCase):
         The check that matters is the converse — no button anywhere on the page
         is a circle *without* `.fab` — so it is asserted directly below.
         """
-        self.assertEqual(5, len(re.findall(r'className="fab\b', self.addnote)))
+        self.assertEqual(4, len(re.findall(r'className="fab\b', self.addnote)))
 
     def test_no_button_outside_the_info_corner_skips_fab(self):
         """The one exception is the info button, which is deliberately bare."""
@@ -168,51 +168,24 @@ class BarTests(unittest.TestCase):
         buttons = [name for name in classes
                    if "fab" in name or "addnote-info-btn" in name]
 
-        # Eight: ✕, ✓, the pencil, AI, the path circle, the favourite star, the
+        # Seven: ✕, ✓, AI, the path circle, the favourite star, the
         # shared disabled circle, and the bare info button.
-        self.assertEqual(8, len(buttons))
+        self.assertEqual(7, len(buttons))
         self.assertEqual(1, sum("addnote-info-btn" in name for name in buttons))
 
     def test_only_the_tick_is_the_commit_colour(self):
         """A discard should not compete with the commit for attention."""
         self.assertEqual(1, self.addnote.count('className="fab commit"'))
 
-    def test_the_page_opens_with_a_pencil_where_the_pill_was(self):
-        """Closed it is ✕ ✏ ✓; the pill is only there once asked for."""
-        self.assertIn("const [captureOpen, setCaptureOpen] = useState(false);", self.addnote)
-        self.assertIn("{captureOpen ? (", self.addnote)
-
-    def test_the_pencil_is_a_plain_fab_that_discloses_the_pill(self):
-        pencil = self.addnote.split('aria-label="Add photo, voice or reminder"', 1)[0] \
-                             .rsplit("<button", 1)[1] + \
-                 self.addnote.split('aria-label="Add photo, voice or reminder"', 1)[1] \
-                             .split("</button>", 1)[0]
-
-        self.assertIn('className="fab"', pencil)
-        self.assertIn("onClick={() => setCaptureOpen(true)}", pencil)
-        self.assertIn("<ModifiedGlyph />", pencil)
-        self.assertNotIn("disabled", pencil)
-
-    def test_the_pill_takes_the_pencils_slot_between_the_two_circles(self):
-        """One slot, either/or: ✕ and ✓ stay at the edges and the row stays one
-        row, never taller."""
+    def test_the_pill_is_always_shown_between_the_two_circles(self):
+        """No pencil to unfold it: the page opens as ✕ pill ✓."""
         bar = self.addnote.split('className="addnote-bar"', 1)[1]
 
-        self.assertLess(bar.index('aria-label="Cancel"'), bar.index("{captureOpen ? ("))
-        self.assertLess(bar.index("{captureOpen ? ("), bar.index('className="fab commit"'))
+        self.assertLess(bar.index('aria-label="Cancel"'), bar.index('className="tabbar"'))
+        self.assertLess(bar.index('className="tabbar"'), bar.index('className="fab commit"'))
         self.assertEqual(1, bar.count('className="tabbar"'))
-
-    def test_the_pill_folds_away_when_the_text_is_tapped(self):
-        """A tap, not a touch that only scrolls."""
-        body = self.addnote.split('className="addnote-body"', 1)[1].split("/>", 1)[0]
-
-        self.assertIn("onClick={() => setCaptureOpen(false)}", body)
-        self.assertIn("onFocus={() => setCaptureOpen(false)}", body)
-
-    def test_the_bar_starts_folded_on_every_open(self):
-        effect = self.addnote.split("if (!open) return;", 1)[1].split("}, [open, note_id]);", 1)[0]
-
-        self.assertIn("setCaptureOpen(false);", effect)
+        self.assertNotIn("captureOpen", self.addnote)
+        self.assertNotIn('aria-label="Add photo, voice or reminder"', self.addnote)
 
     def test_the_capture_pill_reuses_the_docks_capsule(self):
         """`.tabbar` is the dock's own pill class, so the two capsules cannot
@@ -469,8 +442,12 @@ class InfoPanelTests(unittest.TestCase):
     def test_the_path_row_is_labelled_by_the_folder_glyph_not_a_word(self):
         """The same folder the path button draws, from one component — so the
         two cannot drift apart."""
-        self.assertIn("function FolderGlyph()", self.addnote)
-        self.assertEqual(1, self.addnote.count("M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5"))
+        glyphs = (ROOT / "browser" / "webapp" / "src" / "components" / "glyphs.jsx").read_text(encoding="utf-8")
+
+        self.assertIn("function FolderGlyph()", glyphs)
+        self.assertIn('import { CalendarGlyph, FolderGlyph, ModifiedGlyph } from "./glyphs.jsx";', self.addnote)
+        self.assertNotIn("function FolderGlyph", self.addnote)
+        self.assertEqual(1, glyphs.count("M3 6.5A1.5 1.5 0 0 1 4.5 5h4L11 7.5"))
         self.assertIn('className="addnote-info-icon">{row.icon}</span>', self.addnote)
         self.assertNotIn("addnote-info-key", self.addnote + self.css)
 

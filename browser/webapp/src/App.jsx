@@ -10,6 +10,7 @@ import NoteSheet from "./components/NoteSheet.jsx";
 import ContextMenu from "./components/ContextMenu.jsx";
 import FolderFilter from "./components/FolderFilter.jsx";
 import AddNote from "./components/AddNote.jsx";
+import ViewNote from "./components/ViewNote.jsx";
 
 export default function App() {
   const { state } = useApp();
@@ -29,6 +30,7 @@ export default function App() {
       <ContextMenu />
       <FolderFilter />
       <AddNote note_id={state.addNoteId} />
+      <ViewNote note_id={state.viewNoteId} />
     </>
   );
 }

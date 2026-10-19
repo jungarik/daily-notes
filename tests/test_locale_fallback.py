@@ -88,6 +88,8 @@ class SingleSourceTests(unittest.TestCase):
             # Same shape, same reason: the roots roster keeps `root_labels` a
             # strict pure mapper, so the locale is resolved at the boundary.
             "api/addnote/endpoints.py",
+            # The View note page's copy of the same endpoint.
+            "api/viewnote/endpoints.py",
         }
         found = {
             str(path.relative_to(ROOT)).replace("\\", "/")

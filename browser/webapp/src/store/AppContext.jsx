@@ -32,6 +32,8 @@ const initial = {
   filterOpen: false,
   addNoteOpen: false,       // the Add note page (a full-screen overlay)
   addNoteId: null,          // existing note to edit; null for a new note
+  viewNoteOpen: false,      // the View note page (a full-screen overlay)
+  viewNoteId: null,         // the note it shows
   ctx: null,                // { target, rect } context menu
   pathTarget: null,         // change-path sheet target
   deleteTarget: null,       // delete-confirmation sheet target (notes only)
@@ -146,6 +148,17 @@ export function AppProvider({ children }) {
 
     patch({ addNoteOpen: false, addNoteId: null });
   }, [patch]);
+
+  // The View note page needs none of that: its text is read-only, so there is
+  // no keyboard to raise and nothing to focus inside the gesture — opening it is
+  // just state.
+  const openViewNote = useCallback((note_id) => {
+    patch({ viewNoteOpen: true, viewNoteId: note_id, ctx: null });
+  }, [patch]);
+
+  const closeViewNote = useCallback(() => {
+    patch({ viewNoteOpen: false, viewNoteId: null });
+  }, [patch]);
   const setFilter = useCallback((sel) => { saveFilter(sel); patch({ filterSel: sel }); }, [patch]);
 
   const setSearchQuery = useCallback((q) => patch({ searchQuery: q }), [patch]);
@@ -183,12 +196,14 @@ export function AppProvider({ children }) {
     state, patch, setView, closeMode, toggleMode, reload, refreshStats,
     openNote, closeNote, openCtx, closeCtx, openPath, closePath,
     openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat, feedReq,
-    openAddNote, closeAddNote, openDelete, closeDelete, removeNote,
+    openAddNote, closeAddNote, openViewNote, closeViewNote,
+    openDelete, closeDelete, removeNote,
     addNoteInputRef,
   }), [state, patch, setView, closeMode, toggleMode, reload, refreshStats,
       openNote, closeNote, openCtx, closeCtx, openPath, closePath,
       openFilter, closeFilter, setFilter, setSearchQuery, sendChat, confirmChat,
-      openAddNote, closeAddNote, openDelete, closeDelete, removeNote]);
+      openAddNote, closeAddNote, openViewNote, closeViewNote,
+      openDelete, closeDelete, removeNote]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

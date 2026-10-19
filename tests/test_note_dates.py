@@ -26,6 +26,7 @@ MIGRATIONS = ROOT / "migrations"
 MIGRATION = (MIGRATIONS / "0023_note_updated_at.sql").read_text(encoding="utf-8")
 FORMAT_JS = ROOT / "browser" / "webapp" / "src" / "lib" / "format.js"
 PAGE = (ROOT / "browser" / "webapp" / "src" / "components" / "AddNote.jsx").read_text(encoding="utf-8")
+GLYPHS = (ROOT / "browser" / "webapp" / "src" / "components" / "glyphs.jsx").read_text(encoding="utf-8")
 ENDPOINTS = (ROOT / "api" / "addnote" / "endpoints.py").read_text(encoding="utf-8")
 DB_SOURCE = (ROOT / "api" / "addnote" / "db.py").read_text(encoding="utf-8")
 SCHEMAS = (ROOT / "api" / "addnote" / "schemas.py").read_text(encoding="utf-8")
@@ -153,11 +154,12 @@ class InfoRowsTests(unittest.TestCase):
     def test_the_glyphs_share_one_decorative_svg(self):
         """Same stroke recipe as every glyph, and hidden from assistive tech —
         the text beside each says what it is."""
-        self.assertEqual(1, len(re.findall(r'<svg aria-hidden="true"', PAGE)))
-        self.assertIn("function Glyph(", PAGE)
+        # They live in `glyphs.jsx`, shared with the View note page.
+        self.assertEqual(1, len(re.findall(r'<svg aria-hidden="true"', GLYPHS)))
+        self.assertIn("function Glyph(", GLYPHS)
         for name in ("FolderGlyph", "CalendarGlyph", "ModifiedGlyph"):
             with self.subTest(glyph=name):
-                self.assertIn(f"function {name}()", PAGE)
+                self.assertIn(f"function {name}()", GLYPHS)
 
 
 if __name__ == "__main__":
