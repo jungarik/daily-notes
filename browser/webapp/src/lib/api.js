@@ -94,6 +94,21 @@ export const saveNote = (id, body) =>
 // like an empty note.
 export const fetchEditableNote = (id) =>
   apiGet("/api/addnote/" + encodeURIComponent(id));
+// The View note page's own reads, the same three the Add note page makes against
+// its own section (the client duplicates what the API duplicates, so the viewer
+// cannot break because the editor's endpoints changed). As with the editor's,
+// the note read has no `.catch` — the page says it could not load rather than
+// opening a blank note — while the two rosters fall back to an empty list.
+export const fetchViewNote = (id) =>
+  apiGet("/api/viewnote/" + encodeURIComponent(id));
+export const listViewNoteRoots = () =>
+  apiGet("/api/viewnote/roots")
+    .then((r) => ({ items: (r && r.roots) || [], initial: (r && r.default_root) || "" }))
+    .catch(() => ({ items: [], initial: "" }));
+export const listViewNoteChildren = (root) =>
+  apiGet("/api/viewnote/children?root=" + encodeURIComponent(root))
+    .then((r) => ({ items: (r && r.children) || [], initial: "" }))
+    .catch(() => ({ items: [], initial: "" }));
 // The change-path sheet's two selectors, each its own read: the root folders,
 // and the sub-folders already in use under one root. Both fall back to an empty
 // list — the root field then accepts a typed root and the sub-folder a typed

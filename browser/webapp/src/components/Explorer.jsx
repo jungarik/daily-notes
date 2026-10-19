@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
 import { compareRoots } from "../lib/format.js";
 
@@ -33,15 +33,64 @@ const FileSvg = () => (
 const folderKey = (path) => "folder:" + path;
 const noteKey = (id) => "note:" + id;
 
+// Same numbers as the map's long press (`graph/engine.js`): hold 450 ms, and a
+// finger that wanders more than 6 px is scrolling, not pressing.
+const LONG_PRESS_MS = 450;
+const TAP_SLOP = 6;
+
 function FileRow({ note, selected, onSelect }) {
-  const { openNote, openCtx } = useApp();
+  const { openNote, openCtx, openViewNote } = useApp();
+  // Highlights the row while the hold is running, so the press is visible
+  // before it fires.
+  const [pressing, setPressing] = useState(false);
+  const press = useRef({ timer: null, x: 0, y: 0, fired: false });
   // The server labels every row with the note's opening words and never sends
   // an empty one (it falls back to "untitled" for a note that is only photos),
   // so there is nothing to default here.
   const label = note.label;
+
+  const cancelPress = () => {
+    clearTimeout(press.current.timer);
+    press.current.timer = null;
+    setPressing(false);
+  };
+
+  const startPress = (e) => {
+    // The ⋮ has its own tap; a hold on it is not a press on the row.
+    if (e.target.closest(".dots")) return;
+
+    press.current = { timer: null, x: e.clientX, y: e.clientY, fired: false };
+    setPressing(true);
+    press.current.timer = setTimeout(() => {
+      press.current.fired = true;
+      press.current.timer = null;
+      setPressing(false);
+      openViewNote(note.id);
+    }, LONG_PRESS_MS);
+  };
+
+  const movePress = (e) => {
+    if (press.current.timer === null) return;
+    if (Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > TAP_SLOP) cancelPress();
+  };
+
   return (
-    <div className={"row file" + (selected === noteKey(note.id) ? " selected" : "")} data-id={note.id}
-      onClick={() => { onSelect(noteKey(note.id)); openNote(note.id); }}>
+    <div className={"row file" + (selected === noteKey(note.id) ? " selected" : "") + (pressing ? " pressing" : "")} data-id={note.id}
+      onPointerDown={startPress}
+      onPointerMove={movePress}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      // The browser's own long-press menu would sit on top of the page we open.
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        // The release that ends a long press still arrives as a click; the page
+        // is already open, so it must not also open the preview sheet.
+        if (press.current.fired) { press.current.fired = false; return; }
+
+        onSelect(noteKey(note.id));
+        openNote(note.id);
+      }}>
       <FileSvg />
       <span className="name">{label}<span className="ext">.md</span></span>
       <span className="dots" role="button" aria-label="menu"

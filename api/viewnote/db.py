@@ -1,0 +1,141 @@
+"""Persistence for the viewnote section (isolated): the note being viewed.
+
+Duplicated from the addnote section on purpose — a section owns its SQL, so the
+viewer's reads cannot break because the editor's changed. Reads only.
+"""
+
+from db import cursor
+
+
+def note_for_user(user_id: int, note_id: int) -> dict | None:
+    """The note's editable body, owner-scoped, or None.
+
+    The `user_id` predicate is the tenancy guard, not a convenience: without it
+    any authenticated caller could read any note by guessing an id. It is in
+    the query rather than a check afterwards so there is no path that forgets
+    it.
+
+    `path`, `tags` and the two timestamps ride along with the body because they
+    belong to the same row — a second query for columns of the row already in
+    hand would be a query for nothing.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, text, path, tags, created_at, updated_at FROM notes
+            WHERE id = %s AND user_id = %s;
+            """,
+            (note_id, user_id),
+        )
+        row = cur.fetchone()
+
+        return ({
+            "id": row[0],
+            "text": row[1],
+            "path": row[2],
+            "tags": row[3],
+            "created_at": row[4],
+            "updated_at": row[5],
+        } if row else None)
+
+
+def attachments(note_id: int) -> list[dict]:
+    """The note's attachments in carousel order: [{id, kind, mime}].
+
+    No owner predicate and none needed: the caller has already established
+    ownership of the note, and `note_id` is not user input by the time it gets
+    here. `position, id` is the same order the feed and the card use, so the
+    editor's first photo is the one the user saw first.
+
+    The storage key is not selected. Nothing client-facing may carry it — the
+    bucket is private and the signed proxy URL is the only way in.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, kind, mime FROM note_attachments
+            WHERE note_id = %s ORDER BY position, id;
+            """,
+            (note_id,),
+        )
+        return [{"id": r[0], "kind": r[1], "mime": r[2]} for r in cur.fetchall()]
+
+
+def linked_note_ids(user_id: int, note_id: int) -> list[int]:
+    """Every note this one is connected to, in either direction.
+
+    Links are directed and backlinks are the reverse query, so a note's
+    neighbours are the union of both — the same set the card's chips show. The
+    `user_id` predicate is on the *other* endpoint: a link whose far side
+    belongs to someone else must not leak that note's id, and the rows are
+    reachable because this note's owner wrote the edge.
+
+    Returned as a sorted list rather than a set so the response is stable: an
+    unordered payload makes a diff between two reads unreadable.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT l.to_note_id FROM note_links l
+            JOIN notes n ON n.id = l.to_note_id AND n.user_id = %s
+            WHERE l.from_note_id = %s
+            UNION
+            SELECT l.from_note_id FROM note_links l
+            JOIN notes n ON n.id = l.from_note_id AND n.user_id = %s
+            WHERE l.to_note_id = %s;
+            """,
+            (user_id, note_id, user_id, note_id),
+        )
+        return sorted(row[0] for row in cur.fetchall())
+
+
+def get_language(user_id: int) -> str | None:
+    """The user's chosen language, or None when they have never set one.
+
+    Duplicated from the other verticals on purpose — this section owns its SQL.
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the caller resolves the default.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT language FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+        return row[0] if row else None
+
+
+def get_timezone(user_id: int) -> str | None:
+    """The user's saved IANA timezone, or None when they have never set one.
+
+    Duplicated from the other verticals on purpose — this section owns its SQL.
+    Only the bot writes this column, so a Mini-App-only user has NULL here and
+    the client falls back to the device's own zone.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT timezone FROM users WHERE id = %s;", (user_id,))
+        row = cur.fetchone()
+
+        return row[0] if row else None
+
+
+def list_children(user_id: int, root: str) -> list[str]:
+    """The distinct second-level folder names under one root, alphabetically.
+
+    Filtered in SQL rather than fetching every path and splitting in Python, so
+    the read scales with the one root's notes, not the whole vault. `split_part`
+    compares the root as a whole segment — a `LIKE 'Projects%'` would also catch
+    `Projects2/x`, and would need its wildcards escaped. A note filed directly
+    on the root has no second segment (`''`) and contributes nothing.
+
+    The `user_id` predicate is the tenancy guard.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT split_part(path, '/', 2) AS child FROM notes
+            WHERE user_id = %s AND split_part(path, '/', 1) = %s
+              AND split_part(path, '/', 2) <> ''
+            ORDER BY child;
+            """,
+            (user_id, root),
+        )
+        return [row[0] for row in cur.fetchall()]

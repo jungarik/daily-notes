@@ -355,6 +355,10 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   `GET /api/addnote/roots`, `GET /api/addnote/children?root=`, `POST /api/addnote`, `PUT /api/addnote/{id}`,
   `GET /api/header/stats`, `GET /api/search?q=`, and the image proxy
   `GET /api/notecard/attachments/{id}?t=<token>`).
+- **`api/viewnote`** — the View note page's reads (`GET /api/viewnote/roots`,
+  `/children?root=`, `/{note_id}`), a deliberate copy of `addnote`'s so the two
+  pages can diverge. Reads only: no write verbs, nothing in `allow_methods` to
+  add. Same tenancy and null-coercion rules as the editor's read.
 - **`api/chat_v2`** — the chat tab, driven by the **agent farm**
   (`POST /api/chat/v2`, `/api/chat/v2/confirm`). It owns the caller's clock/locale
   *and* the `chat_threads` projection (its own `db`): it hands the thread to
@@ -1098,6 +1102,19 @@ depth-1 **ego graph** with a "Full graph" reset), **Open note** (the shared
 preview sheet), and **Outline** (jump to the Explorer tab, expand the note's
 ancestor folders, scroll its row into view and flash it). Leaving the Map clears
 the focus/ego state.
+
+**View note page.** `components/ViewNote.jsx` began as the Add note page opened
+on an existing note and is its own component with its own `.viewnote*` styles,
+client calls (`fetchViewNote`, `listViewNoteRoots`, `listViewNoteChildren`) and
+section. Only `PathWheel` and the small glyphs (`components/glyphs.jsx`, also
+used by Add note) are shared. It cannot save: the text is `readOnly`, the tick is
+dimmed, and the wheels, star and info block are local to the page and reset on
+every open. It has none of the Add note page's keyboard or viewport logic since
+nothing is typed into it. It opens from a **long press on an Explorer note row**
+(450 ms, 6 px slop — the map's numbers; the row tints while held, the native
+callout/context menu is suppressed, and the click that ends the press is
+swallowed so the preview sheet does not also open). Folders do not long-press.
+`tests/test_viewnote.py` pins the section, the read-only page and the press.
 
 ## Agentic chat — the agent farm
 

@@ -59,6 +59,13 @@ left (`direction: rtl` + `<bdi>`), keeping the leaf. A chosen folder turns the
 button's ring and glyph blue — not its fill. `tags` (a `#` icon) is still disabled; the
 `link` button is gone.
 
+**View note page.** `ViewNote.jsx` is a read-only copy of the page above for an
+existing note, opened by a **long press (450 ms, 6 px slop) on an Explorer note
+row**; a normal tap still opens the preview sheet. It reads from
+`/api/viewnote/*`, has its own `.viewnote*` styles, and shares only `PathWheel`
+and `glyphs.jsx` with Add note. Text is `readOnly` and the tick is dimmed until
+it has a save endpoint.
+
 ## Layout
 
 ```

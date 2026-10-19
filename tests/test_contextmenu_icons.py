@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 COMPONENTS = ROOT / "browser" / "webapp" / "src" / "components"
 MENU = (COMPONENTS / "ContextMenu.jsx").read_text(encoding="utf-8")
-ADDNOTE = (COMPONENTS / "AddNote.jsx").read_text(encoding="utf-8")
+ADDNOTE = (COMPONENTS / "glyphs.jsx").read_text(encoding="utf-8")
 CSS = (ROOT / "browser" / "webapp" / "src" / "styles.css").read_text(encoding="utf-8")
 
 # The menu's own markup, comments stripped: the comments explain which emoji

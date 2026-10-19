@@ -36,7 +36,10 @@ class SingleSelectionTests(unittest.TestCase):
         self.assertIn("setOpen((o) => !o); onSelect(folderKey(path));", EXPLORER)
 
     def test_tapping_a_note_selects_it_and_opens_it(self):
-        self.assertIn("onSelect(noteKey(note.id)); openNote(note.id);", EXPLORER)
+        # A long press ends in a click too; the handler skips it, so the tap
+        # path is the part after that guard.
+        self.assertIn("onSelect(noteKey(note.id));", EXPLORER)
+        self.assertIn("openNote(note.id);", EXPLORER)
 
     def test_notes_get_the_same_highlight_as_folders(self):
         """One look for a selected row, whatever it is."""

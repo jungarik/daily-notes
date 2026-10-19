@@ -293,6 +293,10 @@
   .file .name { color: var(--text); }
   .file .name .ext { color: var(--text-faint); }
   .row.selected { background: var(--accent-soft); }
+  /* A note row held toward a long press (opens the View note page): tinted
+     while the hold runs, and the OS's own callout/selection stays out of it. */
+  .row.file { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .row.file.pressing { background: var(--hover); }
 
   .ico { flex: none; opacity: .85; }
   .folder > .row .ico { color: var(--text-muted); }
@@ -842,6 +846,88 @@
     overflow-y: auto;
   }
   .addnote-body::placeholder { color: var(--text-faint); }
+
+  /* The View note page: a deliberate copy of the `.addnote*` rules above so the
+     two pages can diverge without touching each other. Only the path wheel
+     (`.path-anchor`, `.path-wheel*`) and `.fab.commit` are shared. The text is
+     read-only, so there is no caret colour. */
+  .viewnote {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; flex-direction: column;
+    background: var(--bg);
+    opacity: 0; pointer-events: none;
+    transition: opacity .16s ease;
+  }
+  .viewnote.show { opacity: 1; pointer-events: auto; }
+  .viewnote-bar {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; padding: 0 16px;
+    pointer-events: none;
+  }
+  .viewnote.show .viewnote-bar > * { pointer-events: auto; }
+  .viewnote-bar .tab { padding: 13px 14px; }
+  .viewnote-side {
+    position: absolute; right: 12px; top: 50%;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 10px;
+    pointer-events: none;
+  }
+  .viewnote.show .viewnote-side { pointer-events: auto; }
+  .viewnote-side .fab { width: 46px; height: 46px; }
+  .viewnote-side .fab svg { width: 17px; height: 17px; }
+  .viewnote-ai { margin-bottom: 18px; }
+  .viewnote-side .fab:disabled { opacity: .45; cursor: default; }
+  .viewnote-side .fab.set { color: var(--commit); border-color: var(--commit); }
+  .viewnote-error { margin: 0 20px; color: #e5736b; font-size: 13px; }
+  .viewnote-info-btn {
+    position: absolute; right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; padding: 0;
+    border: none; background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    pointer-events: none;
+  }
+  .viewnote.show .viewnote-info-btn { pointer-events: auto; }
+  .viewnote-info-btn svg { width: 22px; height: 22px; }
+  .viewnote-info-btn.active { color: var(--text); }
+  .viewnote-info {
+    flex: none;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 74px 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .viewnote-info + .viewnote-body { padding-top: 12px; }
+  .viewnote-info-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; line-height: 1.5;
+  }
+  .viewnote-info-icon {
+    flex: none; display: flex;
+    color: var(--text-muted);
+  }
+  .viewnote-info-icon svg { width: 16px; height: 16px; }
+  .viewnote-info-value {
+    flex: 1; min-width: 0; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viewnote-info-value.is-default { color: var(--text-faint); }
+  .viewnote-bar .tab:disabled { opacity: .45; cursor: default; }
+  .viewnote-bar .fab:disabled { opacity: .45; cursor: default; }
+  .viewnote-body {
+    flex: 1; min-height: 0; width: 100%;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 74px
+             calc(100px + env(safe-area-inset-bottom, 0px)) 16px;
+    border: none; outline: none; resize: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit; font-size: 16px; line-height: 1.55;
+      overflow-y: auto;
+  }
+  .viewnote-body::placeholder { color: var(--text-faint); }
 
   /* Filter sheet: indented folder tree with tri-state checkboxes */
   #filterSheet .filter-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
