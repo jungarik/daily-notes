@@ -98,8 +98,11 @@ export function visibleViewport(viewport) {
 // the precise reading; the ring is the glance.
 export const RING_MAX_SEGMENTS = 12;
 
-// Fraction of each segment's share of the circle that is gap rather than ink.
-const RING_GAP_RATIO = 0.4;
+// The visible space between two dashes, in the ring's drawing units, and the
+// same for every count: a ring of two and a ring of twelve should show the same
+// gap, not a gap that shrinks as the pile grows. It is measured between the
+// painted round ends, so `ringDashes` adds the stroke width back.
+export const RING_GAP = 3;
 
 // Above this the count is shown as "99+". The disc has ~51 units of clear
 // width and three digits at 19px take ~33, so four would still fit — but a
@@ -114,26 +117,29 @@ export function formatCount(count) {
   return notes > COUNT_CAP ? `${COUNT_CAP}+` : String(notes);
 }
 
-// Ring geometry for `count` notes, in user units of the 54-unit viewBox.
+// Ring geometry for `count` notes, in user units of the ring's viewBox.
 //
 // Returns `{ segments, dash, gap }` for `stroke-dasharray="dash gap"`, and
-// `segments: 0` for an empty Inbox — the caller draws that as one continuous
-// muted circle, since a ring of nothing is a different statement from a ring
-// of one.
+// `segments: 0` for an empty count — the caller draws nothing then.
 //
-// `strokeWidth` is subtracted from the dash and handed to the gap because the
-// stroke is drawn with round caps, which add half a stroke width at each end
-// of every dash. Without that the painted segment is longer than the requested
-// dash and the gaps close up as the count climbs.
+// One note is one solid ring, not a ring with a bite out of it: a single
+// segment has no neighbour to be gapped from, and a dash of the whole
+// circumference with no gap is exactly that. From two up every gap is
+// `RING_GAP` between the painted ends.
+//
+// `strokeWidth` is added to the gap because the stroke is drawn with round
+// caps, which paint half a stroke width past each end of every dash; the array
+// asks for a gap one stroke wider so the painted one is `RING_GAP`.
 export function ringDashes(count, circumference, strokeWidth) {
   const notes = Math.max(0, Math.floor(Number(count) || 0));
   const segments = Math.min(notes, RING_MAX_SEGMENTS);
 
   if (segments === 0) return { segments: 0, dash: 0, gap: 0 };
 
+  if (segments === 1) return { segments: 1, dash: circumference, gap: 0 };
+
   const step = circumference / segments;
-  // A single segment would otherwise close into a full circle and lose its gap.
-  const gap = Math.min(step * RING_GAP_RATIO + strokeWidth, step * 0.9);
+  const gap = RING_GAP + strokeWidth;
 
   return { segments, dash: step - gap, gap };
 }

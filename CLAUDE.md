@@ -492,7 +492,8 @@ the Inbox is, and a number that changed colour too would say it twice. Past
 label inside the disc's ~51px of clear width at one fixed size instead of
 introducing a second font size that only renders on counts nobody has.
 Outside it, across a 2.5px gap, is the **dashed ring**: 2.5px `--commit`, one
-dash per waiting note, capped at `RING_MAX_SEGMENTS` = 12 (128 notes over that
+dash per waiting note, with a constant `RING_GAP` = 3 units between the painted
+ends whatever the count, and a single note drawn as one solid ring, capped at `RING_MAX_SEGMENTS` = 12 (128 notes over that
 circumference is 0.6px of ink per dash — a solid blur that would look the same
 at 90 or 300). At zero the dashed circle is **not rendered at all** rather than
 given an empty dash array, which is what makes "nothing waiting" a different
