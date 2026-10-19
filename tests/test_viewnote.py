@@ -113,7 +113,7 @@ class PageTests(unittest.TestCase):
         self.assertIn("Couldn’t load this note.", PAGE)
 
     def test_it_has_its_own_styles_scoped_to_show(self):
-        for selector in (".viewnote {", ".viewnote.show {", ".viewnote.show .viewnote-bar > *",
+        for selector in (".viewnote {", ".viewnote.show {", ".viewnote.show .viewnote-close",
                          ".viewnote.show .viewnote-side", ".viewnote-body {"):
             with self.subTest(selector=selector):
                 self.assertIn(selector, CSS)
@@ -122,12 +122,30 @@ class PageTests(unittest.TestCase):
 
 
 class EditButtonTests(unittest.TestCase):
-    def test_the_bar_holds_only_close_and_edit_sits_bottom_right(self):
-        bar = PAGE.split('className="viewnote-bar"', 1)[1].split("</div>", 1)[0]
+    def test_close_is_bottom_left_and_as_big_as_the_side_buttons(self):
+        self.assertNotIn("viewnote-bar", PAGE + CSS)
+        self.assertIn('className="fab viewnote-close"', PAGE)
+        self.assertIn('aria-label="Close"', PAGE)
 
-        self.assertEqual(1, bar.count("<button"))
-        self.assertIn('aria-label="Close"', bar)
-        self.assertIn('className="fab viewnote-edit"', PAGE)
+        rule = CSS.split("  .viewnote-close {", 1)[1].split("}", 1)[0]
+
+        self.assertIn("left: 12px;", rule)
+        self.assertIn("width: 46px; height: 46px;", rule)
+        self.assertIn(".viewnote-side .fab { width: 46px; height: 46px; }", CSS)
+        self.assertIn(".viewnote-close svg { width: 17px; height: 17px; }", CSS)
+
+    def test_close_and_edit_share_a_baseline(self):
+        bottom = "bottom: calc(30px + env(safe-area-inset-bottom, 0px));"
+
+        for selector in ("  .viewnote-close {", "  .viewnote-edit {"):
+            self.assertIn(bottom, CSS.split(selector, 1)[1].split("}", 1)[0])
+
+    def test_the_chat_button_is_a_bubble_not_the_sparkle(self):
+        button = PAGE.split('className="fab viewnote-ai"', 1)[1].split("</button>", 1)[0]
+
+        self.assertIn('aria-label="Chat"', button)
+        self.assertIn("disabled", button)
+        self.assertNotIn("M12 3.2l1.9", button)
 
     def test_edit_opens_the_editor_by_id_and_passes_nothing_else(self):
         self.assertIn("openAddNote(note_id)", PAGE)

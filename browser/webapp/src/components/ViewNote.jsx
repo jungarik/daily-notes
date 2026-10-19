@@ -178,10 +178,9 @@ export default function ViewNote({ note_id = null }) {
       </button>
 
       <div className="viewnote-side">
-        <button className="fab viewnote-ai" aria-label="Ask AI" title="Ask AI" disabled>
+        <button className="fab viewnote-ai" aria-label="Chat" title="Chat" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 3.2l1.9 4.9 4.9 1.9-4.9 1.9L12 16.8l-1.9-4.9L5.2 10l4.9-1.9L12 3.2Z" />
-            <path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z" />
+            <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16.5h-7l-4.5 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z" />
           </svg>
         </button>
 
@@ -252,13 +251,13 @@ export default function ViewNote({ note_id = null }) {
         })}
       </div>
 
-      <div className="viewnote-bar">
-        <button className="fab" aria-label="Close" onClick={closeViewNote}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      </div>
+      {/* Bottom left, mirroring Edit: the side column's 12px inset and the same
+          46px circle as its path and tags buttons. */}
+      <button className="fab viewnote-close" aria-label="Close" onClick={closeViewNote}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
 
       {/* Bottom right, on the side column's 12px inset and the bar's baseline,
           15% bigger than the bar's 54px circle. Opens the Add note page on top

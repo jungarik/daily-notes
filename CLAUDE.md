@@ -1106,7 +1106,7 @@ nothing is typed into it. It opens from a **long press on an Explorer note row**
 (450 ms, 6 px slop — the map's numbers; the row tints while held, the native
 callout/context menu is suppressed, and the click that ends the press is
 swallowed so the preview sheet does not also open). Folders do not long-press.
-Its bottom bar is ✕ alone; **Edit** (the pencil glyph) is a 62px circle (the bar's 54px +15%) at the bottom right on the side column's 12px inset. It calls `openAddNote(note_id)` and passes nothing else — the editor reads the note itself — so the Add note page (z-index 61, over this page's 60) opens on top, and closing it returns here. This page re-reads the note when the editor closes, so a saved edit shows without reopening.
+**Close** (✕) is a 46px circle — the side column's size — at the bottom left on the same 12px inset; the inert top button of the side column is a chat bubble here (Add note keeps its sparkle). **Edit** (the pencil glyph) is a 62px circle (the bar's 54px +15%) at the bottom right on the side column's 12px inset. It calls `openAddNote(note_id)` and passes nothing else — the editor reads the note itself — so the Add note page (z-index 61, over this page's 60) opens on top, and closing it returns here. This page re-reads the note when the editor closes, so a saved edit shows without reopening.
 `tests/test_viewnote.py` pins the section, the read-only page and the press.
 
 ## Agentic chat — the agent farm
