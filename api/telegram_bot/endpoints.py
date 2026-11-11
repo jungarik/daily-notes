@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/telegram_bot", tags=["telegram_bot"])
 @router.post("/notes", response_model=CaptureResponse)
 def capture(req: CaptureRequest, user_id: int = Depends(current_user)) -> CaptureResponse:
     """Capture a text note (chunk + embed + persist) and, if time-bearing, its
-    reminder — the fast path. Enrichment is deferred (the 🧠 Enrich button)."""
+    reminder — the fast path. Saving to the Inbox is deferred (the 💾 Save button)."""
     note_id = helper.capture_note(user_id, req.text)
     reminder = helper.detect_reminder_info(note_id, user_id, req.text)
     return CaptureResponse(note_id=note_id, text=req.text,
@@ -144,11 +144,12 @@ def polish(note_id: int, user_id: int = Depends(current_user)) -> PolishResponse
     return PolishResponse(text=text)
 
 
-@router.post("/notes/{note_id}/enrich", response_model=NoteMeta)
-def enrich(note_id: int, user_id: int = Depends(current_user)) -> NoteMeta:
-    """Run the deferred (one-shot) enrichment pass and persist the metadata."""
-    meta = helper.enrich_note(user_id, note_id)
-    if meta is None:
+@router.post("/notes/{note_id}/save", response_model=NoteMeta)
+def save(note_id: int, user_id: int = Depends(current_user)) -> NoteMeta:
+    """Save a draft: file it in the caller's Inbox. No model call. 404 if the
+    note is not theirs; a note that already has a path keeps it."""
+    status, meta = helper.save_note(user_id, note_id)
+    if status == "not_found":
         raise HTTPException(status_code=404, detail="note not found")
     return NoteMeta(**meta)
 

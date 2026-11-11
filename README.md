@@ -2,8 +2,8 @@
 
 A personal knowledge system built around frictionless capture. Send any text
 **or voice** note — ideas, tasks, reminders, thoughts — and it's transcribed (if
-voice), enriched by an LLM (type / title / vault path /
-reminder), stored in PostgreSQL, and made semantically searchable. Ask it
+voice), saved as a draft you file in your Inbox with one tap (💾 Save),
+with an optional reminder, stored in PostgreSQL, and made semantically searchable. Ask it
 questions and it answers from your notes (RAG); ask "what do I have to do today?"
 and it scopes to reminders due.
 
