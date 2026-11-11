@@ -119,7 +119,7 @@ ATOMIZE_LLM_MODEL = os.environ.get("ATOMIZE_LLM_MODEL", "gpt-4o-mini")
 
 POLISH_LLM_MODEL = os.environ.get("POLISH_LLM_MODEL", "gpt-4o-mini")
 
-# Model that enriches each note (type/title/path/tags/priority).
+# Model that enriches each note (type/title/path).
 
 ENRICH_LLM_MODEL = os.environ.get("ENRICH_LLM_MODEL", "gpt-4o")
 

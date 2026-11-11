@@ -130,9 +130,6 @@ def _meta_line(meta: dict) -> str:
     parts = [f"{icon} {meta['title']}"]
     if meta["path"]:
         parts.append("📁 " + meta["path"])
-    if meta["tags"]:
-        parts.append("🏷 " + ", ".join(meta["tags"]))
-    parts.append("⚡ " + meta["priority"])
     return "\n".join(parts)
 
 

@@ -242,7 +242,6 @@ def delete_bare_note(note_id: int) -> bool:
 # ===== enrichment (one-shot) ===============================================
 
 _TYPES = ("idea", "task", "reminder", "note", "question", "link")
-_PRIORITIES = ("low", "med", "high")
 
 
 def _clean_path(raw) -> str | None:
@@ -271,14 +270,9 @@ def _normalize(data, text, root_folders=None, default_root_folder=None) -> dict:
     if note_type not in _TYPES:
         note_type = "note"
     title = (data.get("title") or text.strip()[:80]).strip() or text.strip()[:80]
-    tags = [str(g).strip().lower() for g in (data.get("tags") or []) if str(g).strip()][:5]
-    priority = str(data.get("priority", "low")).lower()
-    if priority not in _PRIORITIES:
-        priority = "low"
     path = _clean_path(data.get("path")) or default_root_folder
     return {"type": note_type, "title": title,
-            "path": _enforce_root(path, root_folders, default_root_folder),
-            "tags": tags, "priority": priority}
+            "path": _enforce_root(path, root_folders, default_root_folder)}
 
 
 def _root_block(root_folders, default_root_folder) -> str:
@@ -304,46 +298,33 @@ def _fmt_vocab(items) -> str:
     return ", ".join(out)
 
 
-def _vocabulary(known, tags) -> str:
-    lines = []
-    if known:
-        lines.append(f"Existing paths (with note use counts): {_fmt_vocab(known)}.")
-    if tags:
-        lines.append(f"Existing tags (with use counts): {_fmt_vocab(tags)}.")
-    if not lines:
+def _vocabulary(known) -> str:
+    if not known:
         return ""
-    return (" Reuse an existing path/tag verbatim when it genuinely fits (extend a path "
+    return (" Reuse an existing path verbatim when it genuinely fits (extend a path "
             "rather than inventing a parallel one); only create a new one if none apply. "
-            + " ".join(lines))
+            f"Existing paths (with note use counts): {_fmt_vocab(known)}.")
 
 
 def _neighbour_hint(neighbours) -> str:
-    paths, tags = Counter(), Counter()
-    for n in neighbours:
-        if n.get("path"):
-            paths[n["path"]] += 1
-        for tg in (n.get("tags") or []):
-            tags[tg] += 1
-    if not paths and not tags:
+    paths = Counter(n["path"] for n in neighbours if n.get("path"))
+    if not paths:
         return ""
-    parts = []
-    if paths:
-        parts.append("filed under: " + ", ".join(f"{p} ({c})" for p, c in paths.most_common(5)))
-    if tags:
-        parts.append("commonly tagged: " + ", ".join(f"{t} ({c})" for t, c in tags.most_common(8)))
-    return " Notes most similar to this one are " + "; ".join(parts) + ". Prefer these when they fit."
+    return (" Notes most similar to this one are filed under: "
+            + ", ".join(f"{p} ({c})" for p, c in paths.most_common(5))
+            + ". Prefer these when they fit.")
 
 
 def _similar_block(similar) -> str:
     if not similar:
         return ""
-    lines = [f"- \"{n['title']}\" -> type={n['note_type']}, path={n.get('path')}, "
-             f"tags={n.get('tags') or []}" for n in similar]
+    lines = [f"- \"{n['title']}\" -> type={n['note_type']}, path={n.get('path')}"
+             for n in similar]
     return (" Similar past notes and how they were classified (reuse their type / "
-            "path / tags when appropriate):\n" + "\n".join(lines))
+            "path when appropriate):\n" + "\n".join(lines))
 
 
-def _enrich(text, known_paths_list, known_tags, similar_notes, root_folders, default_root) -> dict:
+def _enrich(text, known_paths_list, similar_notes, root_folders, default_root) -> dict:
     try:
         neighbours = similar_notes or []
         threshold = config.ENRICH_SIMILAR_MAX_DISTANCE
@@ -366,9 +347,8 @@ def _enrich(text, known_paths_list, known_tags, similar_notes, root_folders, def
             "type (one of: idea, task, reminder, note, question, link), "
             "title (a concise summary, <=8 words, in the note's own language), "
             "path (a single vault folder path: a root folder plus at most one "
-            "sub-folder — two levels at most), "
-            "tags (0-5 lowercase topic keywords), priority (one of: low, med, high)."
-            + _root_block(root_folders, default_root) + _vocabulary(known_paths_list, known_tags)
+            "sub-folder — two levels at most)."
+            + _root_block(root_folders, default_root) + _vocabulary(known_paths_list)
             + neighbour_block)
         resp = get_client().chat.completions.create(
             model=config.ENRICH_LLM_MODEL, temperature=0,
@@ -377,8 +357,7 @@ def _enrich(text, known_paths_list, known_tags, similar_notes, root_folders, def
         return _normalize(json.loads(resp.choices[0].message.content), text, root_folders, default_root)
     except Exception:
         logger.exception("Enrichment failed; storing as a plain note")
-        return {"type": "note", "title": text.strip()[:80], "path": default_root,
-                "tags": [], "priority": "low"}
+        return {"type": "note", "title": text.strip()[:80], "path": default_root}
 
 
 def enrich_note(user_id: int, note_id: int) -> dict | None:
@@ -389,10 +368,8 @@ def enrich_note(user_id: int, note_id: int) -> dict | None:
     similar = db.similar_notes(user_id, embedding, exclude_note_id=note_id,
                                   limit=config.ENRICH_SIMILAR_LIMIT)
     root_folders, default_root = _localized_roots(user_id)
-    meta = _enrich(text, db.list_paths(user_id), db.list_tags(user_id),
-                   similar, root_folders, default_root)
-    db.set_metadata(note_id, meta["type"], meta["title"], meta["priority"],
-                       meta["tags"], meta["path"])
+    meta = _enrich(text, db.list_paths(user_id), similar, root_folders, default_root)
+    db.set_enrichment(note_id, meta["type"], meta["title"], meta["path"])
     return meta
 
 
