@@ -372,10 +372,10 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   the response yet (see `devdoc/agent-loop.md`). The name keeps the `_v2`
   suffix until the URL is collapsed back to `/api/chat`.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
-  `/api/telegram_bot` (capture text/voice/media, enrich, atomize, polish, delete,
+  `/api/telegram_bot` (capture text/voice/media, save, atomize, polish, delete,
   link-candidates/toggle, reminders + dispatcher, user resolve/settings, RAG
   `search`, `ping`). It owns its full domain in `helper.py` + `db.py`
-  (embeddings, one-shot enrichment, reminder parsing, links, user settings, RAG).
+  (embeddings, save-to-Inbox, reminder parsing, links, user settings, RAG).
 
 There is **no shared domain layer** (the former `services/`/`stores/`/`common/`
 are gone). Each vertical duplicates the domain + persistence it needs:
@@ -402,9 +402,14 @@ reminder *delivery*, global `add_error_handler`) and calls the API for everythin
 else via `api_client.py` — it imports no domain code and no `db`. It captures text
 (`/api/telegram_bot/notes`), voice (`…/notes/voice`), and photos (`…/notes/media`):
 a single photo saves immediately; an album (updates sharing a `media_group_id`)
-is buffered with a short debounce and saved as one note. Bot capture stays
-**deferred** — the note saves fast and the user enriches on demand with the 🧠
-Enrich button (one-shot enrichment in `api/telegram_bot/helper.py`). There is no
+is buffered with a short debounce and saved as one note. Bot capture lands as a
+**draft** — a note with no path, which every browsing view treats as "not in the
+vault yet" — and the user files it with the 💾 Save button, which sets the path
+to their (localised) Inbox root and nothing else: no model call, no title, no
+type (`POST /api/telegram_bot/notes/{id}/save`, idempotent — a note that already
+has a path keeps it; callbacks from the retired 🧠 Enrich button, `e:`, are
+still routed to Save). 📁 Change folder and 🔗 Link follow Save; ✨ Polish and
+✂️ Atomize are unchanged, and Cancel deletes a still-bare draft. There is no
 capture-time enrichment agent: `agents/enricher` plans one write per chat turn
 and has no capture loop — the interactive graph that would have served one was
 deleted unused.

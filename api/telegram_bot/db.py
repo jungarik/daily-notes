@@ -74,17 +74,6 @@ def get_meta(note_id: int) -> dict | None:
                 "tags": row[3] or [], "priority": row[4]}
 
 
-def set_enrichment(note_id, note_type, title, path) -> None:
-    """Write what enrichment decides: type, title and path. Tags and priority
-    are left as they are — the bot does not produce them, and a note's existing
-    ones (set in the Mini App editor, say) are not enrichment's to overwrite."""
-    with cursor() as cur:
-        cur.execute(
-            "UPDATE notes SET note_type = %s, title = %s, path = %s WHERE id = %s;",
-            (note_type, title, path, note_id),
-        )
-
-
 def delete_if_bare(note_id: int) -> bool:
     with cursor() as cur:
         cur.execute(
@@ -136,23 +125,6 @@ def save_chunks(note_id: int, chunks: list[dict]) -> None:
 def delete_chunks(note_id: int) -> None:
     with cursor() as cur:
         cur.execute("DELETE FROM note_chunks WHERE note_id = %s;", (note_id,))
-
-
-def similar_notes(user_id, query_embedding, exclude_note_id, limit=5) -> list[dict]:
-    with cursor() as cur:
-        cur.execute(
-            """
-            SELECT m.note_type, m.title, m.path,
-                   MIN(mc.embedding <=> %s::vector) AS distance
-            FROM note_chunks mc JOIN notes m ON m.id = mc.note_id
-            WHERE m.user_id = %s AND m.id <> %s AND m.title IS NOT NULL
-            GROUP BY m.id, m.note_type, m.title, m.path
-            ORDER BY distance LIMIT %s;
-            """,
-            (query_embedding, user_id, exclude_note_id, limit),
-        )
-        return [{"note_type": r[0], "title": r[1], "path": r[2],
-                 "distance": float(r[3])} for r in cur.fetchall()]
 
 
 def candidate_notes(user_id, query_embedding, exclude_ids, limit=15) -> list[dict]:

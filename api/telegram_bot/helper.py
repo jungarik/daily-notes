@@ -1,6 +1,6 @@
 """Telegram-bot section service: the full note lifecycle the bot drives.
 
-Self-contained domain — capture, one-shot enrichment, atomize, polish, delete,
+Self-contained domain — capture, save, atomize, polish, delete,
 links, reminder detection/dispatch, user settings, and RAG search — duplicated
 here over the section's own `db` + shared infra (config, i18n, openai_client,
 file_store). No shared domain layer.
@@ -11,7 +11,6 @@ import re
 import json
 import logging
 import mimetypes
-from collections import Counter
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -239,138 +238,28 @@ def delete_bare_note(note_id: int) -> bool:
     return deleted
 
 
-# ===== enrichment (one-shot) ===============================================
+# ===== save (quick capture) ===============================================
 
-_TYPES = ("idea", "task", "reminder", "note", "question", "link")
+def save_note(user_id: int, note_id: int) -> tuple[str, dict | None]:
+    """File a draft note in the user's Inbox. `("not_found", None)` for a note
+    that is not theirs.
 
+    A freshly captured note has no path, which every browsing view reads as "not
+    in the vault yet" — that is the draft. Saving gives it the Inbox root, in the
+    user's language, and nothing else: no model call, no title, no type. A note
+    that already has a path (saved before, or moved) keeps it, so a stale Save
+    button cannot send a filed note back to the Inbox.
+    """
+    note = db.get_note(note_id) if db.get_note_for_user(user_id, note_id) else None
 
-def _clean_path(raw) -> str | None:
-    if not raw:
-        return None
-    parts = [p.strip() for p in str(raw).replace("\\", "/").split("/")]
-    parts = [p for p in parts if p and p not in (".", "..")][:2]
-    return "/".join(parts) or None
+    if note is None:
+        return ("not_found", None)
 
+    if not note["path"]:
+        _, inbox = _localized_roots(user_id)
+        db.set_path(note_id, inbox)
 
-def _enforce_root(path, root_folders, default_root_folder):
-    if not path:
-        return default_root_folder
-    if not root_folders:
-        return path
-    roots = {name.lower(): name for name in root_folders}
-    parts = path.split("/")
-    canonical = roots.get(parts[0].lower())
-    if canonical is None:
-        return default_root_folder
-    return "/".join([canonical] + parts[1:])
-
-
-def _normalize(data, text, root_folders=None, default_root_folder=None) -> dict:
-    note_type = str(data.get("type", "note")).lower()
-    if note_type not in _TYPES:
-        note_type = "note"
-    title = (data.get("title") or text.strip()[:80]).strip() or text.strip()[:80]
-    path = _clean_path(data.get("path")) or default_root_folder
-    return {"type": note_type, "title": title,
-            "path": _enforce_root(path, root_folders, default_root_folder)}
-
-
-def _root_block(root_folders, default_root_folder) -> str:
-    if not root_folders:
-        return ""
-    names = ", ".join(root_folders)
-    meanings = "; ".join(f"{name} — {desc}" for name, desc in root_folders.items())
-    return (f" The path is core to the vault: any path starts with exactly one of these "
-            f"root folders — {names} — followed by at most one sub-folder, so a path is "
-            f"one or two levels total. Never nest deeper than two levels. Root folder "
-            f"meanings: {meanings}. Pick the root folder matching the note's purpose, and "
-            f"reuse an existing path when one fits. If you cannot determine a path, use "
-            f"{default_root_folder}.")
-
-
-def _fmt_vocab(items) -> str:
-    out = []
-    for it in items:
-        if isinstance(it, (list, tuple)) and len(it) == 2:
-            out.append(f"{it[0]} ({it[1]})")
-        else:
-            out.append(str(it))
-    return ", ".join(out)
-
-
-def _vocabulary(known) -> str:
-    if not known:
-        return ""
-    return (" Reuse an existing path verbatim when it genuinely fits (extend a path "
-            "rather than inventing a parallel one); only create a new one if none apply. "
-            f"Existing paths (with note use counts): {_fmt_vocab(known)}.")
-
-
-def _neighbour_hint(neighbours) -> str:
-    paths = Counter(n["path"] for n in neighbours if n.get("path"))
-    if not paths:
-        return ""
-    return (" Notes most similar to this one are filed under: "
-            + ", ".join(f"{p} ({c})" for p, c in paths.most_common(5))
-            + ". Prefer these when they fit.")
-
-
-def _similar_block(similar) -> str:
-    if not similar:
-        return ""
-    lines = [f"- \"{n['title']}\" -> type={n['note_type']}, path={n.get('path')}"
-             for n in similar]
-    return (" Similar past notes and how they were classified (reuse their type / "
-            "path when appropriate):\n" + "\n".join(lines))
-
-
-def _enrich(text, known_paths_list, similar_notes, root_folders, default_root) -> dict:
-    try:
-        neighbours = similar_notes or []
-        threshold = config.ENRICH_SIMILAR_MAX_DISTANCE
-        has_dist = any(n.get("distance") is not None for n in neighbours)
-        strong = ([n for n in neighbours if n.get("distance") is not None and n["distance"] <= threshold]
-                  if has_dist else neighbours)
-        if strong:
-            neighbour_block = _neighbour_hint(strong) + _similar_block(strong)
-        elif neighbours:
-            neighbour_block = (" None of the user's existing notes are closely related to this one, "
-                               "so do not force-fit an existing path — prefer a default folder, and "
-                               "create a new path only if clearly warranted.")
-        else:
-            neighbour_block = ""
-        system = (
-            "You organize a person's brain-dump notes (Ukrainian or English) into "
-            "an PARA-style vault (i.e. Obsidian-style)."
-            "Classify the note and extract metadata. Return strict JSON with keys: "
-            "reasoning (1-2 short sentences), "
-            "type (one of: idea, task, reminder, note, question, link), "
-            "title (a concise summary, <=8 words, in the note's own language), "
-            "path (a single vault folder path: a root folder plus at most one "
-            "sub-folder — two levels at most)."
-            + _root_block(root_folders, default_root) + _vocabulary(known_paths_list)
-            + neighbour_block)
-        resp = get_client().chat.completions.create(
-            model=config.ENRICH_LLM_MODEL, temperature=0,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": text}])
-        return _normalize(json.loads(resp.choices[0].message.content), text, root_folders, default_root)
-    except Exception:
-        logger.exception("Enrichment failed; storing as a plain note")
-        return {"type": "note", "title": text.strip()[:80], "path": default_root}
-
-
-def enrich_note(user_id: int, note_id: int) -> dict | None:
-    text = db.get_text(note_id)
-    if not text:
-        return None
-    embedding = _embed(text)
-    similar = db.similar_notes(user_id, embedding, exclude_note_id=note_id,
-                                  limit=config.ENRICH_SIMILAR_LIMIT)
-    root_folders, default_root = _localized_roots(user_id)
-    meta = _enrich(text, db.list_paths(user_id), similar, root_folders, default_root)
-    db.set_enrichment(note_id, meta["type"], meta["title"], meta["path"])
-    return meta
+    return ("ok", db.get_meta(note_id))
 
 
 # ===== links ===============================================================

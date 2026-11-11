@@ -3,7 +3,7 @@ Telegram bot layer — a thin client adapter.
 
 Translates Telegram updates into API calls and formats the replies. It holds no
 business logic and no database access: capture, reminder detection/creation,
-enrichment, link selection, search/answer and user settings all live behind the
+saving, link selection, search/answer and user settings all live behind the
 API service and are reached through `api_client.ApiClient`. Only Telegram
 specifics live here — keyboards, message formatting, command wiring, and
 reminder delivery (the bot owns the transport, so the dispatcher sends messages;
@@ -111,11 +111,11 @@ NOTE_ICONS = {
 
 
 def _capture_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
-    """Actions on a freshly captured (not yet enriched) note — two per row:
-    enrich, atomize, polish (tidy the wording), or cancel (delete)."""
+    """Actions on a freshly captured (still a draft) note — two per row:
+    save (to the Inbox), atomize, polish (tidy the wording), or cancel (delete)."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(t(locale, "btn_enrich"), callback_data=f"e:{note_id}"),
+            InlineKeyboardButton(t(locale, "btn_save"), callback_data=f"s:{note_id}"),
             InlineKeyboardButton(t(locale, "btn_atomize"), callback_data=f"a:{note_id}"),
         ],
         [
@@ -126,9 +126,10 @@ def _capture_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
 
 
 def _meta_line(meta: dict) -> str:
-    icon = NOTE_ICONS.get(meta["type"], "📝")
-    parts = [f"{icon} {meta['title']}"]
-    if meta["path"]:
+    parts = []
+    if meta.get("title"):
+        parts.append(f"{NOTE_ICONS.get(meta.get('type'), '📝')} {meta['title']}")
+    if meta.get("path"):
         parts.append("📁 " + meta["path"])
     return "\n".join(parts)
 
@@ -150,7 +151,7 @@ async def _offer_reminder(msg, reminder: dict | None, tz: ZoneInfo, locale: str)
 
 async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """A user replied to a 'New path…' prompt: validate + set it via the API and
-    refresh the original enriched note."""
+    refresh the original saved note."""
     msg = update.message
     info = pending_new_path.pop(msg.reply_to_message.message_id, None)
     if not info:
@@ -167,7 +168,7 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.edit_message_text(
             chat_id=info["chat_id"], message_id=info["msg_id"],
             text=f"{info['base']}\n\n{_meta_line(meta)}",
-            reply_markup=_enriched_keyboard(info["note_id"], locale),
+            reply_markup=_filed_keyboard(info["note_id"], locale),
         )
     except Exception:
         logger.exception("Failed to refresh note message after new path")
@@ -175,7 +176,7 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Capture a text note immediately; offer on-demand enrichment."""
+    """Capture a text note immediately as a draft; offer 💾 Save."""
     msg = update.message
     # A reply to a pending 'New path…' prompt is a path, not a new note.
     if msg.reply_to_message and msg.reply_to_message.message_id in pending_new_path:
@@ -311,34 +312,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     album["task"] = asyncio.create_task(_flush_album(group_id))
 
 
-async def on_enrich(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """🧠 Enrich button — run the deferred metadata pass via the API service."""
+async def on_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """💾 Save button — file the draft in the Inbox via the API service. Instant
+    (no model call), so there is no in-progress state; the buttons come back as
+    the filed-note keyboard."""
     query = update.callback_query
     await query.answer()
     user_id, tz, locale, _ = await load_ctx(update)
     note_id = int(query.data.split(":")[1])
     base = query.message.text or ""
 
-    if user_id is None:
-        await query.edit_message_text(base, reply_markup=_capture_keyboard(note_id, locale))
-        return
-
-    # Show a friendly in-progress state and drop the button (enrichment does an
-    # embedding + LLM call, so it isn't instant; this also prevents double taps).
-    try:
-        await query.edit_message_text(f"{base}\n\n{t(locale, 'enriching')}")
-    except Exception:
-        pass
-
-    meta = await api.enrich_note(note_id, user_id)
+    meta = await api.save_note(note_id, user_id) if user_id is not None else None
     if not meta:
-        # Restore the original message + Enrich button so the user can retry.
+        # Restore the original message + Save button so the user can retry.
         await query.edit_message_text(base, reply_markup=_capture_keyboard(note_id, locale))
         return
 
     await query.edit_message_text(
         f"{base}\n\n{_meta_line(meta)}",
-        reply_markup=_enriched_keyboard(note_id, locale),
+        reply_markup=_filed_keyboard(note_id, locale),
     )
 
 
@@ -428,7 +420,7 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
         paths = await api.known_paths(user_id)  # re-fetch: stable order → idx maps back
         if idx >= len(paths):
             await query.answer()
-            await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+            await query.edit_message_reply_markup(_filed_keyboard(note_id, locale))
             return
         path = paths[idx]
         meta, _ = await api.set_note_path(note_id, path, user_id)
@@ -437,10 +429,10 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
             base = (query.message.text or "").rsplit("\n\n", 1)[0]
             await query.edit_message_text(
                 f"{base}\n\n{_meta_line(meta)}",
-                reply_markup=_enriched_keyboard(note_id, locale),
+                reply_markup=_filed_keyboard(note_id, locale),
             )
         else:
-            await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+            await query.edit_message_reply_markup(_filed_keyboard(note_id, locale))
     elif action == "new":
         # Ask the user to type a brand-new path (ForceReply); the reply is picked
         # up in handle_message via the pending_new_path map.
@@ -459,10 +451,10 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
     elif action == "back":
         await query.answer()
-        await query.edit_message_reply_markup(_enriched_keyboard(note_id, locale))
+        await query.edit_message_reply_markup(_filed_keyboard(note_id, locale))
 
 
-def _enriched_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
+def _filed_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
     """Buttons shown on an enriched note: change its path, or link it to others."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(locale, "btn_change_path"), callback_data=f"p:open:{note_id}")],
@@ -537,7 +529,7 @@ async def on_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "close":
         await query.answer()
         from_id = int(parts[2])
-        await query.edit_message_reply_markup(_enriched_keyboard(from_id, locale))
+        await query.edit_message_reply_markup(_filed_keyboard(from_id, locale))
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -793,7 +785,8 @@ def main():
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(on_button_handle_reminder, pattern=r"^r:"))
-    app.add_handler(CallbackQueryHandler(on_enrich, pattern=r"^e:"))
+    # `e:` is the retired Enrich button — messages sent before the change still carry it.
+    app.add_handler(CallbackQueryHandler(on_save, pattern=r"^[es]:"))
     app.add_handler(CallbackQueryHandler(on_atomize, pattern=r"^a:"))
     app.add_handler(CallbackQueryHandler(on_cancel, pattern=r"^c:"))
     app.add_handler(CallbackQueryHandler(on_polish, pattern=r"^f:"))

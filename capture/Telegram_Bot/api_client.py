@@ -321,20 +321,20 @@ class ApiClient:
             logger.exception("API known_paths failed")
             return []
 
-    async def enrich_note(self, note_id: int, user_id: int) -> dict | None:
-        """Run the deferred enrichment pass; returns the note's metadata, or None."""
+    async def save_note(self, note_id: int, user_id: int) -> dict | None:
+        """File a draft note in the user's Inbox; returns the note's metadata, or None."""
         if not self.configured:
             return None
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/enrich",
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/save",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
                 return resp.json()
         except Exception:
-            logger.exception("API enrich_note failed")
+            logger.exception("API save_note failed")
             return None
 
     async def set_note_path(self, note_id: int, path: str, user_id: int) -> tuple[dict | None, str | None]:

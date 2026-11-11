@@ -21,7 +21,7 @@ api/
     users.py         # POST /api/users/resolve · GET /api/users/settings
                      #   · POST /api/users/timezone · POST /api/users/language
     notes.py         # POST /api/notes (capture) · POST /api/notes/voice
-                     #   · POST /api/notes/{id}/enrich · POST /api/notes/{id}/path
+                     #   · POST /api/notes/{id}/save · POST /api/notes/{id}/path
                      #   · GET  /api/notes/paths · GET /api/notes/{id}/link-candidates
                      #   · POST /api/notes/{from}/links/{to}/toggle
     reminders.py     # GET /api/reminders · GET /api/reminders/count
