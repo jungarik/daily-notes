@@ -60,6 +60,14 @@ _uid_cache: dict[int, int] = {}
 # original enriched message to refresh once the user replies with a path.
 pending_new_path: dict[int, dict] = {}
 
+# Pending ✏️ Edit prompts: ForceReply prompt message_id -> the note and the message
+# to redraw once the user replies with the new text.
+pending_edit: dict[int, dict] = {}
+
+# How much of the current text the Edit prompt quotes. Telegram caps a message at
+# 4096 characters and the prompt carries a sentence of its own.
+EDIT_PROMPT_CHARS = 3500
+
 # Telegram delivers an album (media group) as several separate photo updates that
 # share a media_group_id. We buffer them and flush once, a short debounce after
 # the last one arrives, into a single note with all images.
@@ -112,11 +120,12 @@ NOTE_ICONS = {
 
 def _capture_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
     """Actions on a freshly captured (still a draft) note — two per row:
-    save (to the Inbox), atomize, polish (tidy the wording), or cancel (delete)."""
+    save (to the Inbox), edit (retype the text), polish (tidy the wording), or
+    cancel (delete)."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(t(locale, "btn_save"), callback_data=f"s:{note_id}"),
-            InlineKeyboardButton(t(locale, "btn_atomize"), callback_data=f"a:{note_id}"),
+            InlineKeyboardButton(t(locale, "btn_edit"), callback_data=f"x:{note_id}"),
         ],
         [
             InlineKeyboardButton(t(locale, "btn_polish"), callback_data=f"f:{note_id}"),
@@ -175,12 +184,47 @@ async def _apply_new_path(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(t(locale, "path_set", path=meta.get("path", "")))
 
 
+async def _apply_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A user replied to an Edit prompt: replace the note's text via the API and
+    redraw the original message with the new text and the matching buttons."""
+    msg = update.message
+    info = pending_edit.pop(msg.reply_to_message.message_id, None)
+    if not info:
+        return
+    user_id, _, locale, _ = await load_ctx(update)
+    edited = await api.edit_note(info["note_id"], msg.text or "", user_id) if user_id is not None else None
+    if not edited:
+        await msg.reply_text(t(locale, "error_generic"))
+        return
+    body = f"{t(locale, 'edited')}\n\n{edited['text']}"
+    if edited.get("path"):
+        body += f"\n\n📁 {edited['path']}"
+        keyboard = _filed_keyboard(info["note_id"], locale)
+    else:
+        keyboard = _capture_keyboard(info["note_id"], locale)
+    try:
+        await context.bot.edit_message_text(
+            chat_id=info["chat_id"], message_id=info["msg_id"], text=body, reply_markup=keyboard,
+        )
+    except Exception:
+        logger.exception("Failed to refresh note message after edit")
+    try:
+        await context.bot.delete_message(
+            chat_id=info["chat_id"], message_id=msg.reply_to_message.message_id)
+    except Exception:
+        logger.info("Could not remove the Edit prompt for note %s", info["note_id"])
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Capture a text note immediately as a draft; offer 💾 Save."""
     msg = update.message
     # A reply to a pending 'New path…' prompt is a path, not a new note.
     if msg.reply_to_message and msg.reply_to_message.message_id in pending_new_path:
         await _apply_new_path(update, context)
+        return
+    # A reply to a pending ✏️ Edit prompt is the note's new text, not a new note.
+    if msg.reply_to_message and msg.reply_to_message.message_id in pending_edit:
+        await _apply_edit(update, context)
         return
     text = msg.text
     if not text:      # non-text messages never reach this handler, but be safe
@@ -334,29 +378,34 @@ async def on_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def on_atomize(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """✂️ Atomize — split a note into atomic notes, each posted as its own note
-    with the same actions. Non-destructive: the original note is left as-is."""
+async def on_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """✏️ Edit — ask for the note's new text with a force-reply prompt that quotes
+    the current text (Telegram bots cannot pre-fill the input field, so the quote is
+    what the user copies from). The reply is picked up in handle_message via the
+    pending_edit map and replaces the note's text."""
     query = update.callback_query
-    await query.answer()      # dismiss the spinner up front (the split LLM call isn't instant)
-    user_id, tz, locale, _ = await load_ctx(update)
+    await query.answer()
+    user_id, _, locale, _ = await load_ctx(update)
     note_id = int(query.data.split(":")[1])
-    if user_id is None:
+    current = await api.get_note_text(note_id, user_id) if user_id is not None else None
+    if current is None:
         await query.message.reply_text(t(locale, "error_generic"))
         return
-    atoms = await api.atomize_note(note_id, user_id)
-    if not atoms:
-        await query.message.reply_text(t(locale, "atomize_single"))
-        return
-    for a in atoms:
-        await query.message.reply_text(
-            t(locale, "saved") + "\n\n" + a["text"],
-            reply_markup=_capture_keyboard(a["note_id"], locale),
-        )
+    prompt = await query.message.reply_text(
+        t(locale, "edit_prompt", text=current[:EDIT_PROMPT_CHARS]),
+        reply_markup=ForceReply(selective=True),
+    )
+    if len(pending_edit) > 200:          # bound the map (unanswered prompts)
+        pending_edit.clear()
+    pending_edit[prompt.message_id] = {
+        "note_id": note_id,
+        "chat_id": query.message.chat_id,
+        "msg_id": query.message.message_id,
+    }
 
 
 async def on_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """✖️ Cancel — delete a freshly captured/atomized note. Guarded server-side:
+    """✖️ Cancel — delete a freshly captured note. Guarded server-side:
     only notes with no metadata and no links are removed, so an accidental tap on
     an enriched or linked note is refused."""
     query = update.callback_query
@@ -459,6 +508,7 @@ def _filed_keyboard(note_id: int, locale: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t(locale, "btn_change_path"), callback_data=f"p:open:{note_id}")],
         [InlineKeyboardButton(t(locale, "btn_link"), callback_data=f"l:open:{note_id}")],
+        [InlineKeyboardButton(t(locale, "btn_edit"), callback_data=f"x:{note_id}")],
     ])
 
 
@@ -787,7 +837,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_button_handle_reminder, pattern=r"^r:"))
     # `e:` is the retired Enrich button — messages sent before the change still carry it.
     app.add_handler(CallbackQueryHandler(on_save, pattern=r"^[es]:"))
-    app.add_handler(CallbackQueryHandler(on_atomize, pattern=r"^a:"))
+    app.add_handler(CallbackQueryHandler(on_edit, pattern=r"^x:"))
     app.add_handler(CallbackQueryHandler(on_cancel, pattern=r"^c:"))
     app.add_handler(CallbackQueryHandler(on_polish, pattern=r"^f:"))
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^p:"))

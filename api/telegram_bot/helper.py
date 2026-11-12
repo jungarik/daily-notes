@@ -1,6 +1,6 @@
 """Telegram-bot section service: the full note lifecycle the bot drives.
 
-Self-contained domain — capture, save, atomize, polish, delete,
+Self-contained domain — capture, save, edit, polish, delete,
 links, reminder detection/dispatch, user settings, and RAG search — duplicated
 here over the section's own `db` + shared infra (config, i18n, openai_client,
 file_store). No shared domain layer.
@@ -149,45 +149,7 @@ def move_note(user_id: int, note_id: int, raw_path: str) -> tuple[str, dict | No
     return ("ok", db.get_meta(note_id))
 
 
-# ===== atomize / polish / delete ===========================================
-
-_MIN_SPLIT_CHARS = 40
-
-
-def _split(text: str) -> list[str]:
-    clean = (text or "").strip()
-    if len(clean) < _MIN_SPLIT_CHARS:
-        return [clean] if clean else []
-    try:
-        system = (
-            "You split a person's brain-dump note (Ukrainian or English) into ATOMIC "
-            "notes — one self-contained idea, task, question or fact each "
-            "(Zettelkasten style). Rules: keep each atom's original wording as much "
-            "as possible; do NOT invent, summarise or add content; do NOT merge "
-            "unrelated ideas; do NOT over-split a single coherent thought; preserve "
-            "the note's language. If the note is already a single idea, return it "
-            "unchanged as one atom. Return strict JSON: {\"atoms\": [\"...\", ...]}.")
-        resp = get_client().chat.completions.create(
-            model=config.ATOMIZE_LLM_MODEL, temperature=0,
-            response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": clean}])
-        data = json.loads(resp.choices[0].message.content)
-        atoms = [str(a).strip() for a in data.get("atoms", []) if str(a).strip()]
-        return atoms or [clean]
-    except Exception:
-        logger.exception("Atomization failed; keeping the note whole")
-        return [clean]
-
-
-def atomize_note(user_id: int, note_id: int) -> list[dict]:
-    text = db.get_text(note_id)
-    if not text:
-        return []
-    atoms = _split(text)
-    if len(atoms) < 2:
-        return []
-    return [{"note_id": capture_note(user_id, a), "text": a} for a in atoms]
-
+# ===== polish / edit / delete ===========================================
 
 def _polish(text: str) -> str:
     clean = (text or "").strip()
@@ -224,6 +186,45 @@ def polish_note(note_id: int) -> str | None:
         db.delete_chunks(note_id)
         db.save_chunks(note_id, _build_chunks(cleaned))
     return cleaned
+
+
+def note_text(user_id: int, note_id: int) -> str | None:
+    """The note's text for the bot's Edit prompt to quote, or None when the note is
+    not the caller's."""
+    note = db.get_note(note_id) if db.get_note_for_user(user_id, note_id) else None
+
+    return None if note is None else note["text"]
+
+
+def edit_note(user_id: int, note_id: int, text: str) -> tuple[str, dict | None]:
+    """Replace a note's text with what the user typed.
+
+    `("not_found", None)` for a note that is not theirs, `("empty", None)` for
+    text that is blank once trimmed. The chunks are rebuilt from the new text —
+    search and RAG match on them, so a note edited without that would be found
+    by what it used to say. The new chunks are built *before* anything is written,
+    so an embedding failure fails the edit and changes nothing — text and chunks
+    never disagree. Path, links and reminders are not touched.
+
+    The answer carries the stored text and the note's path, which is what the bot
+    needs to redraw its message and pick the right buttons (filed or draft).
+    """
+    clean = (text or "").strip()
+
+    if not clean:
+        return ("empty", None)
+
+    note = db.get_note(note_id) if db.get_note_for_user(user_id, note_id) else None
+
+    if note is None:
+        return ("not_found", None)
+
+    chunks = _build_chunks(clean)
+    db.set_text(note_id, clean)
+    db.delete_chunks(note_id)
+    db.save_chunks(note_id, chunks)
+
+    return ("ok", {"text": clean, "path": note["path"]})
 
 
 def delete_bare_note(note_id: int) -> bool:

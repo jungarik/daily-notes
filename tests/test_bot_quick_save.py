@@ -77,10 +77,10 @@ class BotTests(unittest.TestCase):
         self.assertIn('t(locale, "btn_save"), callback_data=f"s:{note_id}"', keyboard)
         self.assertNotIn("btn_enrich", BOT)
 
-    def test_polish_atomize_cancel_are_unchanged(self):
+    def test_edit_polish_cancel_sit_beside_save(self):
         keyboard = BOT.split("def _capture_keyboard", 1)[1].split("def _meta_line", 1)[0]
 
-        for button in ('"btn_atomize"', '"btn_polish"', '"btn_cancel"'):
+        for button in ('"btn_edit"', '"btn_polish"', '"btn_cancel"'):
             self.assertIn(button, keyboard)
 
     def test_old_enrich_buttons_still_route_to_save(self):

@@ -193,21 +193,38 @@ class ApiClient:
             logger.exception("API capture_media failed")
             return None
 
-    async def atomize_note(self, note_id: int, user_id: int) -> list[dict]:
-        """Split a note into atomic notes. [{note_id, text}] or [] (already atomic / error)."""
+    async def get_note_text(self, note_id: int, user_id: int) -> str | None:
+        """The note's current text, or None on any failure."""
         if not self.configured:
-            return []
+            return None
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(
-                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/atomize",
+                resp = await client.get(
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/text",
                     headers=self._headers(user_id),
                 )
                 resp.raise_for_status()
-                return resp.json().get("atoms", [])
+                return resp.json().get("text")
         except Exception:
-            logger.exception("API atomize_note failed")
-            return []
+            logger.exception("API get_note_text failed")
+            return None
+
+    async def edit_note(self, note_id: int, text: str, user_id: int) -> dict | None:
+        """Replace a note's text. {text, path} on success, None on any failure."""
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base_url}/api/telegram_bot/notes/{note_id}/edit",
+                    json={"text": text},
+                    headers=self._headers(user_id),
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception:
+            logger.exception("API edit_note failed")
+            return None
 
     async def delete_note(self, note_id: int, user_id: int) -> tuple[bool, bool]:
         """Delete a note if it's bare. (ok, deleted); ok=False on transport error."""
