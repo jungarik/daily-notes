@@ -148,46 +148,30 @@ Cosine (`<=>`) is used because the HNSW index is `vector_cosine_ops`; similarity
 is `1 - distance`. Ranking uses a `ROW_NUMBER()` window over the distance-ordered
 top-k.
 
-## Capture and enrichment (brain-dump)
+## Capture and save (brain-dump)
 
 Capture is instant and cheap. When you send a note (text, or voice → transcribed)
-the bot immediately chunks + embeds it, saves it, checks for a **reminder**
-(keyword-gated LLM call in `api/telegram_bot/helper.py`), and replies "Saved ✅" with three
-actions: **🧠 Enrich**, **✂️ Atomize**, and **❌ Cancel**. If it's time-bearing, it
-also creates the reminder and confirms with a Cancel button.
+the bot immediately chunks + embeds it, stores it as a **draft**, checks for a
+**reminder** (keyword-gated LLM call in `api/telegram_bot/helper.py`), and replies
+"Draft 📝" with four actions: **💾 Save**, **✏️ Edit**, **✨ Polish** and **❌ Cancel**.
+If it's time-bearing, it also creates the reminder and confirms with a Cancel
+button.
 
-**Atomize (Zettelkasten).** A brain-dump often holds several ideas; Zettelkasten
-wants one idea per note. Tapping ✂️ Atomize makes a single LLM call
-(`atomize.py`) that splits the note into atomic notes, each persisted as a new
-plain note and posted with the same three actions — so you enrich, split again,
-or cancel each independently. It's non-destructive: the original note is kept, and
-if the note is already a single idea nothing is created. **Cancel** deletes a note
-only if it has no metadata and no links (a guard against accidental taps on notes
-you've enriched or linked).
-
-**Enrichment is deferred and on-demand.** Structuring a dump (PARA/CODE-style
-analysis) isn't time-critical, so it only runs when you tap 🧠 Enrich. Then
-`enrichment.enrich()` makes one LLM call that returns and stores:
-
-- **type** — idea / task / reminder / note / question / link
-- **title** — a short summary in the note's own language
-- **path** — a single vault folder path (PARA-style top level), at most two
-  levels — a root folder plus one optional sub-folder, e.g.
-  `Projects/telegram-bot` — the note's home folder for Obsidian export
-- **tags** — 0–5 topic keywords (cross-cutting membership)
-- **priority** — low / med / high
-
-Because the note's chunks are already embedded, enrichment first pulls the most
-similar *already-enriched* notes (`chunk_store.similar_notes`) and feeds their
-metadata to the prompt as few-shot examples, alongside the chat's existing
-path/tag vocabulary — so classification stays consistent (it extends the folder
-tree instead of inventing parallel folders). The reply is edited to show the
-result (`💡 title / 📁 path / 🏷 tags / ⚡ priority`). On failure it degrades to a
-plain `note`.
+- **💾 Save** files the draft in your **Inbox** (the root folder, in your language)
+  — one tap, no model call. A draft is simply a note with no path, which the Mini
+  App treats as "not in the vault yet". Afterwards **📁 Change folder** moves it
+  and **🔗 Link** connects it to related notes.
+- **✏️ Edit** asks for the new text. Telegram bots cannot pre-fill your input
+  field, so the prompt quotes the current text (copy it, change it) and your reply
+  replaces the note's text; the note is re-embedded so search keeps matching what it
+  now says. It works on drafts and saved notes alike.
+- **✨ Polish** tidies spelling and punctuation with one LLM call, no invention.
+- **Cancel** deletes a note only if it has no path and no links (a guard against
+  accidental taps on notes you've filed or linked).
 
 ### Links (human-in-the-loop)
 
-After enrichment the note shows a **🔗 Link** button. Tapping it lists the ~5
+After saving, the note shows a **🔗 Link** button. Tapping it lists the ~5
 most related notes (`links.candidates`: semantic nearest neighbours re-ranked
 with a boost for a shared `path` or `tags`). Each suggested note is itself a
 button — tap it to connect (◻️ → ✅), tap again to disconnect. Selection is

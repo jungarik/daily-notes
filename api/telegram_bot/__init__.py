@@ -1,5 +1,5 @@
 """Telegram-bot section — every endpoint the bot calls (capture, save,
-atomize, polish, delete, links, reminders + dispatcher, user identity/settings,
+edit, polish, delete, links, reminders + dispatcher, user identity/settings,
 RAG search, ping), all under /api/telegram_bot.
 
 Self-contained like every other vertical: endpoints.py (router) → helper.py

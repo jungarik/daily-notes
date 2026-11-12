@@ -372,7 +372,7 @@ ripple into another (the trade-off is deliberately duplicated query/shaping code
   the response yet (see `devdoc/agent-loop.md`). The name keeps the `_v2`
   suffix until the URL is collapsed back to `/api/chat`.
 - **`api/telegram_bot`** — the single folder for every bot interaction, all under
-  `/api/telegram_bot` (capture text/voice/media, save, atomize, polish, delete,
+  `/api/telegram_bot` (capture text/voice/media, save, edit, polish, delete,
   link-candidates/toggle, reminders + dispatcher, user resolve/settings, RAG
   `search`, `ping`). It owns its full domain in `helper.py` + `db.py`
   (embeddings, save-to-Inbox, reminder parsing, links, user settings, RAG).
@@ -408,8 +408,15 @@ vault yet" — and the user files it with the 💾 Save button, which sets the p
 to their (localised) Inbox root and nothing else: no model call, no title, no
 type (`POST /api/telegram_bot/notes/{id}/save`, idempotent — a note that already
 has a path keeps it; callbacks from the retired 🧠 Enrich button, `e:`, are
-still routed to Save). 📁 Change folder and 🔗 Link follow Save; ✨ Polish and
-✂️ Atomize are unchanged, and Cancel deletes a still-bare draft. There is no
+still routed to Save). 📁 Change folder and 🔗 Link follow Save; ✨ Polish is
+unchanged, and Cancel deletes a still-bare draft. **✏️ Edit** (`x:`, on the draft and
+the filed keyboard) replaces a note's text: bots cannot pre-fill the input field,
+so it sends a force-reply prompt quoting the current text (`GET …/notes/{id}/text`),
+the user's reply is routed by `pending_edit` (reply-to message id, like the
+new-path prompt), and `POST …/notes/{id}/edit` stores it and rebuilds the chunks —
+built before anything is written, so an embedding failure fails the edit and
+changes nothing.
+There is no Atomize any more (button, endpoint, prompt and model setting are gone). There is no
 capture-time enrichment agent: `agents/enricher` plans one write per chat turn
 and has no capture loop — the interactive graph that would have served one was
 deleted unused.

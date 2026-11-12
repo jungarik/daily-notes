@@ -16,7 +16,7 @@ from api.deps import current_user, require_internal_token
 from api.telegram_bot import helper
 from api.telegram_bot.schemas import (
     ReminderInfo, CaptureRequest, CaptureResponse, PathsResponse, SetPathRequest,
-    NoteMeta, AtomizedNote, AtomizeResponse, DeleteResponse, PolishResponse,
+    NoteMeta, EditNoteRequest, EditNoteResponse, NoteTextResponse, DeleteResponse, PolishResponse,
     LinkCandidate, LinkCandidatesResponse, ToggleLinkResponse, ReminderItem,
     RemindersResponse, CountResponse, SnoozeRequest, SnoozeResponse,
     ReminderActionResponse, ClaimDueRequest, ClaimedReminder, ClaimDueResponse,
@@ -122,11 +122,26 @@ def set_path(note_id: int, req: SetPathRequest,
     return NoteMeta(**meta)
 
 
-@router.post("/notes/{note_id}/atomize", response_model=AtomizeResponse)
-def atomize(note_id: int, user_id: int = Depends(current_user)) -> AtomizeResponse:
-    """Split a note into atomic notes, each persisted as a new plain note."""
-    created = helper.atomize_note(user_id, note_id)
-    return AtomizeResponse(atoms=[AtomizedNote(**a) for a in created])
+@router.get("/notes/{note_id}/text", response_model=NoteTextResponse)
+def note_text(note_id: int, user_id: int = Depends(current_user)) -> NoteTextResponse:
+    """The note's text, for the bot's Edit prompt to quote. 404 if not the caller's."""
+    text = helper.note_text(user_id, note_id)
+    if text is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    return NoteTextResponse(text=text)
+
+
+@router.post("/notes/{note_id}/edit", response_model=EditNoteResponse)
+def edit(note_id: int, req: EditNoteRequest,
+         user_id: int = Depends(current_user)) -> EditNoteResponse:
+    """Replace a note's text (the bot's ✏️ Edit), re-embedding it. 404 if the note
+    is not the caller's; 422 for text that is blank once trimmed."""
+    status, edited = helper.edit_note(user_id, note_id, req.text)
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="note not found")
+    if status == "empty":
+        raise HTTPException(status_code=422, detail="text must not be empty")
+    return EditNoteResponse(**edited)
 
 
 @router.post("/notes/{note_id}/delete", response_model=DeleteResponse)

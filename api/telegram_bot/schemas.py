@@ -34,13 +34,17 @@ class NoteMeta(BaseModel):
     priority: str | None = None
 
 
-class AtomizedNote(BaseModel):
-    note_id: int
+class EditNoteRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)
+
+
+class NoteTextResponse(BaseModel):
+    text: str = ""
+
+
+class EditNoteResponse(BaseModel):
     text: str
-
-
-class AtomizeResponse(BaseModel):
-    atoms: list[AtomizedNote] = []
+    path: str | None = None
 
 
 class DeleteResponse(BaseModel):
