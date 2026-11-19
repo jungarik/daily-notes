@@ -20,8 +20,8 @@ function saveFilter(sel) {
 }
 
 const initial = {
-  view: "notes",            // notes | explorer | map | search | chat
-  prevView: "notes",        // last non-input view (for close/back)
+  view: "explorer",         // explorer | notes | map | search | chat — the app opens on the Explorer
+  prevView: "explorer",     // last non-input view (for close/back)
   barMode: null,            // "search" | "chat" while the pill shows its input
   notes: [],                // explorer tree + search source
   roots: [],                // vault root folders, in canonical order
