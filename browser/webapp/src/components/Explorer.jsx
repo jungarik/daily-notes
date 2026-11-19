@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../store/AppContext.jsx";
-import { compareRoots } from "../lib/format.js";
+import { compareNewest, compareRoots } from "../lib/format.js";
 
 // --- tree building for the explorer view ---
 function buildTree(notes) {
@@ -106,9 +106,8 @@ function Folder({ name, node, path, selected, onSelect }) {
   const [open, setOpen] = useState(false);
   const isRoot = path.indexOf("/") < 0;
   const folderNames = Object.keys(node.folders).sort((a, b) => a.localeCompare(b));
-  // Sorted by the label, which is now the note's first words rather than an
-  // enriched title — so the tree reads alphabetically by how each note opens.
-  const files = node.files.slice().sort((a, b) => (a.label || "").localeCompare(b.label || ""));
+  // Newest first, in every folder.
+  const files = node.files.slice().sort(compareNewest);
   return (
     <div className={"folder" + (open ? " open" : "")}>
       <div className={"row" + (selected === folderKey(path) ? " selected" : "")}
@@ -151,7 +150,7 @@ export default function Explorer({ hidden }) {
               <Folder key={f} name={f} node={root.folders[f]} path={f}
                 selected={selected} onSelect={setSelected} />
             ))}
-            {root.files.map((file) => <FileRow key={file.id} note={file} selected={selected} onSelect={setSelected} />)}
+            {root.files.slice().sort(compareNewest).map((file) => <FileRow key={file.id} note={file} selected={selected} onSelect={setSelected} />)}
           </>)}
     </div>
   );

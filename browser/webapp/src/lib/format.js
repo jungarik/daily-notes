@@ -144,6 +144,26 @@ export function ringDashes(count, circumference, strokeWidth) {
   return { segments, dash: step - gap, gap };
 }
 
+// Newest note first: `created_at` descending, then id descending so two notes
+// stamped the same instant (or both undated) keep a stable, newest-id-first order.
+//
+// The API already sends notes in this order and `Array.sort` is stable, but the
+// Explorer used to re-sort by label and quietly undid it, so the rule lives here
+// where a test can hold it. ISO-8601 instants compare correctly as strings only
+// when they share an offset, so they are parsed; a missing or unparseable date
+// sorts last.
+export function compareNewest(a, b) {
+  const timeA = Date.parse(a.created_at);
+  const timeB = Date.parse(b.created_at);
+  const validA = !Number.isNaN(timeA);
+  const validB = !Number.isNaN(timeB);
+
+  if (validA !== validB) return validA ? -1 : 1;
+  if (validA && timeA !== timeB) return timeB - timeA;
+
+  return (b.id || 0) - (a.id || 0);
+}
+
 // Compare two top-level folder names by the vault's canonical root order.
 //
 // `roots` is the roster from /api/explorer — [{key, label}] in the order the
