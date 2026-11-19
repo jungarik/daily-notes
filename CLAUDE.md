@@ -840,8 +840,12 @@ candidates come from the agent farm rather than a read section.
 the dropped column, asserts the exemption stays one section wide, and counts
 that remaining `c.title` so it cannot quietly become two.
 
-Two consequences worth stating. The explorer's tree now **sorts by the label**,
-so rows read alphabetically by how each note opens. And `search` still *matches*
+Two consequences worth stating. The explorer's tree lists notes **newest first**
+in every folder, loose root notes included (`lib/format.compareNewest`: `created_at`
+descending, then id; an undated note sorts last) — folders themselves stay in
+root order / alphabetical, and the label is only what a row says, no longer how
+it sorts. The feed, the explorer endpoint and search already come newest-first
+from their SQL. And `search` still *matches*
 on `title` while never showing it — an enriched title often holds a word the
 note itself does not, and dropping it from the predicate would make those notes
 unfindable — so a hit can match text its row does not display. Path/localised-root names are written by the LLM

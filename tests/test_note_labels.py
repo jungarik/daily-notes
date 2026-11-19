@@ -227,13 +227,12 @@ class ClientTests(unittest.TestCase):
 
                 self.assertNotIn('"untitled"', source)
 
-    def test_the_explorer_sorts_by_the_label(self):
-        """Worth stating because it changes the tree's order: rows now sort by
-        how each note opens, not by an enriched title."""
+    def test_the_explorer_no_longer_sorts_by_the_label(self):
+        """It used to, which put rows in alphabetical order of how each note
+        opens; notes are listed newest first now (tests/test_explorer_newest_first)."""
         source = (WEBAPP / "components/Explorer.jsx").read_text(encoding="utf-8")
 
-        self.assertIn(".localeCompare(b.label", source)
-        self.assertIn("a.label ||", source)
+        self.assertNotIn(".localeCompare(b.label", source)
 
 
 if __name__ == "__main__":
