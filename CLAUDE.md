@@ -780,7 +780,7 @@ server-side moves columns rather than silently dropping one. The dash geometry
 and the label are `lib/format.ringDashes` / `formatCount` (pure, tested under
 node in `tests/test_inbox_ring_js.py`): the gap absorbs the round line caps,
 which paint half a stroke width past each end of every dash. A floating
-glass **dock** holds a center pill (Notes / Map / Explorer icons, in that order)
+glass **dock** holds a center pill (Explorer / Notes / Map icons, in that order — the app opens on the Explorer)
 flanked by two circle buttons — chat (left) and search (right). Tapping a circle
 swaps the pill's icons for a shared input bar (with a Send button) and the pill
 widens toward the borders; the active circle's glyph becomes a ✕ and doubles as
